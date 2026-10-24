@@ -74,6 +74,8 @@ public static partial class FactsPosting
         public string Currency { get; set; } = "AED";
         public string? Cashier { get; set; }
         public string? PlatformName { get; set; }
+        /// <summary>The delivery platform's own order number (Talabat…), as typed at the till.</summary>
+        public string? PlatformRef { get; set; }
         public DateOnly? PostFrom { get; set; }
     }
 
@@ -94,7 +96,7 @@ public static partial class FactsPosting
     private const string OrderSql = """
         select o.id, o.company_id, o.branch_id, o.invoice_no, o.business_date, o.order_type, o.status, o.subtotal, o.discount_total, o.discount_pct,
                o.service_charge, o.vat, o.total, o.vat_rate, o.customer_name, o.customer_phone, o.delivery_address, o.closed_at,
-               b.erp_location_code as location, co.base_currency as currency, u.display_name as cashier, dp.name as platform_name, b.facts_post_from as post_from,
+               b.erp_location_code as location, co.base_currency as currency, u.display_name as cashier, dp.name as platform_name, o.platform_ref, b.facts_post_from as post_from,
                b.facts_doc_prefix as doc_prefix, case when o.discount_source = 'customer' then o.discount_name end as preapproved_label
         from pos_order o join branch b on b.id = o.branch_id join company co on co.id = o.company_id
         left join app_user u on u.id = o.opened_by left join delivery_platform dp on dp.id = o.platform_id
@@ -184,6 +186,8 @@ public static partial class FactsPosting
                 new XElement("VatCategory", "SR"), new XElement("VatRateType", "-1"),
                 new XElement("BillToAddress", new XElement("Street", o.DeliveryAddress ?? ""), new XElement("City", ""), new XElement("State", ""), new XElement("Country", "AE"), new XElement("POBox", ""))),
             new XElement("DeliveryDetails", new XElement("EDD", o.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("DeliveryTiming", "")),
+            // A delivery platform's order: its own order number, which One POS' procedure writes into SAL_REF1 (FACTS' own one ignores it).
+            o.PlatformName is not null && !string.IsNullOrWhiteSpace(o.PlatformRef) ? new XElement("PlatformOrderNo", o.PlatformRef.Trim()) : null,
             receipts, details));
         return (xml.ToString(SaveOptions.DisableFormatting), problems, o);
     }
