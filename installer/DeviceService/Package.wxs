@@ -1,0 +1,59 @@
+<!--
+  One POS Device Service (REQ HW-01): the Windows service that drives the till's receipt printer, cash drawer and pole display,
+  and the tray icon showing its state. Per machine; a newer release upgrades in place (the self-update installs it quietly).
+
+  WEBORIGIN: the One POS web address allowed to use the service (e.g. https://pos.example.com). Kept in the registry; an upgrade
+  keeps the one already there.   msiexec /i OnePos.DeviceService-1.1.0.msi WEBORIGIN=https://pos.example.com
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="One POS Device Service" Manufacturer="AWS Distribution" Version="$(Version)"
+           UpgradeCode="c059e854-2770-4b6a-b63e-8eb02afcfe44" Scope="perMachine" Compressed="yes">
+    <SummaryInformation Description="One POS by AWS Distribution: receipt printer, cash drawer and pole display for the till" />
+    <MajorUpgrade DowngradeErrorMessage="A newer One POS Device Service is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="OnePos.ico" SourceFile="..\..\src\OnePos.DeviceTray\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="OnePos.ico" />
+
+    <!-- The One POS address this release is built for (tools/release-device-service.ps1 -WebOrigin), so a double-click is enough;
+         WEBORIGIN=… on the command line overrides it, and an upgrade keeps the address already there. -->
+    <Property Id="WEBORIGIN" Secure="yes">
+      <RegistrySearch Id="FindWebOrigin" Root="HKLM" Key="SOFTWARE\OnePos\DeviceService" Name="WebOrigin" Type="raw" />
+    </Property>
+<?if "$(DefaultWebOrigin)" != "" ?>
+    <SetProperty Id="WEBORIGIN" Value="$(DefaultWebOrigin)" Before="AppSearch" Sequence="both" Condition="NOT WEBORIGIN" />
+<?endif?>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="ONEPOSDIR" Name="One POS">
+        <Directory Id="SERVICEDIR" Name="DeviceService" />
+        <Directory Id="TRAYDIR" Name="Tray" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="One POS Device Service">
+      <!-- The service: starts with Windows, restarts if it stops. -->
+      <Component Id="ServiceExe" Directory="SERVICEDIR" Bitness="always64">
+        <File Id="ServiceExe" Source="$(ServiceDir)\OnePos.DeviceService.exe" KeyPath="yes" />
+        <ServiceInstall Id="OnePosDevice" Name="OnePosDevice" DisplayName="One POS Device Service"
+                        Description="Receipt printer, cash drawer and pole display for One POS by AWS Distribution"
+                        Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" Vital="yes">
+          <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart" ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="5" ResetPeriodInDays="1" />
+        </ServiceInstall>
+        <ServiceControl Id="OnePosDeviceControl" Name="OnePosDevice" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
+      <!-- Both programs are published as single self-contained files (no .NET to install on the till). -->
+
+      <!-- Which One POS web address may use the service. -->
+      <Component Id="WebOriginKey" Directory="SERVICEDIR" Condition="WEBORIGIN" Bitness="always64">
+        <RegistryValue Root="HKLM" Key="SOFTWARE\OnePos\DeviceService" Name="WebOrigin" Type="string" Value="[WEBORIGIN]" KeyPath="yes" />
+      </Component>
+
+      <!-- The tray icon, for everyone who signs in on this PC. -->
+      <Component Id="TrayExe" Directory="TRAYDIR" Bitness="always64">
+        <File Id="TrayExe" Source="$(TrayDir)\OnePos.DeviceTray.exe" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Run" Name="OnePosDeviceTray" Type="string" Value="&quot;[#TrayExe]&quot;" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>

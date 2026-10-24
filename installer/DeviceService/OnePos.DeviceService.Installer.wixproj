@@ -1,0 +1,17 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- The One POS Device Service installer (REQ HW-01): service + tray, one MSI per release.
+       Built by tools/release-device-service.ps1, which publishes both programs first and passes their folders. -->
+  <PropertyGroup>
+    <OutputName>OnePos.DeviceService-$(Version)</OutputName>
+    <Version Condition="'$(Version)' == ''">1.1.0</Version>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <DefineConstants>Version=$(Version);ServiceDir=$(ServiceDir);TrayDir=$(TrayDir);DefaultWebOrigin=$(DefaultWebOrigin)</DefineConstants>
+    <SuppressValidation>false</SuppressValidation>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

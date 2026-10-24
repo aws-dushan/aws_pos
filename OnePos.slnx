@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OnePos.Api/OnePos.Api.csproj" />
+    <Project Path="src/OnePos.DeviceService/OnePos.DeviceService.csproj" />
+    <Project Path="src/OnePos.DeviceTray/OnePos.DeviceTray.csproj" />
+  </Folder>
+</Solution>
