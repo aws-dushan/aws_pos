@@ -1,0 +1,441 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-dmsans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-sora);
+  --font-heading: var(--font-sora);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  /* Module accent of the nearest data-module scope (see components/modules.tsx): bg-mod/10, text-mod … */
+  --color-mod: var(--mod);
+  --color-mod-fin: var(--mod-fin);
+  --color-mod-sales: var(--mod-sales);
+  --color-mod-purch: var(--mod-purch);
+  --color-mod-inv: var(--mod-inv);
+  --color-mod-bp: var(--mod-bp);
+  --color-mod-bank: var(--mod-bank);
+  --color-mod-admin: var(--mod-admin);
+  --color-mod-appr: var(--mod-appr);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --shadow-soft: var(--shadow-soft-v);
+  --shadow-lift: var(--shadow-lift-v);
+  --shadow-pop: var(--shadow-pop-v);
+  --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * AWS One design tokens: "Atelier Light". Calm, bright and expensive-looking without effects: a warm
+ * off-white canvas, pure white surfaces, deep ink text, one refined indigo accent (with a violet
+ * gradient used sparingly), module colours only as small chips and dots, ~20px card radii, a hairline
+ * plus one very soft long shadow. Dark mode is deep graphite with the same calm. Nothing here needs a GPU.
+ */
+:root {
+  --ease-out-soft: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Neutral cool canvas (#f4f6f9), white surfaces, ink #111827, muted #4b5563 (AA on white), hairlines #dfe3ea. */
+  --background: oklch(0.973 0.004 255);
+  --foreground: oklch(0.21 0.028 265);
+  --ink: oklch(0.21 0.028 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.028 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.028 265);
+  --primary: oklch(0.49 0.22 272);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.955 0.005 255);
+  --secondary-foreground: oklch(0.28 0.025 265);
+  --muted: oklch(0.955 0.005 255);
+  --muted-foreground: oklch(0.45 0.025 265);
+  --accent: oklch(0.95 0.015 272);
+  --accent-foreground: oklch(0.3 0.08 272);
+  --destructive: oklch(0.55 0.21 25);
+  --border: oklch(0.91 0.01 260);
+  --input: oklch(0.86 0.012 260);
+  --ring: oklch(0.55 0.2 272);
+  --chart-1: oklch(0.49 0.22 272);
+  --chart-2: oklch(0.6 0.13 162);
+  --chart-3: oklch(0.72 0.14 70);
+  --chart-4: oklch(0.6 0.18 12);
+  --chart-5: oklch(0.6 0.1 205);
+  --radius: 0.75rem;
+
+  --success: oklch(0.55 0.13 158);
+  --warning: oklch(0.62 0.14 62);
+  --danger: oklch(0.56 0.2 22);
+
+  --mod-fin: oklch(0.52 0.17 272);
+  --mod-sales: oklch(0.58 0.13 162);
+  --mod-purch: oklch(0.6 0.15 42);
+  --mod-inv: oklch(0.68 0.14 68);
+  --mod-bp: oklch(0.58 0.18 10);
+  --mod-bank: oklch(0.58 0.1 205);
+  --mod-admin: oklch(0.5 0.03 258);
+  --mod-appr: oklch(0.54 0.18 300);
+  --mod: var(--primary);
+
+  /* The one rich surface (hero card, sign-in panel): ink → indigo → violet, static. */
+  --hero: linear-gradient(135deg, oklch(0.2 0.02 275) 0%, oklch(0.3 0.11 272) 55%, oklch(0.42 0.16 292) 100%);
+
+  --shadow-soft-v: 0 1px 2px oklch(0.2 0.02 265 / 0.05);
+  --shadow-lift-v: 0 1px 2px oklch(0.2 0.012 275 / 0.05), 0 20px 44px -16px oklch(0.2 0.012 275 / 0.2);
+  --shadow-pop-v: 0 2px 6px oklch(0.2 0.012 275 / 0.06), 0 28px 64px -20px oklch(0.2 0.012 275 / 0.28);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.32 0.025 265);
+  --sidebar-primary: oklch(0.47 0.19 268);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.96 0.012 272);
+  --sidebar-accent-foreground: oklch(0.21 0.028 265);
+  --sidebar-border: oklch(0.91 0.01 260);
+  --sidebar-ring: oklch(0.6 0.15 268);
+}
+
+.dark {
+  --background: oklch(0.17 0.006 265);
+  --foreground: oklch(0.96 0.003 265);
+  --ink: oklch(0.96 0.003 265);
+  --card: oklch(0.215 0.007 265);
+  --card-foreground: oklch(0.96 0.003 265);
+  --popover: oklch(0.235 0.008 265);
+  --popover-foreground: oklch(0.96 0.003 265);
+  --primary: oklch(0.62 0.19 272);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.26 0.008 265);
+  --secondary-foreground: oklch(0.96 0.003 265);
+  --muted: oklch(0.255 0.008 265);
+  --muted-foreground: oklch(0.76 0.012 265);
+  --accent: oklch(0.28 0.025 272);
+  --accent-foreground: oklch(0.94 0.02 272);
+  --destructive: oklch(0.68 0.17 22);
+  --border: oklch(1 0 0 / 11%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: oklch(0.66 0.16 272);
+  --chart-1: oklch(0.68 0.15 272);
+  --chart-2: oklch(0.72 0.12 162);
+  --chart-3: oklch(0.78 0.12 75);
+  --chart-4: oklch(0.7 0.15 12);
+  --chart-5: oklch(0.72 0.09 205);
+
+  --success: oklch(0.72 0.12 158);
+  --warning: oklch(0.78 0.12 72);
+  --danger: oklch(0.7 0.16 20);
+
+  --mod-fin: oklch(0.7 0.13 272);
+  --mod-sales: oklch(0.73 0.12 162);
+  --mod-purch: oklch(0.75 0.13 46);
+  --mod-inv: oklch(0.79 0.12 72);
+  --mod-bp: oklch(0.72 0.14 10);
+  --mod-bank: oklch(0.74 0.09 205);
+  --mod-admin: oklch(0.72 0.025 258);
+  --mod-appr: oklch(0.72 0.14 300);
+
+  --hero: linear-gradient(135deg, oklch(0.24 0.03 275) 0%, oklch(0.31 0.09 272) 55%, oklch(0.38 0.12 292) 100%);
+
+  --shadow-soft-v: 0 1px 2px oklch(0 0 0 / 0.3), 0 12px 32px -16px oklch(0 0 0 / 0.5);
+  --shadow-lift-v: 0 1px 2px oklch(0 0 0 / 0.3), 0 20px 44px -16px oklch(0 0 0 / 0.6);
+  --shadow-pop-v: 0 2px 6px oklch(0 0 0 / 0.35), 0 28px 64px -20px oklch(0 0 0 / 0.7);
+
+  --sidebar: oklch(0.195 0.007 265);
+  --sidebar-foreground: oklch(0.82 0.01 265);
+  --sidebar-primary: oklch(0.66 0.15 270);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.27 0.02 272);
+  --sidebar-accent-foreground: oklch(0.96 0.003 85);
+  --sidebar-border: oklch(1 0 0 / 9%);
+  --sidebar-ring: oklch(0.66 0.14 270);
+}
+
+/* Table density (user preference, <html data-density>): compact by default, cozy on request. */
+:root { --cell-py: 0.4rem; --head-h: 2.25rem; }
+html[data-density="cozy"] { --cell-py: 0.75rem; --head-h: 2.75rem; }
+
+/*
+ * Module scopes: an element (and everything in it) takes the module's accent as `--mod` and its
+ * gradient as `--mod-grad` (Sales emerald→teal, Purchasing copper→coral, Inventory amber→orange, Financials indigo→violet,
+ * Banking cyan→sky, Partners rose→pink, Admin slate→blue, Approvals violet→fuchsia).
+ */
+:root { --mod-grad: linear-gradient(135deg, oklch(0.55 0.2 266), oklch(0.55 0.2 295)); }
+[data-module="fin"] { --mod: var(--mod-fin); --mod-grad: linear-gradient(135deg, oklch(0.55 0.19 272), oklch(0.56 0.2 300)); }
+[data-module="sales"] { --mod: var(--mod-sales); --mod-grad: linear-gradient(135deg, oklch(0.66 0.15 160), oklch(0.62 0.12 195)); }
+[data-module="purch"] { --mod: var(--mod-purch); --mod-grad: linear-gradient(135deg, oklch(0.7 0.16 55), oklch(0.6 0.19 28)); }
+[data-module="inv"] { --mod: var(--mod-inv); --mod-grad: linear-gradient(135deg, oklch(0.78 0.15 78), oklch(0.68 0.18 48)); }
+[data-module="bp"] { --mod: var(--mod-bp); --mod-grad: linear-gradient(135deg, oklch(0.64 0.2 12), oklch(0.66 0.2 350)); }
+[data-module="bank"] { --mod: var(--mod-bank); --mod-grad: linear-gradient(135deg, oklch(0.7 0.12 205), oklch(0.62 0.15 240)); }
+[data-module="admin"] { --mod: var(--mod-admin); --mod-grad: linear-gradient(135deg, oklch(0.55 0.04 258), oklch(0.55 0.14 255)); }
+[data-module="appr"] { --mod: var(--mod-appr); --mod-grad: linear-gradient(135deg, oklch(0.56 0.2 295), oklch(0.6 0.22 330)); }
+[data-module="home"] { --mod: var(--primary); }
+
+/* An empty required field (kit Field `required`): soft red outline, no mark on the label (same look as DimensionPicker `invalid`). */
+[data-required] :is(input:not([type="checkbox"], [type="radio"], [type="hidden"], :disabled):placeholder-shown, textarea:placeholder-shown, select:not(:disabled):has(> option[value=""]:checked), [data-slot=native-select][data-empty]:not(:disabled, [data-disabled])) {
+  border-color: color-mix(in oklab, var(--destructive) 60%, transparent);
+  background-color: color-mix(in oklab, var(--destructive) 5%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--destructive) 10%, transparent);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.02em;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 20%, transparent);
+  }
+}
+
+/* ---- Motion: short, one-time, transform/opacity only. Off under reduced motion (end of file). ---- */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+@keyframes check-draw { to { stroke-dashoffset: 0; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* The greeting's time-of-day icon rises in once. */
+@keyframes greet-rise {
+  from { opacity: 0; transform: translateY(8px) rotate(-25deg) scale(0.7); }
+  to { opacity: 1; transform: none; }
+}
+.greet-icon { animation: greet-rise 600ms var(--ease-out-back) 200ms both; }
+@keyframes toast-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+@utility animate-rise-in {
+  animation: rise-in 240ms var(--ease-out-soft) both;
+}
+/* The module gradient as a background (icon badges, bands). */
+@utility bg-mod-grad { background-image: var(--mod-grad); }
+/* An icon that hops once when its card (a .group) is hovered. */
+@utility hover-hop {
+  transition: transform 200ms var(--ease-out-back);
+  .group:hover & { transform: translateY(-2px) rotate(-6deg) scale(1.06); }
+}
+/* Links whose underline slides in on hover. */
+@utility link-slide {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  transition: background-size 200ms var(--ease-out-soft);
+  &:hover { background-size: 100% 1px; }
+}
+@utility animate-tab-in { animation: fade-in 160ms var(--ease-out-soft) both; }
+/* The one looping animation: a loading placeholder's shimmer. */
+@utility skeleton-shimmer {
+  background-color: var(--muted);
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in oklab, var(--foreground) 5%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+/* A clickable card: lifts 3px on hover with a deeper shadow. */
+@utility card-lift {
+  transition: transform 180ms var(--ease-out-soft), box-shadow 180ms var(--ease-out-soft), border-color 180ms;
+  &:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift-v); }
+}
+/* The card surface: white, a hairline and one very soft long shadow, ~20px corners. */
+@utility surface {
+  background-color: var(--card);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.4);
+  box-shadow: var(--shadow-soft-v);
+}
+/* App-wide scrollbars: thin, rounded and inset — the thumb floats inside its box (transparent track, a clear border
+   around the thumb) instead of looking glued to the component's edge. Chromium/Edge/Safari use the ::-webkit rules
+   (scrollbar-width/color would switch those off, so they are only set for Firefox); Firefox gets thin + colours. */
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+/* Keep the thumb away from the box's ends so it never runs into rounded corners. */
+::-webkit-scrollbar-track { margin: 8px; }
+/* Grids (list reports, line grids): the scrollbar runs beside the ROWS only — it starts under the sticky header row and
+   stops before the card's rounded bottom corner — and the strip behind it at header height is header-coloured, so the
+   header reads as one band right to the edge (no white notch in the corner). */
+[data-slot=table-shell] { --foot-bg: color-mix(in oklab, var(--muted) 60%, var(--card)); --foot-h: 2.3rem; }
+[data-slot=table-shell]::-webkit-scrollbar-track { margin-top: calc(var(--head-h) + 2px); margin-bottom: 12px; }
+[data-slot=table-shell] { background-image: linear-gradient(var(--muted), var(--muted)); background-size: 100% calc(var(--head-h) + 1px); background-repeat: no-repeat; }
+/* With a totals row (sticky at the bottom), the scrollbar also stops above it and the strip behind it takes its colour. */
+[data-slot=table-shell]:has(tfoot)::-webkit-scrollbar-track { margin-bottom: calc(var(--foot-h) + 2px); }
+[data-slot=table-shell]:has(tfoot) {
+  background-image: linear-gradient(var(--muted), var(--muted)), linear-gradient(var(--foot-bg), var(--foot-bg));
+  background-size: 100% calc(var(--head-h) + 1px), 100% var(--foot-h);
+  background-position: top, bottom;
+}
+
+/* Rounded overlays (dialogs, sheets, popovers, menus, pickers, the map panel) have bigger radii: more room at the ends. */
+:is([data-slot=dialog-content], [data-slot=popover-content], [data-slot=dropdown-menu-content], [data-slot=select-content],
+  [data-slot=command-list], [data-slot=sheet-content], [role=dialog], [role=listbox], [role=menu]) ::-webkit-scrollbar-track,
+:is([data-slot=dialog-content], [data-slot=popover-content], [data-slot=dropdown-menu-content], [data-slot=select-content],
+  [data-slot=command-list], [data-slot=sheet-content], [role=dialog], [role=listbox], [role=menu])::-webkit-scrollbar-track { margin: 16px; }
+::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--foreground) 20%, transparent);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in oklab, var(--foreground) 38%, transparent); }
+::-webkit-scrollbar-thumb:active { background-color: color-mix(in oklab, var(--foreground) 50%, transparent); }
+@supports (-moz-appearance: none) {
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--foreground) 24%, transparent) transparent; }
+}
+
+/* Thin, quiet scrollbars (sidebar, tab strip). */
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, currentColor 22%, transparent) transparent;
+}
+
+/* Toasts: white cards with an accent icon and a thin bar for the time left. */
+[data-sonner-toast][data-styled="true"] {
+  border-radius: 16px !important;
+  box-shadow: var(--shadow-pop-v) !important;
+  overflow: hidden;
+}
+[data-sonner-toast][data-styled="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  transform-origin: left;
+  background: currentColor;
+  opacity: 0.25;
+  animation: toast-progress 4s linear forwards;
+}
+[data-sonner-toast][data-type="success"] [data-icon] { color: var(--success); }
+[data-sonner-toast][data-type="error"] [data-icon] { color: var(--danger); }
+[data-sonner-toast][data-type="info"] [data-icon] { color: var(--primary); }
+[data-sonner-toast][data-type="warning"] [data-icon] { color: var(--warning); }
+[data-sonner-toast] [data-icon] {
+  width: 28px !important; height: 28px !important;
+  border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+  margin-right: 4px;
+}
+
+/* Relationship map (components/relmap). Motion is transform / opacity / stroke-dashoffset only; under reduced motion the map adds none
+   of these classes (everything shows at once).
+   - The window grows out of the button that opened it (--relmap-origin) with a slight overshoot, and shrinks back into it on close;
+     the backdrop only dims (no blur).
+   - Reveal: this document pops with one glow pulse, the rest rise in column by column, each link draws itself (dashoffset 1 → 0) as its
+     target comes in, then its arrow / dash pattern (.relmap-after) and label pill pop in.
+   - Hover: the chain stays, the rest fades to 30% (pure CSS: .relmap-hovering + one rule listing the chain, map-dialog hoverCss). */
+@keyframes relmap-grow { from { opacity: 0; transform: scale(0.3); } to { opacity: 1; transform: none; } }
+@keyframes relmap-shrink { from { opacity: 1; transform: none; } to { opacity: 0; transform: scale(0.3); } }
+@keyframes relmap-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+@keyframes relmap-pulse { from { opacity: 0.75; transform: scale(1); } to { opacity: 0; transform: scale(1.14); } }
+@keyframes relmap-rise { from { opacity: 0; transform: translateY(8px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes relmap-draw { to { stroke-dashoffset: 0; } }
+@keyframes relmap-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes relmap-fade-out { to { opacity: 0; } }
+@keyframes relmap-label { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: none; } }
+@keyframes relmap-bar { from { transform: scaleX(0); } to { transform: none; } }
+@keyframes relmap-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+[data-slot="dialog-content"].relmap-dialog[data-open] { transform-origin: var(--relmap-origin, 50% 50%); animation: relmap-grow 260ms cubic-bezier(0.34, 1.32, 0.64, 1) both; }
+[data-slot="dialog-content"].relmap-dialog[data-closed] { transform-origin: var(--relmap-origin, 50% 50%); animation: relmap-shrink 200ms cubic-bezier(0.4, 0, 1, 1) both; }
+[data-slot="dialog-overlay"]:has(+ .relmap-dialog) { backdrop-filter: none; }
+.relmap-pop { animation: relmap-pop 320ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards; }
+.relmap-pulse { border: 2px solid var(--mod); opacity: 0; animation: relmap-pulse 700ms ease-out forwards; }
+.relmap-rise { animation: relmap-rise 260ms var(--ease-out-soft) backwards; }
+.relmap-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: relmap-draw 350ms ease-out forwards, relmap-fade-out 150ms ease-out forwards; }
+.relmap-after { animation: relmap-fade-in 150ms ease-out backwards; }
+.relmap-label-pop { animation: relmap-label 200ms cubic-bezier(0.34, 1.4, 0.64, 1) backwards; }
+.relmap-bar { transform-origin: left; animation: relmap-bar 400ms var(--ease-out-soft) backwards; }
+.relmap-dots i { display: inline-block; width: 4px; height: 4px; border-radius: 9999px; background: currentColor; animation: relmap-dot 1s infinite; }
+.relmap-dots i:nth-child(2) { animation-delay: 160ms; }
+.relmap-dots i:nth-child(3) { animation-delay: 320ms; }
+.relmap-leaving { opacity: 0 !important; transition: opacity 180ms ease-out; }
+.relmap-flow { --xy-background-color: var(--background); }
+.relmap-card { transition: transform 160ms var(--ease-out-soft), box-shadow 160ms var(--ease-out-soft); }
+.relmap-card:hover { transform: translateY(-2px); }
+.relmap-card:not([data-current]):hover { box-shadow: var(--shadow-lift-v); }
+.relmap-flow .react-flow__node:focus-visible { outline: none; }
+.relmap-flow .react-flow__node:focus-visible .relmap-card { box-shadow: 0 0 0 2px var(--ring); }
+.relmap-flow .react-flow__node, .relmap-flow .react-flow__edge, .relmap-flow [data-edge-label] { transition: opacity 120ms ease-out; }
+.relmap-hovering .react-flow__node, .relmap-hovering .react-flow__edge, .relmap-hovering [data-edge-label] { opacity: 0.3; }
+.relmap-minimap { --xy-minimap-background-color: var(--card); --xy-minimap-mask-background-color: color-mix(in oklch, var(--muted) 60%, transparent);
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.relmap-minimap .react-flow__minimap-node { fill: var(--mod-fin); }
+.relmap-minimap .relmap-mm-sales { fill: var(--mod-sales); }
+.relmap-minimap .relmap-mm-purch { fill: var(--mod-purch); }
+.relmap-minimap .relmap-mm-bank { fill: var(--mod-bank); }
+.relmap-minimap .relmap-mm-inv { fill: var(--mod-inv); }
+
+/* Reduced motion: the operating-system setting, or the user's own "Reduce animations" (html[data-reduce-motion]). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-reduce-motion] *, html[data-reduce-motion] *::before, html[data-reduce-motion] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Printable reports (e.g. bank reconciliation): only the report's own area prints. */
+@media print {
+  body:has(.print-area) * { visibility: hidden; }
+  body:has(.print-area) .print-area, body:has(.print-area) .print-area * { visibility: visible; }
+  body:has(.print-area) .print-area { position: absolute; inset: 0 auto auto 0; width: 100%; }
+  /* A receipt or credit note printed from the browser keeps the receipt printer's layout: 72 mm wide (an 80 mm roll), the whole
+     receipt (not cut at the on-screen scroll height), no screen border. */
+  body:has(.print-area) .print-receipt { width: 72mm; max-height: none; overflow: visible; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+}

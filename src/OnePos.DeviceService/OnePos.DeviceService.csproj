@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- One POS Device Service (REQ HW-01 … HW-08): a small Windows service on each till that drives the receipt printer, the cash drawer
+       (through the printer) and a pole display, for the One POS web app running in the browser on the same PC. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <RootNamespace>OnePos.DeviceService</RootNamespace>
+    <AssemblyName>OnePos.DeviceService</AssemblyName>
+    <!-- The release number the updater compares (tools/release-device-service.ps1 sets it for a release). -->
+    <Version>1.2.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

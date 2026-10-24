@@ -1,0 +1,40 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+
+# Local data: data-protection keys, uploads (never in git)
+data/
+
+# Web
+node_modules/
+web/.next/
+web/out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Build output and releases (hundreds of MB; rebuilt by deploy/release.sh)
+out/
+deploy/releases/
+
+# Environment files with real settings and passwords (deploy/env/env.example is the template)
+.env
+.env.*
+!.env.example
+*.env
+!env.example
+
+# Keys and certificates
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Local tools and editors
+.claude/
+.idea/
+*.log
+
+# Python
+__pycache__/

@@ -1,0 +1,12 @@
+**/bin
+**/obj
+**/node_modules
+**/.next
+web
+data
+out
+installer
+tests
+tools
+deploy/releases
+*.log

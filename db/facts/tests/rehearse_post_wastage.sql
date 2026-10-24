@@ -1,0 +1,25 @@
+-- One POS: rehearse usp_ONEPOS_PostWastageTransfer: 0.01 KG of COFFEE BEAN (505302) wasted at Al Qusais (ERBQS -> WEBQS), posted as
+-- QasimullahM (change @User to the branch approver's FACTS username). Everything is rolled back at the end: no STV50 stays, no stock
+-- moves, the STV50 last number is unchanged. Run after creating the procedure.
+DECLARE @User NVARCHAR(20) = N'QasimullahM';
+SET XACT_ABORT OFF;
+BEGIN TRANSACTION;
+
+EXEC dbo.usp_ONEPOS_PostWastageTransfer @ClientID = @User, @BodyXML = N'<data><Transfer><DocDate>2026-10-21</DocDate><FromLocation>ERBQS</FromLocation><ToLocation>WEBQS</ToLocation>
+  <Reference>One POS wastage REHEARSAL</Reference>
+  <Line><ItemType>SMBK</ItemType><ItemCode>505302</ItemCode><ItemName>COFFEE BEAN BRAZIL</ItemName><Qty>0.01</Qty><Unit>KG</Unit></Line>
+</Transfer></data>';
+
+-- What it made (inside the transaction): the transfer, its batch lines, the stock moves, FACTS' approval record and log.
+SELECT TSF_DOCNO, TSF_NARRATION, TSF_LOCATION_FM_DOCNO, TSF_LOCATION_TO_DOCNO, TSF_POSTED_BY, TSF_POSTED_TS FROM dbo.TRANSFER_HEADER WHERE TSF_DOCTYPE = 'STV50' AND TSF_NARRATION = N'One POS wastage REHEARSAL';
+SELECT d.TSFDET_DOCSRNO, d.TSFDET_STOCK_DOCNO, d.TSFDET_QTY, d.TSFDET_UNIT_DOCNO, d.TSFDET_BATCH_DOCNO FROM dbo.TRANSFER_DETAILS d
+JOIN dbo.TRANSFER_HEADER h ON h.TSF_FYCODE = d.TSFDET_FYCODE AND h.TSF_DOCTYPE = d.TSFDET_DOCTYPE AND h.TSF_DOCNO = d.TSFDET_DOCNO WHERE h.TSF_DOCTYPE = 'STV50' AND h.TSF_NARRATION = N'One POS wastage REHEARSAL';
+SELECT t.STTRN_DOCSRNO, t.STTRN_STOCK_DOCNO, t.STTRN_LOCATION_DOCNO, t.STTRN_QTY, t.STTRN_BATCH_DOCNO FROM dbo.STOCK_TRANSACTION t
+JOIN dbo.TRANSFER_HEADER h ON h.TSF_DOCTYPE = t.STTRN_DOCTYPE AND h.TSF_DOCNO = t.STTRN_DOCNO WHERE h.TSF_DOCTYPE = 'STV50' AND h.TSF_NARRATION = N'One POS wastage REHEARSAL';
+SELECT a.ACTION_DOCNO, a.ACTION_KEY, a.ACTION_TYPE, a.ACTION_USER_DOCNO FROM dbo.ACTION_STATUS a
+JOIN dbo.TRANSFER_HEADER h ON h.TSF_DOCTYPE = a.ACTION_DOCTYPE AND h.TSF_DOCNO = a.ACTION_DOCNO WHERE h.TSF_DOCTYPE = 'STV50' AND h.TSF_NARRATION = N'One POS wastage REHEARSAL';
+SELECT l.AED_DOCNO, l.AED_STATUS, l.AED_REF1, l.AED_USER_CODE FROM dbo.ADD_EDIT_DELETE_LOG l
+JOIN dbo.TRANSFER_HEADER h ON h.TSF_DOCTYPE = l.AED_DOCTYPE AND h.TSF_DOCNO = l.AED_DOCNO WHERE h.TSF_DOCTYPE = 'STV50' AND h.TSF_NARRATION = N'One POS wastage REHEARSAL';
+
+IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+SELECT 'Rolled back' AS done;

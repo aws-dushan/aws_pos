@@ -1,0 +1,11 @@
+M:System.Math.Round(System.Decimal);Banker's rounding. Use Money.Round
+M:System.Math.Round(System.Decimal,System.Int32);Banker's rounding. Use Money.Round
+M:System.Math.Round(System.Double);Never use double for money/qty. Use decimal + Money.Round
+M:System.Math.Round(System.Double,System.Int32);Never use double for money/qty. Use decimal + Money.Round
+M:System.Decimal.Round(System.Decimal);Banker's rounding. Use Money.Round
+M:System.Decimal.Round(System.Decimal,System.Int32);Banker's rounding. Use Money.Round
+M:System.Decimal.op_Explicit(System.Decimal)~System.Double;Converting money/qty to double loses precision
+M:System.Decimal.op_Explicit(System.Decimal)~System.Single;Converting money/qty to float loses precision
+P:System.DateTime.Today;The server's date, not the company's. Use the branch business day (Platform/BusinessClock)
+P:System.DateTime.Now;The server's clock, not the company's. Use DateTime.UtcNow for a timestamp
+P:System.DateTimeOffset.Now;The server's clock. Use DateTimeOffset.UtcNow
