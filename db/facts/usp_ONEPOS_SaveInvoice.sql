@@ -17,6 +17,8 @@ AS
      A made-to-order item (a BOM item) takes the batch its own bill's repacking voucher made: the posted RPO50 with Reference
      "One POS repacking <invoice no>" (usp_ONEPOS_PostRepacking, sent just before the bill) brought it in as RPO50-<number>-<line>;
      the sale takes that batch out again. Only when that batch hasn't enough left does the line go FIFO.          (20-10-2026)
+  A delivery platform's bill (Talabat, Deliveroo…) gets the platform's order number in "Cust. LPO#" (SAL_REFNO) and SAL_REF1: One POS sends it
+     as /data/Invoice/PlatformOrderNo, which FACTS' own procedure ignores.                                         (24-10-2026)
   3. A line no batch covers keeps no batch (for finance's batch update, as today) and is named in the answer. Giving batches
      can't undo the saved sale: if that step fails, the sale stays and the answer says so.
 
@@ -38,6 +40,13 @@ BEGIN
     SELECT TOP 1 @FyCode = SAL_FYCODE, @DocDate = SAL_DOCDATE, @Location = SAL_LOCATION_DOCNO
     FROM dbo.SALES_HEADER WHERE SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo ORDER BY SAL_CREATED_TS DESC;
     IF @FyCode IS NULL RETURN;   -- not saved (FACTS answered FAILED): no lines to give batches to
+
+    -- A delivery platform's order (Talabat…): its own order number in the bill's "Cust. LPO#" (SAL_REFNO, the box the screen
+    -- shows, as on SI50) and in Reference 1 (SAL_REF1).                                                         (24-10-2026)
+    DECLARE @PlatformOrderNo NVARCHAR(250) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/Invoice/PlatformOrderNo)[1]', 'NVARCHAR(250)'))), N'');
+    IF @PlatformOrderNo IS NOT NULL
+        UPDATE dbo.SALES_HEADER SET SAL_REFNO = @PlatformOrderNo, SAL_REF1 = @PlatformOrderNo
+        WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
 
     -- 2. Batches, FIFO, line by line.
     DECLARE @Given INT = 0, @Missing NVARCHAR(1000) = N'', @Note NVARCHAR(400) = NULL;
