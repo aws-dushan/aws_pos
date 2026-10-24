@@ -1,0 +1,22 @@
+# One POS — local development stack.
+# Postgres runs on host port 5434 (5432: a local PostgreSQL install, 5433: AWS One's).
+# Credentials below are for local development only.
+services:
+  db:
+    image: postgres:17
+    container_name: onepos-db
+    environment:
+      POSTGRES_DB: onepos
+      POSTGRES_USER: onepos_owner
+      POSTGRES_PASSWORD: onepos_owner_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - onepos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onepos_owner -d onepos"]
+      interval: 3s
+      retries: 20
+
+volumes:
+  onepos-pgdata:

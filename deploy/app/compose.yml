@@ -1,0 +1,91 @@
+# One POS on the application server (AWS-App): one environment = API + web + nightly backup of its database and files.
+#
+#   docker compose -f /opt/aws/onepos/compose.app.yml -p onepos-live --env-file /opt/aws/onepos/live/.env up -d
+#   (bin/onepos deploy does this; never edit a running environment by hand)
+#
+# The same file serves live and test: everything that differs is in the environment's .env (deploy/env/env.example).
+# Nothing here is tied to this server: DB_HOST / DB_PORT point at the database (another server or this one), DATA_DIR holds every file the
+# environment keeps, EDGE_NETWORK is the shared gateway's Docker network.
+
+name: onepos-${ONEPOS_ENV:?}
+
+x-db: &db
+  DB_HOST: ${DB_HOST:?}
+  DB_PORT: ${DB_PORT:?}
+
+services:
+  api:
+    image: onepos-api:${ONEPOS_VERSION:?}
+    container_name: onepos-${ONEPOS_ENV}-api
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__Owner: "Host=${DB_HOST};Port=${DB_PORT};Database=onepos;Username=onepos_owner;Password=${DB_OWNER_PASSWORD:?}"
+      ConnectionStrings__App: "Host=${DB_HOST};Port=${DB_PORT};Database=onepos;Username=onepos_app;Password=${DB_APP_PASSWORD:?}"
+      Auth__CookieName: onepos-${ONEPOS_ENV}
+      Auth__CookiePath: ${BASE_PATH:?}
+      # Signs till PINs; fixed per environment (changing it makes every PIN invalid).
+      Pins__Secret: ${PINS_SECRET:?}
+      # First start only (empty database): creates this administrator; the password must be changed at the first sign-in.
+      Seed__AdminUsername: ${SEED_ADMIN_USERNAME:-admin}
+      Seed__AdminPassword: ${SEED_ADMIN_PASSWORD:-}
+      # The web app's address, for links in emails (e.g. a wastage request's "Open in One POS").
+      PublicUrl: ${PUBLIC_URL:-}
+      TZ: ${TZ:-Asia/Dubai}
+    # /data: sign-in keys (keys/), item and branding pictures (images/), Device Service installers (releases/device-service/).
+    volumes:
+      - ${DATA_DIR:?}/files:/data
+    networks: [internal]
+    deploy:
+      resources:
+        limits: { cpus: "${API_CPUS:-2}", memory: "${API_MEMORY:-1536m}" }
+    logging: &logging
+      driver: json-file
+      options: { max-size: 20m, max-file: "5" }
+
+  web:
+    image: onepos-web-${ONEPOS_ENV}:${ONEPOS_VERSION}
+    container_name: onepos-${ONEPOS_ENV}-web
+    restart: unless-stopped
+    depends_on: [api]
+    networks:
+      internal: {}
+      # The shared gateway reaches the web app as onepos-<env>-web (deploy/app/edge-onepos.conf). Only the web app joins it; the API
+      # stays on the environment's own network.
+      edge: {}
+    deploy:
+      resources:
+        limits: { cpus: "${WEB_CPUS:-1}", memory: "${WEB_MEMORY:-768m}" }
+    logging: *logging
+
+  # Nightly at BACKUP_AT: a portable dump of the database and a copy of the files, kept on this server (BACKUP_DIR) and copied to the
+  # database server (OFFSITE_TARGET), so losing either server loses nothing. The database server also keeps point-in-time recovery.
+  backup:
+    image: ${PG_IMAGE:?}
+    container_name: onepos-${ONEPOS_ENV}-backup
+    restart: unless-stopped
+    entrypoint: ["/usr/local/bin/onepos-app-backup"]
+    environment:
+      <<: *db
+      ONEPOS_ENV: ${ONEPOS_ENV}
+      PGPASSWORD: ${DB_OWNER_PASSWORD}
+      BACKUP_AT: ${BACKUP_AT:-02:45}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      OFFSITE_TARGET: ${OFFSITE_TARGET:-}
+      # The web app's address, for links in emails (e.g. a wastage request's "Open in One POS").
+      PublicUrl: ${PUBLIC_URL:-}
+      TZ: ${TZ:-Asia/Dubai}
+    volumes:
+      - ${DATA_DIR}/files:/data:ro
+      - ${BACKUP_DIR:?}:/backups
+      - ${OFFSITE_KEY:-/dev/null}:/run/offsite_key:ro
+    networks: [internal]
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512m }
+    logging: *logging
+
+networks:
+  internal: {}
+  edge:
+    external: true
+    name: ${EDGE_NETWORK:-aws-app_aws-app}
