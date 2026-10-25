@@ -55,6 +55,8 @@ export type DayReport = {
   /** The day's cash over all its shifts (older stored Z reports don't have it). */
   cash?: {
     openingFloat: number; cashSales: number; cashRefunds: number; cashIn: number; cashOut: number; drops: number; deposits?: number; expected: number; counted: number; uncounted: number;
+    /** Taken out (positive) or put in between shifts on the same till: the last count less the next float (reports since 25 Oct). */
+    shiftChange?: number;
     movements: { kind: MoveKind; amount: number; reason: string; register: string | null; by: string | null; at: string }[];
   };
   openOrders: { count: number; value: number };
@@ -317,7 +319,7 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
   // The day's cash, all shifts together: it adds up to what the drawers should hold, against what was counted.
   if (z.cash) {
     const k = z.cash;
-    out.push({ rule: true }, { text: "CASH (all shifts)", bold: true }, { text: "Opening floats", right: money(k.openingFloat) }, { text: "Cash sales", right: money(k.cashSales) });
+    out.push({ rule: true }, { text: "CASH (all tills)", bold: true }, { text: k.shiftChange === undefined ? "Opening floats" : "Opening float", right: money(k.openingFloat) }, { text: "Cash sales", right: money(k.cashSales) });
     if (k.cashRefunds) out.push({ text: "Cash refunds", right: `-${money(k.cashRefunds)}` });
     for (const m of k.movements) out.push({ text: `${MOVE_LABEL[m.kind]}: ${m.reason}${m.register ? ` (${m.register})` : ""}`, right: `${m.kind === "in" ? "" : "-"}${money(m.amount)}`, size: "small" });
     if (k.movements.length) {
@@ -326,8 +328,10 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
       if (k.drops) out.push({ text: "Safe drops, total", right: `-${money(k.drops)}` });
       if (k.deposits) out.push({ text: "Bank deposits from drawers, total", right: `-${money(k.deposits)}` });
     }
+    if (k.shiftChange) out.push({ text: k.shiftChange > 0 ? "Taken out at shift changes" : "Put in at shift changes", right: `${k.shiftChange > 0 ? "-" : ""}${money(Math.abs(k.shiftChange))}` });
     out.push({ text: "Expected in drawers", right: money(k.expected), bold: true });
-    out.push({ text: k.uncounted ? `Counted (${k.uncounted} shift${k.uncounted === 1 ? "" : "s"} not counted yet)` : "Counted", right: money(k.counted) });
+    const unit = k.shiftChange === undefined ? "shift" : "till";
+    out.push({ text: k.uncounted ? `Counted (${k.uncounted} ${unit}${k.uncounted === 1 ? "" : "s"} not counted yet)` : "Counted", right: money(k.counted) });
   }
   out.push({ rule: true }, { text: `Voids (${z.voids.count})`, right: money(z.voids.value) });
   for (const s of z.shifts) out.push({ text: `${s.registerName} · ${s.userName}`, right: s.variance === null ? SHIFT_STATUS[s.status] : money(s.variance), size: "small" });

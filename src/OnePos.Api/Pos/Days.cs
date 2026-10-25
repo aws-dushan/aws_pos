@@ -213,6 +213,54 @@ public static class Days
         };
     }
 
+    public sealed record CashMove(string Kind, decimal Amount, string Reason, string? Register, string? By, DateTime At);
+    /// <summary>The day's cash, till by till (see <see cref="DayCashAsync"/>).</summary>
+    public sealed record DayCash(decimal OpeningFloat, decimal CashSales, decimal CashRefunds, decimal CashIn, decimal CashOut, decimal Drops, decimal Deposits,
+        decimal ShiftChange, decimal Expected, decimal Counted, int Uncounted, IReadOnlyList<CashMove> Movements);
+
+    /// <summary>
+    /// The day's cash, TILL BY TILL: a till's shifts follow each other in one drawer, so the next shift's float is (mostly) the cash the
+    /// last one counted, not more money. Per till: the first shift's float + every shift's cash sales − refunds + cash in − cash out −
+    /// drops − bank deposits; what was taken out (or put in) between shifts = the last count less the next float; the drawer should
+    /// end on the last shift's expected, against the last shift's count (a till whose last shift isn't counted yet counts nothing).
+    /// </summary>
+    public static async Task<DayCash> DayCashAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid dayId)
+    {
+        var shifts = (await c.QueryAsync<(Guid Id, Guid Register, decimal Float, string Status, decimal? Expected, decimal? Counted)>("""
+            select id, register_id, opening_float, status, expected_cash, counted_cash from shift where business_day_id = @dayId order by register_id, opened_at
+            """, new { dayId }, tx)).ToList();
+        var flows = await c.QuerySingleAsync<(decimal Sales, decimal Refunds, decimal In, decimal Out, decimal Drops, decimal Deposits)>("""
+            select
+              coalesce((select sum(amount) from payment p join shift x on x.id = p.shift_id where x.business_day_id = @dayId and p.method = 'cash' and p.kind = 'payment'), 0),
+              coalesce((select sum(amount) from payment p join shift x on x.id = p.shift_id where x.business_day_id = @dayId and p.method = 'cash' and p.kind = 'refund'), 0),
+              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @dayId and m.kind = 'in'), 0),
+              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @dayId and m.kind = 'out'), 0),
+              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @dayId and m.kind = 'drop'), 0),
+              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @dayId and m.kind = 'deposit'), 0)
+            """, new { dayId }, tx);
+        decimal firstFloats = 0, change = 0, expected = 0, counted = 0;
+        var uncounted = 0;
+        foreach (var till in shifts.GroupBy(s => s.Register))
+        {
+            var list = till.ToList();
+            firstFloats += list[0].Float;
+            for (var i = 1; i < list.Count; i++)
+            {
+                var before = list[i - 1].Counted ?? list[i - 1].Expected ?? (await ExpectedAsync(c, tx, list[i - 1].Id)).Expected;
+                change += before - list[i].Float;
+            }
+            var last = list[^1];
+            expected += last.Status == "open" || last.Expected is null ? (await ExpectedAsync(c, tx, last.Id)).Expected : last.Expected.Value;
+            if (last.Counted is { } k) counted += k; else uncounted++;
+        }
+        var moves = (await c.QueryAsync<CashMove>("""
+            select m.kind, m.amount, m.reason, r.name as register, u.display_name as "by", m.at from cash_movement m join shift x on x.id = m.shift_id
+            left join register r on r.id = x.register_id left join app_user u on u.id = m.by_user
+            where x.business_day_id = @dayId order by m.at
+            """, new { dayId }, tx)).ToList();
+        return new DayCash(firstFloats, flows.Sales, flows.Refunds, flows.In, flows.Out, flows.Drops, flows.Deposits, change, expected, counted, uncounted, moves);
+    }
+
     /// <summary>The day's Z report: sales, VAT, discounts, by type and method, refunds, voids, shifts and their variances, deposits.</summary>
     private static async Task<object> DayReportAsync(NpgsqlConnection c, NpgsqlTransaction tx, DayRow day)
     {
@@ -243,24 +291,7 @@ public static class Days
             select d.amount, d.bag_no, d.taken_by, d.at, r.name from bank_deposit d left join shift s on s.id = d.shift_id left join register r on r.id = s.register_id
             where d.business_day_id = @id order by d.at
             """, args, tx);
-        // The day's cash, over all its shifts, as each shift's expected cash adds up: floats + cash sales − cash refunds + cash in −
-        // cash out − safe drops; against what was counted (shifts not counted yet are left out of the count).
-        var cash = await c.QuerySingleAsync<(decimal Float, decimal Sales, decimal Refunds, decimal In, decimal Out, decimal Drops, decimal Deposits, decimal Counted, int Uncounted)>("""
-            select coalesce(sum(s.opening_float), 0),
-              coalesce((select sum(amount) from payment p join shift x on x.id = p.shift_id where x.business_day_id = @id and p.method = 'cash' and p.kind = 'payment'), 0),
-              coalesce((select sum(amount) from payment p join shift x on x.id = p.shift_id where x.business_day_id = @id and p.method = 'cash' and p.kind = 'refund'), 0),
-              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @id and m.kind = 'in'), 0),
-              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @id and m.kind = 'out'), 0),
-              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @id and m.kind = 'drop'), 0),
-              coalesce((select sum(amount) from cash_movement m join shift x on x.id = m.shift_id where x.business_day_id = @id and m.kind = 'deposit'), 0),
-              coalesce(sum(s.counted_cash), 0), count(*) filter (where s.counted_cash is null)::int
-            from shift s where s.business_day_id = @id
-            """, args, tx);
-        var moves = await c.QueryAsync<(string Kind, decimal Amount, string Reason, string? Register, string? By, DateTime At)>("""
-            select m.kind, m.amount, m.reason, r.name, u.display_name, m.at from cash_movement m join shift x on x.id = m.shift_id
-            left join register r on r.id = x.register_id left join app_user u on u.id = m.by_user
-            where x.business_day_id = @id order by m.at
-            """, args, tx);
+        var cash = await DayCashAsync(c, tx, day.Id);
         var open = await c.QuerySingleAsync<(int Count, decimal Value)>("select count(*)::int, coalesce(sum(total), 0) from pos_order where branch_id = @b and status = 'open'", args, tx);
         var waste = await c.QuerySingleAsync<(int Count, decimal Value)>(
             "select count(*)::int, coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null", args, tx);
@@ -277,12 +308,7 @@ public static class Days
             variance = shifts.Sum(s => s.Variance ?? 0),
             deposits = deposits.Select(x => new { x.Amount, x.BagNo, x.TakenBy, x.At, fromRegister = x.Register }),
             depositTotal = deposits.Sum(x => x.Amount),
-            cash = new
-            {
-                openingFloat = cash.Float, cashSales = cash.Sales, cashRefunds = cash.Refunds, cashIn = cash.In, cashOut = cash.Out, drops = cash.Drops, deposits = cash.Deposits,
-                expected = cash.Float + cash.Sales - cash.Refunds + cash.In - cash.Out - cash.Drops - cash.Deposits, counted = cash.Counted, uncounted = cash.Uncounted,
-                movements = moves.Select(m => new { m.Kind, m.Amount, m.Reason, m.Register, m.By, m.At }),
-            },
+            cash,
             openOrders = new { open.Count, open.Value },
             wastage = new { waste.Count, waste.Value },
             noSales = await c.ExecuteScalarAsync<int>("select count(*)::int from no_sale where branch_id = @b and business_date = @d", args, tx),
