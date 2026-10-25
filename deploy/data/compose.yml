@@ -1,0 +1,65 @@
+# One POS database on the data server (AWS-Data): one environment = one PostgreSQL 17 with pgBackRest point-in-time recovery.
+#
+#   docker compose -f /opt/aws/onepos/compose.data.yml -p onepos-live-db --env-file /opt/aws/onepos/live/.env up -d
+#
+# Separate from SFA's databases (own container, data folder, port and roles). Bound to the internal address only: the application server
+# is the only thing that can reach it. Everything the environment keeps is under DATA_DIR (database files + backup repository), so moving
+# it is "stop, copy DATA_DIR, start" or a restore from backup (deploy/README.md).
+
+name: onepos-${ONEPOS_ENV:?}-db
+
+services:
+  db:
+    image: ${PG_IMAGE:?}
+    container_name: onepos-${ONEPOS_ENV}-db
+    restart: unless-stopped
+    # Starts the backup scheduler (full on Sundays, differential other nights, at BACKUP_AT) next to PostgreSQL.
+    entrypoint: ["/usr/local/bin/onepos-db-entrypoint"]
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE:-3GB}
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=200
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=pgbackrest --stanza=onepos archive-push %p
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - log_timezone=${TZ:-Asia/Dubai}
+      # Queries slower than 2 s are written to the log, so a report that needs an index shows up after go-live (0174 review).
+      - -c
+      - log_min_duration_statement=2000
+    environment:
+      POSTGRES_DB: onepos
+      POSTGRES_USER: onepos_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?}
+      BACKUP_AT: ${DB_BACKUP_AT:-01:45}
+      TZ: ${TZ:-Asia/Dubai}
+    ports:
+      - "${DB_BIND:?}:${DB_PORT:?}:5432"
+    shm_size: 512m
+    volumes:
+      - ${DATA_DIR:?}/pgdata:/var/lib/postgresql/data
+      - ${DATA_DIR}/pgbackrest:/var/lib/pgbackrest
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onepos_owner -d onepos"]
+      interval: 10s
+      retries: 30
+    deploy:
+      resources:
+        limits: { cpus: "${DB_CPUS:-4}", memory: "${DB_MEMORY:-4g}" }
+    logging:
+      driver: json-file
+      options: { max-size: 20m, max-file: "5" }
