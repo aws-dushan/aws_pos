@@ -96,22 +96,14 @@ public static class Notices
         if (waste > 0) summary.Add(new("Wastage", M(waste)));
         if (top.Count > 0) summary.Add(new("Best sellers", string.Join(", ", top.Select(t => $"{t.Name} ×{t.Qty:0.###}"))));
 
-        // The day's cash, all shifts together (as the day's Z report): what the drawers should hold against what was counted, each
-        // cash in / cash out (by reason), safe drops, and the bank deposits (from a drawer or from the safe).
-        var cash = await c.QuerySingleAsync<(decimal Float, decimal Sales, decimal Refunds, decimal In, decimal Out, decimal Drops, decimal Deposits, decimal Counted, int Uncounted)>("""
-            select coalesce(sum(s.opening_float), 0),
-              coalesce((select sum(p.amount) from payment p join shift x on x.id = p.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and p.method = 'cash' and p.kind = 'payment'), 0),
-              coalesce((select sum(p.amount) from payment p join shift x on x.id = p.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and p.method = 'cash' and p.kind = 'refund'), 0),
-              coalesce((select sum(m.amount) from cash_movement m join shift x on x.id = m.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and m.kind = 'in'), 0),
-              coalesce((select sum(m.amount) from cash_movement m join shift x on x.id = m.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and m.kind = 'out'), 0),
-              coalesce((select sum(m.amount) from cash_movement m join shift x on x.id = m.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and m.kind = 'drop'), 0),
-              coalesce((select sum(m.amount) from cash_movement m join shift x on x.id = m.shift_id join business_day bd on bd.id = x.business_day_id where bd.branch_id = @b and bd.date = @d and m.kind = 'deposit'), 0),
-              coalesce(sum(s.counted_cash), 0), count(*) filter (where s.counted_cash is null)::int
-            from shift s join business_day bd on bd.id = s.business_day_id where bd.branch_id = @b and bd.date = @d
-            """, a, tx);
-        var expectedCash = cash.Float + cash.Sales - cash.Refunds + cash.In - cash.Out - cash.Drops - cash.Deposits;
-        summary.Add(new("Cash expected in drawers", $"{M(expectedCash)} (floats {M(cash.Float)} + cash sales {M(cash.Sales)}{(cash.Refunds > 0 ? $" − refunds {M(cash.Refunds)}" : "")})"));
-        summary.Add(new("Cash counted", $"{M(cash.Counted)}{(cash.Uncounted > 0 ? $" ({cash.Uncounted} shift{(cash.Uncounted == 1 ? "" : "s")} not counted)" : "")}", cash.Uncounted > 0));
+        // The day's cash, till by till (as the day's Z report, Days.DayCashAsync): what the drawers should hold against what was
+        // counted, each cash in / cash out (by reason), safe drops, and the bank deposits (from a drawer or from the safe).
+        var dayId = await c.ExecuteScalarAsync<Guid>("select id from business_day where branch_id = @b and date = @d", a, tx);
+        var cash = await Days.DayCashAsync(c, tx, dayId);
+        summary.Add(new("Cash expected in drawers", $"{M(cash.Expected)} (opening float {M(cash.OpeningFloat)} + cash sales {M(cash.CashSales)}{(cash.CashRefunds > 0 ? $" − refunds {M(cash.CashRefunds)}" : "")})"));
+        if (cash.ShiftChange != 0)
+            summary.Add(new(cash.ShiftChange > 0 ? "Taken out at shift changes" : "Put in at shift changes", M(Math.Abs(cash.ShiftChange))));
+        summary.Add(new("Cash counted", $"{M(cash.Counted)}{(cash.Uncounted > 0 ? $" ({cash.Uncounted} till{(cash.Uncounted == 1 ? "" : "s")} not counted)" : "")}", cash.Uncounted > 0));
         var moves = await c.QueryAsync<(string Kind, string Reason, decimal Amount, int Count)>("""
             select m.kind, m.reason, sum(m.amount), count(*)::int from cash_movement m join shift x on x.id = m.shift_id join business_day bd on bd.id = x.business_day_id
             where bd.branch_id = @b and bd.date = @d and m.kind in ('in', 'out', 'drop') group by m.kind, m.reason order by m.kind, 3 desc
