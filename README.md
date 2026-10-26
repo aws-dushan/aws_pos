@@ -52,7 +52,10 @@ writes the printer's bytes to a file instead of printing.
 ## Phase 2 (restaurant operations) — in progress
 
 Done:
-- Combos / set menus: option groups whose choices are menu items (each component keeps its own kitchen station)
+- Combos / set menus: option groups whose choices must all be menu items (with an ERP item code where the company posts to
+  FACTS); each component keeps its own kitchen station. A combo has no ERP code and no price of its own: each choice carries its
+  price in the combo (it starts at the item's menu price). FACTS gets a line per chosen item (its own code) at that price, the
+  discount and VAT shared by amount; credit notes and repacking per bill do the same
 - Floors and tables (`/tables` designer: drag on a snap grid, round / square / long, seats); live floor (`/floor`): free, seated,
   bill printed, reserved, minutes seated, running total
 - Seat a table with guests; move, join tables, merge two orders, split bill by item (separate bill or another table)

@@ -288,7 +288,11 @@ public static class Boms
             with v as (
               select distinct on (bv.bom_id) bv.id, bv.bom_id from bom_version bv where bv.valid_from <= @day order by bv.bom_id, bv.valid_from desc)
             select v.id, bm.item_type, bm.item_code, bm.item_name, bm.unit, sum(l.qty)
-            from order_line l join pos_order o on o.id = l.order_id join menu_item i on i.id = l.item_id
+            from order_line l join pos_order o on o.id = l.order_id
+            -- The line's item, or for a combo each chosen item (FACTS sells those, not the combo).
+            cross join lateral (select l.item_id union all
+                                select (m->>'itemId')::uuid from jsonb_array_elements(l.modifiers) m where m->>'itemId' is not null) s(item_id)
+            join menu_item i on i.id = s.item_id
             join bom bm on bm.item_code = i.erp_item_code and bm.item_type = i.erp_item_type and (bm.ended_from is null or bm.ended_from > @day)
             join v on v.bom_id = bm.id
             where o.branch_id = @branchId and o.business_date = @day and o.status in ('paid','refunded') and not l.is_void and l.qty > 0

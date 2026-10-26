@@ -358,9 +358,9 @@ public static class Orders
         api.MapPost("/orders/{id:guid}/lines", (Guid id, LineBody body, HttpContext http, Db db, Live live) => Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
             var qty = body.Qty ?? 1;
-            var item = await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, string Station, bool Active, bool IsSold, decimal? BranchPrice, DateOnly? SoldOutDate, bool NeedsPrice, int Decimals, string? NameAr, bool ErpPriced)>("""
+            var item = await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, string Station, bool Active, bool IsSold, decimal? BranchPrice, DateOnly? SoldOutDate, bool NeedsPrice, int Decimals, string? NameAr, bool ErpPriced, bool IsCombo)>("""
                 select i.id, i.name, i.price, i.station, i.is_active and cat.is_active as active, coalesce(bi.is_sold, i.erp_item_code is null) as is_sold, bi.price as branch_price, bi.sold_out_date,
-                       i.needs_price, i.qty_decimals, i.name_ar, coalesce(bi.erp_priced, false)
+                       i.needs_price, i.qty_decimals, i.name_ar, coalesce(bi.erp_priced, false), i.is_combo
                 from menu_item i join menu_category cat on cat.id = i.category_id
                 left join branch_item bi on bi.item_id = i.id and bi.branch_id = @b
                 where i.id = @itemId
@@ -391,7 +391,8 @@ public static class Orders
             }
             // A combo choice keeps its menu item and station (the kitchen makes the component, not "the combo").
             var mods = groups.SelectMany(g => opts.Where(x => x.GroupId == g.Id).Select(x => new { groupId = g.Id, optionId = x.Id, group = g.Name, name = x.Name, price = x.Price, itemId = x.ItemId, station = x.Station })).ToList();
-            var unit = Money.Round((plat.Applies ? plat.Price!.Value : item.BranchPrice ?? item.Price) + mods.Sum(m => m.price));
+            // A combo costs what its chosen items cost in it (the prices on its choices, which FACTS gets item by item).
+            var unit = Money.Round((item.IsCombo ? 0 : plat.Applies ? plat.Price!.Value : item.BranchPrice ?? item.Price) + mods.Sum(m => m.price));
             var note = Opt(body.Note);
             // A promotion running now for this item (and this kind of order): it goes on the line and stays while the bill is open.
             var promo = await Discounts.BestPromotionAsync(c, tx, o, body.ItemId, unit);
