@@ -122,11 +122,14 @@ public static class Reports
         });
 
         // Invoices: one row per paid, refunded or voided bill of the days that has an invoice number — its number, who and which till, the money, how it was
-        // paid (card type, platform) and whether it reached FACTS (its latest invoice posting).
-        api.MapGet("/reports/invoices", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
+        // paid (card type, platform) and whether it reached FACTS (its latest invoice posting). finance=true (admin and finance only, the Finance
+        // invoices report) adds the customer and each payment: its type and amount.
+        api.MapGet("/reports/invoices", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches, bool? finance) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("reports.view");
+            var fin = finance == true;
+            if (fin) scope.Require("facts.post");
             var (f, t) = from <= to ? (from, to) : (to, from);
             if (t.DayNumber - f.DayNumber > 366) throw new DomainException("Choose at most a year.");
             return await db.Company(scope.CompanyId, async (c, tx) =>
@@ -147,9 +150,11 @@ public static class Reports
                            (select string_agg(case p.method when 'card' then coalesce(initcap(regexp_replace(p.card_type, '^\S+\s+', '')), 'Card') when 'platform' then coalesce(dp.name, 'Platform')
                                                              else initcap(p.method) end || ' ' || to_char(p.amount, 'FM999999990.00'), ' · ' order by p.at)
                               from payment p where p.order_id = o.id and p.kind = 'payment') as paid_by,
-                           (select e.status from erp_post e where e.order_id = o.id and e.kind = 'invoice' order by e.created_at desc limit 1) as facts
+                           (select e.status from erp_post e where e.order_id = o.id and e.kind = 'invoice' order by e.created_at desc limit 1) as facts,
+                           case when @fin then coalesce(nullif(trim(o.customer_name), ''), cs.name) end as customer
                     from pos_order o
                     join branch b on b.id = o.branch_id
+                    left join customer cs on cs.id = o.customer_id
                     left join delivery_platform dp on dp.id = o.platform_id
                     left join register r on r.id = o.register_id
                     left join app_user ou on ou.id = o.opened_by
@@ -157,8 +162,130 @@ public static class Reports
                                        where p.order_id = o.id and p.kind = 'payment' order by p.at desc limit 1) cu on true
                     where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid', 'refunded', 'void') and o.invoice_no is not null
                     order by coalesce(o.closed_at, o.opened_at)
-                    """, new { ids, f, t, tz }, tx);
-                return new { invoices = rows };
+                    """, new { ids, f, t, tz, fin }, tx);
+                if (!fin) return new { invoices = rows, payments = (IEnumerable<InvoicePayment>?)null };
+                // Each payment of those bills, named as in Paid by.
+                var pays = await c.QueryAsync<InvoicePayment>("""
+                    select p.order_id, case p.method when 'card' then coalesce(initcap(regexp_replace(p.card_type, '^\S+\s+', '')), 'Card') when 'platform' then coalesce(dp.name, 'Platform')
+                                                      else initcap(p.method) end as type, p.amount
+                    from payment p join pos_order o on o.id = p.order_id
+                    left join delivery_platform dp on dp.id = o.platform_id
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid', 'refunded', 'void') and o.invoice_no is not null
+                      and p.kind = 'payment'
+                    order by p.at
+                    """, new { ids, f, t }, tx);
+                return new { invoices = rows, payments = pays };
+            });
+        });
+
+        // Summary (admin and finance): the days in one report, section by section — sales, money collected, VAT by rate, gross to net,
+        // cancelled bills, voided items, categories, each bill by cashier, discounts, and expenses (cash paid out, wastage, give-aways).
+        api.MapGet("/reports/summary", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("facts.post");
+            var (f, t) = from <= to ? (from, to) : (to, from);
+            if (t.DayNumber - f.DayNumber > 366) throw new DomainException("Choose at most a year.");
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var ids = branches == "all"
+                    ? (await c.QueryAsync<Guid>("""
+                        select b.id from branch b where @admin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @u)
+                        """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray()
+                    : [scope.Branch];
+                var args = new { ids, f, t };
+                var sales = await c.QuerySingleAsync<(int Orders, decimal Subtotal, decimal Discount, decimal Service, decimal Vat, decimal Total, bool VatIncluded)>("""
+                    select count(*)::int, coalesce(sum(subtotal), 0), coalesce(sum(discount_total), 0), coalesce(sum(service_charge), 0), coalesce(sum(vat), 0),
+                           coalesce(sum(total), 0), coalesce(bool_or(prices_include_vat), true)
+                    from pos_order where branch_id = any(@ids) and business_date between @f and @t and status in ('paid','refunded')
+                    """, args, tx);
+                var notes = await c.QuerySingleAsync<(int Count, decimal Total)>("""
+                    select count(*)::int, coalesce(sum(total), 0) from credit_note where branch_id = any(@ids) and business_date between @f and @t
+                    """, args, tx);
+                // Money by how it was paid (card type, platform), on the day it changed hands; refunds by how they were paid back.
+                var collected = await c.QueryAsync<(string Label, string Kind, int Count, decimal Amount)>("""
+                    select case p.method when 'card' then coalesce(initcap(regexp_replace(p.card_type, '^\S+\s+', '')), 'Card') when 'platform' then coalesce(dp.name, 'Platform')
+                                         else initcap(p.method) end, p.kind, count(*)::int, sum(p.amount)
+                    from payment p join pos_order o on o.id = p.order_id left join delivery_platform dp on dp.id = o.platform_id
+                    where p.branch_id = any(@ids) and p.business_date between @f and @t group by 1, 2 order by 4 desc
+                    """, args, tx);
+                // VAT by rate: sales less what came back, the amount before VAT and the VAT.
+                var tax = await c.QueryAsync<(decimal Rate, decimal Amount, decimal Vat)>("""
+                    select rate, sum(amount), sum(vat) from (
+                      select vat_rate as rate, total - vat as amount, vat from pos_order
+                      where branch_id = any(@ids) and business_date between @f and @t and status in ('paid','refunded')
+                      union all
+                      select o.vat_rate, -(n.total - n.vat), -n.vat from credit_note n join pos_order o on o.id = n.order_id
+                      where n.branch_id = any(@ids) and n.business_date between @f and @t) x
+                    group by rate order by rate
+                    """, args, tx);
+                var cancelled = await c.QueryAsync<(string Bill, string Branch, decimal Amount, string? Reason, string? By)>("""
+                    select coalesce(o.invoice_no, '#' || o.number), b.code, o.total, o.void_reason,
+                           (select u.display_name from audit_log x join app_user u on u.id = x.user_id where x.entity = 'order' and x.entity_id = o.id::text and x.action = 'void' order by x.at desc limit 1)
+                    from pos_order o join branch b on b.id = o.branch_id
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status = 'void' and o.number is not null
+                    order by o.business_date, o.number
+                    """, args, tx);
+                var voided = await c.QueryAsync<(string? Code, string Name, decimal Qty, decimal Amount)>("""
+                    select i.erp_item_code, l.name, sum(l.qty), sum(round(l.unit_price * l.qty, 2))
+                    from order_line l join pos_order o on o.id = l.order_id left join menu_item i on i.id = l.item_id
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and l.is_void
+                    group by 1, 2 order by 4 desc
+                    """, args, tx);
+                var items = await SalesSummary.ItemsAsync(c, tx, ids, f, t);
+                var bills = await c.QueryAsync<(string Cashier, string Bill, string Branch, decimal Amount)>("""
+                    select coalesce((select u.display_name from payment p join app_user u on u.id = p.taken_by where p.order_id = o.id and p.kind = 'payment' order by p.at desc limit 1),
+                                    ou.display_name), o.invoice_no, b.code, o.total - o.refunded
+                    from pos_order o join branch b on b.id = o.branch_id join app_user ou on ou.id = o.opened_by
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid','refunded') and o.invoice_no is not null
+                    order by 1, coalesce(o.closed_at, o.opened_at)
+                    """, args, tx);
+                var discounts = await c.QueryAsync<(string Bill, string Branch, string? Reference, decimal Amount)>("""
+                    select coalesce(o.invoice_no, '#' || o.number), b.code,
+                           coalesce(o.discount_name, case when o.discount_pct > 0 then 'Bill ' || trim(to_char(o.discount_pct, 'FM990.##')) || '%' when o.discount_amount > 0 then 'Amount off the bill' end,
+                                    (select string_agg(distinct coalesce(l.disc_name, 'Item discount'), ', ') from order_line l where l.order_id = o.id and l.disc_type is not null and not l.is_void)),
+                           o.discount_total
+                    from pos_order o join branch b on b.id = o.branch_id
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.discount_total > 0 and o.status in ('paid','refunded')
+                    order by o.business_date, o.number
+                    """, args, tx);
+                // Expenses: cash paid out of the drawers, wastage and marketing give-aways (at their recorded value; not voided ones).
+                var expenses = await c.QueryAsync<(string Type, DateOnly Day, string Branch, string? Account, string Who, decimal Amount, string? Memo)>("""
+                    select 'Cash paid out', d.date, b.code, null, u.display_name, m.amount, m.reason
+                    from cash_movement m join shift s on s.id = m.shift_id join business_day d on d.id = s.business_day_id join branch b on b.id = s.branch_id join app_user u on u.id = m.by_user
+                    where s.branch_id = any(@ids) and d.date between @f and @t and m.kind = 'out'
+                    union all
+                    select case w.kind when 'marketing' then 'Marketing' else 'Wastage' end, w.business_date, b.code, case when w.kind = 'marketing' then b.marketing_account end,
+                           trim(to_char(w.qty, 'FM999999990.###')) || ' × ' || w.name, coalesce(w.cost_value, 0), initcap(w.reason) || coalesce(': ' || w.note, '')
+                    from wastage w join branch b on b.id = w.branch_id
+                    where w.branch_id = any(@ids) and w.business_date between @f and @t and w.voided_at is null
+                    order by 1, 2
+                    """, args, tx);
+
+                var taken = collected.Where(x => x.Kind == "payment").ToList();
+                var back = collected.Where(x => x.Kind == "refund").ToList();
+                return new
+                {
+                    from = f, to = t,
+                    sales = new
+                    {
+                        sales.Orders, subtotal = sales.Subtotal, discount = sales.Discount, serviceCharge = sales.Service, vat = sales.Vat, vatIncluded = sales.VatIncluded,
+                        billAmount = sales.Total, creditNotes = notes.Total, creditNoteCount = notes.Count, netSales = sales.Total - notes.Total,
+                    },
+                    collection = new
+                    {
+                        payments = taken.Select(x => new { x.Label, x.Count, x.Amount }), refunds = back.Select(x => new { x.Label, x.Count, x.Amount }),
+                        net = taken.Sum(x => x.Amount) - back.Sum(x => x.Amount),
+                    },
+                    tax = tax.Select(x => new { x.Rate, x.Amount, x.Vat }),
+                    pos = new { gross = sales.Total + sales.Discount, deduction = sales.Discount + notes.Total, net = sales.Total - notes.Total },
+                    cancelled = cancelled.Select(x => new { x.Bill, x.Branch, x.Amount, x.Reason, x.By }),
+                    voided = voided.Select(x => new { x.Code, x.Name, x.Qty, x.Amount }),
+                    categories = items.GroupBy(x => x.Category ?? "Other").Select(g => new { category = g.Key, qty = g.Sum(x => x.Qty), amount = Money.Round(g.Sum(x => x.Sales)) }).OrderByDescending(x => x.amount),
+                    bills = bills.Select(x => new { x.Cashier, x.Bill, x.Branch, x.Amount }),
+                    discounts = discounts.Select(x => new { x.Bill, x.Branch, reference = x.Reference ?? "Discount", x.Amount }),
+                    expenses = expenses.Select(x => new { x.Type, x.Day, x.Branch, x.Account, x.Who, x.Amount, x.Memo }),
+                };
             });
         });
     }
@@ -169,6 +296,11 @@ public static class Reports
         public string At { get; set; } = ""; public string OrderType { get; set; } = ""; public string? Platform { get; set; } public string? PlatformRef { get; set; }
         public string Status { get; set; } = ""; public string? Cashier { get; set; } public string? Till { get; set; } public decimal Items { get; set; }
         public decimal Gross { get; set; } public decimal Discount { get; set; } public decimal Vat { get; set; } public decimal Net { get; set; } public decimal Refunded { get; set; }
-        public string? PaidBy { get; set; } public string? Facts { get; set; }
+        public string? PaidBy { get; set; } public string? Facts { get; set; } public string? Customer { get; set; }
+    }
+
+    public sealed class InvoicePayment
+    {
+        public Guid OrderId { get; set; } public string Type { get; set; } = ""; public decimal Amount { get; set; }
     }
 }

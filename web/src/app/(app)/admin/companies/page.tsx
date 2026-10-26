@@ -661,8 +661,8 @@ function MarketingBox({ company, branch, onSaved }: { company: Company; branch: 
         </div>
       </div>
       {users.error ? <ErrorNote message={users.error} /> : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Approver (One POS user)">
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <Field label="Approver" hint="The One POS user who approves the give-aways.">
             <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
               <option value="">Choose a user</option>
               {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
