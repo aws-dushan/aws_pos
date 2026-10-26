@@ -5,6 +5,7 @@ import { BarChart3Icon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, Wallet
 import { useApi } from "@/lib/api";
 import { ExportMenu } from "@/components/export-menu";
 import { ReceiptDialog } from "@/components/pos-payment";
+import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
 import { fmtIn } from "@/lib/num";
 import { cn } from "@/lib/utils";
 import { fmtQty, METHOD_LABEL, TYPE_LABEL, type OrderType, type PayMethod } from "@/lib/pos";
@@ -29,12 +30,13 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "discounts" | "branches" | "exceptions" | "stock";
 type Inv = {
   id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
   status: "paid" | "refunded" | "void"; cashier: string | null; till: string | null; items: number;
-  gross: number; discount: number; vat: number; net: number; refunded: number; paidBy: string | null; facts: string | null;
+  gross: number; discount: number; vat: number; net: number; refunded: number; paidBy: string | null; facts: string | null; customer?: string | null;
 };
+type InvPay = { orderId: string; type: string; amount: number };
 type InvKind = "all" | "notPosted";
 const FACTS_LABEL: Record<string, string> = { posted: "Posted", pending: "Waiting", waiting: "Waiting", failed: "Failed", skipped: "Skipped" };
 const invStatus = (x: Inv) => x.status === "void" ? "Void" : x.status === "refunded" ? "Refunded" : x.refunded > 0 ? "Part refunded" : "Paid";
@@ -60,7 +62,8 @@ const shortDay = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "
 
 /** Sales reports (REQ RPT-02 … RPT-06): a range of business days for this branch or all of mine; every table exports to Excel, CSV or PDF. Exceptions (RPT-03): discounts, voids, refunds, no-sales. */
 export default function ReportsPage() {
-  const { company, branch } = useSession();
+  const { company, branch, can } = useSession();
+  const finance = can("facts.post");
   const cur = company?.currency ?? "AED";
   const today = iso(new Date());
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return iso(d); });
@@ -72,7 +75,10 @@ export default function ReportsPage() {
   const ex = useApi<Exc>(tab === "exceptions" ? `/reports/exceptions?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const [stockKind, setStockKind] = useState<StockKind>("all");
   const st = useApi<StockRep>(tab === "stock" ? "/reports/stock" : null);
-  const inv = useApi<{ invoices: Inv[] }>(tab === "invoices" ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  const invTab = tab === "invoices" || tab === "finance";
+  const summary = useApi<Summary>(tab === "summary" ? `/reports/summary?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  const sections = useMemo(() => summary.data ? summarySections(summary.data, where === "all") : null, [summary.data, where]);
+  const inv = useApi<{ invoices: Inv[]; payments: InvPay[] | null }>(invTab ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}${tab === "finance" ? "&finance=true" : ""}` : null);
   const [invKind, setInvKind] = useState<InvKind>("all");
   const [invQ, setInvQ] = useState("");
   const [receipt, setReceipt] = useState<string | null>(null);
@@ -80,8 +86,14 @@ export default function ReportsPage() {
   const invRows = useMemo(() => {
     const q = invQ.trim().toLowerCase();
     return (inv.data?.invoices ?? []).filter((x) => (invKind === "all" || (x.status !== "void" && x.facts !== "posted" && x.facts !== "skipped" && x.facts !== null))
-      && (!q || [x.invoiceNo, x.cashier, x.platformRef, x.paidBy, x.platform].some((v) => v?.toLowerCase().includes(q))));
+      && (!q || [x.invoiceNo, x.cashier, x.platformRef, x.paidBy, x.platform, x.customer].some((v) => v?.toLowerCase().includes(q))));
   }, [inv.data, invKind, invQ]);
+  // Finance invoices: a row per payment, so a bill paid two ways is two rows (a bill with no payment, e.g. a void, is one row).
+  const finRows = useMemo(() => {
+    const by = new Map<string, InvPay[]>();
+    for (const p of inv.data?.payments ?? []) by.set(p.orderId, [...(by.get(p.orderId) ?? []), p]);
+    return invRows.flatMap((x) => { const ps = by.get(x.id); return ps?.length ? ps.map((p) => ({ x, p: p as InvPay | null })) : [{ x, p: null }]; });
+  }, [inv.data, invRows]);
   const stockMatch = useMemo(() => {
     const s = st.data;
     const noPlatform = (x: StockRep["items"][number]) => !!s?.platforms.length && s.platforms.every((p) => x.platforms[p.id] == null);
@@ -120,6 +132,16 @@ export default function ReportsPage() {
             fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), x.paidBy ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
         };
       }
+      case "finance": {
+        if (!inv.data) return { head: [], rows: [], share: null };
+        const many = where === "all";
+        return {
+          head: ["Invoice no", ...(many ? ["Branch"] : []), "Date & time", "Type", "Platform order", "Customer", "Cashier", "Till", "Items", "Gross", "Discount", "VAT", "Net", "Refunded", "Paid amount", "Payment type", "Status", "FACTS"],
+          share: null, ids: finRows.map((r) => r.x.id),
+          rows: finRows.map(({ x, p }) => [x.invoiceNo, ...(many ? [x.branch] : []), time(x.at), x.platform ?? TYPE_LABEL[x.orderType], x.platformRef ?? "—", x.customer ?? "—", x.cashier ?? "—", x.till ?? "—",
+            fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), p ? money(p.amount) : "—", p?.type ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
+        };
+      }
       case "discounts": {
         const all = d.byDiscount.reduce((t, x) => t + x.amount, 0) || 1;
         const kind = { promotion: "Promotion", cashier: "Cashier discount", typed: "Typed", platform: "Platform offer" };
@@ -154,13 +176,13 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, where]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
-  const listTab = tab === "exceptions" || tab === "invoices";
+  const listTab = tab === "exceptions" || invTab;
   const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
   const exportTable = table ? {
     title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
@@ -229,12 +251,16 @@ export default function ReportsPage() {
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
               <Segmented id="rep-tab" value={tab} onChange={setTab} options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
-                { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" }, { value: "discounts", label: "Discounts" },
+                { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" },
+                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }] : []),
+                { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
                 { value: "stock", label: "Stock" },
               ]} />
-              <ExportMenu name={`${tab === "exceptions" ? exKind : tab}-${label}`} table={exportTable} />
+              {tab === "summary"
+                ? <ExportMenu name={`summary-${label}`} tables={sections} heading={{ title: "Summary", subtitle: `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}` }} />
+                : <ExportMenu name={`${tab === "exceptions" ? exKind : tab}-${label}`} table={exportTable} />}
             </div>
             {tab === "stock" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -243,18 +269,19 @@ export default function ReportsPage() {
                 <span className="text-sm text-muted-foreground">{branch?.name}, now: FACTS stock less what was sold and thrown away since. A blank price means FACTS has none, so it can&apos;t be sold there.</span>
               </div>
             )}
-            {tab === "invoices" && (
+            {invTab && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="inv-kind" size="sm" value={invKind} onChange={setInvKind} options={[{ value: "all", label: "All bills" }, { value: "notPosted", label: "Not in FACTS yet" }]} />
-                <Input type="search" value={invQ} onChange={(e) => setInvQ(e.target.value)} placeholder="Invoice no, cashier, platform order or method" className="h-9 w-72" />
+                <Input type="search" value={invQ} onChange={(e) => setInvQ(e.target.value)} placeholder={tab === "finance" ? "Invoice no, customer, cashier, platform order or method" : "Invoice no, cashier, platform order or method"} className="h-9 w-72" />
                 {inv.data && (() => {
                   const sold = invRows.filter((x) => x.status !== "void");
                   const sum = (k: "net" | "vat" | "discount" | "refunded") => money(sold.reduce((t, x) => t + x[k], 0));
-                  return <span className="text-sm text-muted-foreground">{sold.length} bills · net {cur} {sum("net")} · VAT {sum("vat")} · discount {sum("discount")} · refunded {sum("refunded")}</span>;
+                  const paid = tab === "finance" ? ` · paid ${money(finRows.reduce((t, r) => t + (r.p?.amount ?? 0), 0))} in ${finRows.filter((r) => r.p).length} payments` : "";
+                  return <span className="text-sm text-muted-foreground">{sold.length} bills · net {cur} {sum("net")} · VAT {sum("vat")} · discount {sum("discount")} · refunded {sum("refunded")}{paid}</span>;
                 })()}
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : tab === "invoices" ? inv.error : undefined} />
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -266,7 +293,7 @@ export default function ReportsPage() {
                 )}
               </div>
             )}
-            {table?.rows.length ? (
+            {tab === "summary" ? (sections ? <SummaryView sections={sections} /> : !summary.error && <LoadingRows />) : table?.rows.length ? (
               // Scrolls inside its own box (both ways), so the sideways scrollbar is always on screen; headings and the first column stay put.
               <TablePanel className="max-h-[70vh] overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0 [&_tbody_td:first-child]:bg-card [&_thead_th:first-child]:left-0 [&_thead_th:first-child]:z-20">
                 <Table bare>
@@ -288,8 +315,8 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </TablePanel>
-            ) : (tab === "stock" && !st.data) || (tab === "invoices" && !inv.data && !inv.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
-            {table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
+            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
+            {tab !== "summary" && table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
           </StaggerItem>
 
           <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
