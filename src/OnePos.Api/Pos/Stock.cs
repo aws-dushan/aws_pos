@@ -9,11 +9,13 @@ namespace OnePos.Api.Pos;
 /// <summary>
 /// Branch stock (REQ INV-04, INV-06). Wastage: what the branch throws away, by reason, in the business day; for a branch linked
 /// to FACTS it waits to be posted to the outlet's wastage location (nothing is written to FACTS yet). Deliveries: transfers into
-/// the branch's FACTS location, read from FACTS (read-only); the branch checks each one in and notes differences.
+/// the branch's FACTS location, read from FACTS (read-only); the branch checks each one in and notes differences. Marketing: finished
+/// goods given away (tasting, promotion, influencers, gifts) are recorded the same way (kind 'marketing'), wait for the branch's
+/// wastage approver and, approved, go to FACTS as a posted MCV50 to the marketing expense account (WastageApproval).
 /// </summary>
 public static class Stock
 {
-    public sealed record WasteBody(Guid ItemId, decimal Qty, string Reason, string? Note);
+    public sealed record WasteBody(Guid ItemId, decimal Qty, string Reason, string? Note, string? Kind = null);
     /// <summary>A line that arrived differently. `Line`: its line on the transfer (an item can be on it twice, e.g. two batches).</summary>
     public sealed record Difference(string Code, string Name, decimal Sent, decimal Received, string? Note, int? Line = null);
     public sealed record PostedBody(string Doc);
@@ -21,6 +23,7 @@ public static class Stock
     public sealed record UncheckBody(string DocType, string DocNo, string Reason);
 
     private static readonly string[] Reasons = ["expired", "damaged", "quality", "returned", "staff", "calibration", "other"];
+    private static readonly string[] MarketingReasons = ["tasting", "promotion", "influencer", "gift", "other"];
 
     public sealed class WasteRow
     {
@@ -31,6 +34,8 @@ public static class Stock
         public decimal Qty { get; set; }
         public string? Unit { get; set; }
         public string Reason { get; set; } = "";
+        /// <summary>wastage | marketing (given away; posted as an MCV50 to the marketing expense account).</summary>
+        public string Kind { get; set; } = "wastage";
         public string? Note { get; set; }
         public decimal? CostValue { get; set; }
         public string ErpStatus { get; set; } = "";
@@ -54,7 +59,7 @@ public static class Stock
 
     public static void Map(RouteGroupBuilder api)
     {
-        api.MapGet("/stock/wastage", async (HttpContext http, Db db, DateOnly? date) =>
+        api.MapGet("/stock/wastage", async (HttpContext http, Db db, DateOnly? date, string? kind) =>
         {
             var scope = await http.ScopeAsync(db);
             // Finance reads it too: it posts the wastage in FACTS and notes the document.
@@ -62,7 +67,8 @@ public static class Stock
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var day = date ?? await Days.DateAsync(c, tx, scope.Branch);
-                var rows = (await c.QueryAsync<WasteRow>($"{WasteSql} where w.branch_id = @b and w.business_date = @day order by w.recorded_at desc", new { b = scope.Branch, day }, tx)).ToList();
+                var k = kind == "marketing" ? "marketing" : "wastage";
+                var rows = (await c.QueryAsync<WasteRow>($"{WasteSql} where w.branch_id = @b and w.business_date = @day and w.kind = @k order by w.recorded_at desc", new { b = scope.Branch, day, k }, tx)).ToList();
                 var live = rows.Where(r => r.VoidedAt is null).ToList();
                 return new
                 {
@@ -74,6 +80,11 @@ public static class Stock
                     // Wastage approval at this branch: who approves (then it's posted in FACTS once approved).
                     approver = await c.ExecuteScalarAsync<string?>("select u.display_name from branch b join app_user u on u.id = b.wastage_approver_id where b.id = @b and b.erp_location_code is not null and b.erp_waste_location is not null", new { b = scope.Branch }, tx),
                     factsWastage = await c.ExecuteScalarAsync<string>("select case when co.facts_wastage = 'draft' and b.erp_waste_location is not null then 'draft' else 'finance' end from branch b join company co on co.id = b.company_id where b.id = @b", new { b = scope.Branch }, tx),
+                    // Marketing: who approves it here (null = it can't be recorded: no approver, or the branch isn't linked to FACTS).
+                    marketingApprover = await c.ExecuteScalarAsync<string?>("""
+                        select u.display_name from branch b join company co on co.id = b.company_id join app_user u on u.id = b.wastage_approver_id
+                        where b.id = @b and co.erp_connector = 'facts' and co.facts_marketing_account is not null and b.erp_location_code is not null
+                        """, new { b = scope.Branch }, tx),
                 };
             });
         });
@@ -83,7 +94,8 @@ public static class Stock
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("kitchen.view")) scope.Require("pos.sell");
             var reason = (body.Reason ?? "").Trim().ToLowerInvariant();
-            if (!Reasons.Contains(reason)) throw new DomainException("Choose why it was thrown away.");
+            var marketing = body.Kind == "marketing";
+            if (!(marketing ? MarketingReasons : Reasons).Contains(reason)) throw new DomainException(marketing ? "Choose what it was given away for." : "Choose why it was thrown away.");
             if (reason == "other" && string.IsNullOrWhiteSpace(body.Note)) throw new DomainException("Say what happened.");
             var row = await db.Company(scope.CompanyId, async (c, tx) =>
             {
@@ -95,18 +107,29 @@ public static class Stock
                 Orders.CheckQty(body.Qty, item.Decimals, item.Name);
                 var day = (await Days.CurrentAsync(c, tx, scope.Branch, scope.UserId)).Date;
                 var linked = await c.ExecuteScalarAsync<bool>("select erp_location_code is not null from branch where id = @b", new { b = scope.Branch }, tx);
+                if (marketing)
+                {
+                    // Marketing always goes to FACTS (an MCV50 once approved): FACTS must be set up for it.
+                    var ready = await c.QuerySingleAsync<(bool On, bool Approver)>("""
+                        select co.erp_connector = 'facts' and co.facts_marketing_account is not null, b.wastage_approver_id is not null
+                        from branch b join company co on co.id = b.company_id where b.id = @b
+                        """, new { b = scope.Branch }, tx);
+                    if (!ready.On) throw new DomainException("Marketing isn't switched on: finance sets the marketing expense account (FACTS posting).");
+                    if (!linked || !ready.Approver) throw new DomainException("This branch needs its FACTS location and a wastage approver (Companies & branches) to record marketing.");
+                    if (item.Code is null) throw new DomainException($"{item.Name} has no FACTS item, so it can't go to FACTS as marketing.");
+                }
                 var price = item.BranchPrice ?? item.Price;
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into wastage (company_id, branch_id, business_date, item_id, name, qty, unit, reason, note, cost_value, erp_status, recorded_by)
-                    values (@co, @b, @day, @itemId, @name, @qty, @unit, @reason, @note, @value, @erp, @u) returning id
+                    insert into wastage (company_id, branch_id, business_date, item_id, name, qty, unit, reason, note, cost_value, erp_status, recorded_by, kind)
+                    values (@co, @b, @day, @itemId, @name, @qty, @unit, @reason, @note, @value, @erp, @u, @kind) returning id
                     """, new
                     {
                         co = scope.CompanyId, b = scope.Branch, day, itemId = item.Id, name = item.Name, qty = body.Qty, unit = item.Unit, reason,
                         note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim(), value = price > 0 ? Money.Round(price * body.Qty) : (decimal?)null,
-                        erp = linked && item.Code is not null ? "pending" : "none", u = scope.UserId,
+                        erp = linked && item.Code is not null ? "pending" : "none", u = scope.UserId, kind = marketing ? "marketing" : "wastage",
                     }, tx);
                 await Recipes.WasteItemAsync(c, tx, scope.CompanyId, scope.Branch, day, item.Id, body.Qty, id, scope.UserId);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "wastage", id.ToString(), "recorded", $"Wastage: {body.Qty:0.###} × {item.Name} ({reason})", note: body.Note);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "wastage", id.ToString(), "recorded", $"{(marketing ? "Marketing" : "Wastage")}: {body.Qty:0.###} × {item.Name} ({reason})", note: body.Note);
                 // A branch with a wastage approver: it waits for them (bell and email); approved, it is posted in FACTS.
                 await WastageApproval.RequestAsync(c, tx, scope.CompanyId, scope.Branch, id);
                 return await c.QuerySingleAsync<WasteRow>($"{WasteSql} where w.id = @id", new { id }, tx);
@@ -182,7 +205,7 @@ public static class Stock
                     """, new { b = scope.Branch }, tx)).ToDictionary(x => (x.Doc, x.Line), x => (x.Name, x.By));
                 var pending = (await c.QueryAsync<(Guid Id, string Name, decimal Qty, DateOnly Day, string? Code)>("""
                     select w.id, w.name, w.qty, w.business_date, i.erp_item_code from wastage w left join menu_item i on i.id = w.item_id
-                    where w.branch_id = @b and w.voided_at is null and w.erp_status = 'pending' and w.business_date >= @from order by w.recorded_at
+                    where w.branch_id = @b and w.kind = 'wastage' and w.voided_at is null and w.erp_status = 'pending' and w.business_date >= @from order by w.recorded_at
                     """, new { b = scope.Branch, from = since.AddDays(-7) }, tx)).ToList();
                 var n = 0;
                 foreach (var w in pending.Where(p => p.Code is not null))

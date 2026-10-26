@@ -61,6 +61,8 @@ export type DayReport = {
   };
   openOrders: { count: number; value: number };
   wastage?: { count: number; value: number };
+  /** Items given away for marketing (posted in FACTS as an MCV50 once approved). */
+  marketing?: { count: number; value: number };
   noSales?: number;
 };
 export type DayInfo = {
@@ -341,6 +343,7 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
     for (const x of z.deposits) out.push({ text: `   ${x.fromRegister ? `from drawer (${x.fromRegister})` : "from safe"} · ${x.bagNo ? `bag ${x.bagNo} · ` : ""}${x.takenBy}`, right: money(x.amount), size: "small" });
   }
   if (z.wastage?.count) out.push({ text: `Wastage (${z.wastage.count})`, right: money(z.wastage.value) });
+  if (z.marketing?.count) out.push({ text: `Marketing, given away (${z.marketing.count})`, right: money(z.marketing.value) });
   if (z.noSales) out.push({ text: "No-sales (drawer opened)", right: String(z.noSales) });
   out.push({ rule: true }, { text: `Printed ${new Date().toLocaleString("en-GB")}`, align: "center", size: "small" });
   return out;

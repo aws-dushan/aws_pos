@@ -68,7 +68,8 @@ public static class Notices
             """, a, tx);
         var voids = await c.QuerySingleAsync<(int Count, decimal Value)>("select count(*)::int, coalesce(sum(total), 0) from pos_order where branch_id = @b and business_date = @d and status = 'void' and number is not null", a, tx);
         var noSales = await c.ExecuteScalarAsync<int>("select count(*)::int from no_sale where branch_id = @b and business_date = @d", a, tx);
-        var waste = await c.ExecuteScalarAsync<decimal>("select coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null", a, tx);
+        var waste = await c.ExecuteScalarAsync<decimal>("select coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null and kind = 'wastage'", a, tx);
+        var given = await c.ExecuteScalarAsync<decimal>("select coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null and kind = 'marketing'", a, tx);
         var shifts = (await c.QueryAsync<(string Register, string User, string Status, decimal? Variance)>("""
             select r.name, u.display_name, s.status, s.variance from shift s join business_day bd on bd.id = s.business_day_id
             join register r on r.id = s.register_id join app_user u on u.id = s.user_id where bd.branch_id = @b and bd.date = @d
@@ -94,6 +95,7 @@ public static class Notices
             new("No-sales", noSales.ToString(), s.NoSalesOver is { } ns && noSales > ns),
         };
         if (waste > 0) summary.Add(new("Wastage", M(waste)));
+        if (given > 0) summary.Add(new("Marketing (given away)", M(given)));
         if (top.Count > 0) summary.Add(new("Best sellers", string.Join(", ", top.Select(t => $"{t.Name} ×{t.Qty:0.###}"))));
 
         // The day's cash, till by till (as the day's Z report, Days.DayCashAsync): what the drawers should hold against what was

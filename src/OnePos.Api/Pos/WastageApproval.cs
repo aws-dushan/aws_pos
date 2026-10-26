@@ -15,7 +15,9 @@ namespace OnePos.Api.Pos;
 /// username): wastage recorded there waits for that approver (company administrators can stand in). Approved, it goes to FACTS
 /// at once as a POSTED STV50 to the branch's wastage location (usp_ONEPOS_PostWastageTransfer: batches FIFO, FACTS' own approval,
 /// as the approver's FACTS username), never a draft; approving checks FACTS has the stock first. Rejected, it is taken off and
-/// never sent. A branch without an approver works as before.
+/// never sent. A branch without an approver works as before. Marketing give-aways (wastage of kind 'marketing') always wait for the
+/// approver; approved, they go to FACTS as a POSTED MCV50 at the outlet (usp_ONEPOS_PostConsumption: batch cost to the company's
+/// marketing expense account), as the company's marketing FACTS user, else the approver's.
 /// </summary>
 public static class WastageApproval
 {
@@ -28,30 +30,42 @@ public static class WastageApproval
     private static readonly Dictionary<string, string> Reasons = new()
     {
         ["expired"] = "Expired", ["damaged"] = "Damaged", ["quality"] = "Quality", ["returned"] = "Returned", ["staff"] = "Staff meal", ["calibration"] = "Machine calibration", ["other"] = "Other",
+        ["tasting"] = "Tasting / sampling", ["promotion"] = "Promotion / event", ["influencer"] = "Influencer / media", ["gift"] = "Gift to customer",
     };
 
-    public sealed record Setup(Guid? ApproverId, string? Email, string? FactsUser, string? Loc, string? Waste, string Connector, string Code, string Name);
+    public sealed record Setup(Guid? ApproverId, string? Email, string? FactsUser, string? Loc, string? Waste, string Connector, string Code, string Name,
+                               string? MarketingAccount, string? MarketingUser);
 
     public static Task<Setup> SetupAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid branchId) =>
         c.QuerySingleAsync<Setup>("""
             select b.wastage_approver_id as ApproverId, b.wastage_approval_email as Email, b.wastage_facts_user as FactsUser, b.erp_location_code as Loc,
-                   b.erp_waste_location as Waste, co.erp_connector as Connector, b.code as Code, b.name as Name
+                   b.erp_waste_location as Waste, co.erp_connector as Connector, b.code as Code, b.name as Name,
+                   co.facts_marketing_account as MarketingAccount, co.facts_marketing_user as MarketingUser
             from branch b join company co on co.id = b.company_id where b.id = @branchId
             """, new { branchId }, tx);
 
-    /// <summary>Approval applies: an approver is set and the wastage can go to FACTS (linked branch, wastage location, a FACTS item).</summary>
-    public static bool Applies(Setup s, string? itemCode) =>
-        s.ApproverId is not null && s.Connector == "facts" && s.Loc is not null && s.Waste is not null && itemCode is not null;
+    /// <summary>
+    /// Approval applies: an approver is set and it can go to FACTS (linked branch, a FACTS item, and the wastage location for wastage,
+    /// the marketing expense account for marketing).
+    /// </summary>
+    public static bool Applies(Setup s, string? itemCode, string kind = "wastage") =>
+        s.ApproverId is not null && s.Connector == "facts" && s.Loc is not null && itemCode is not null
+        && (kind == "marketing" ? s.MarketingAccount is not null : s.Waste is not null);
+
+    /// <summary>The FACTS user who posts it: marketing's own (allowed MCV50 posting), else the branch approver's.</summary>
+    private static string? PostAs(Setup s, string kind) =>
+        kind == "marketing" && !string.IsNullOrWhiteSpace(s.MarketingUser) ? s.MarketingUser.Trim() : s.FactsUser?.Trim();
 
     /// <summary>Just recorded (same transaction): waits for the branch's approver, who gets it under the bell and by email.</summary>
     public static async Task RequestAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, Guid wastageId)
     {
         var s = await SetupAsync(c, tx, branchId);
-        var w = await c.QuerySingleAsync<(string Name, decimal Qty, string? Unit, string Reason, string? Note, decimal? Value, DateOnly Day, string By, string? Code)>("""
-            select w.name, w.qty, w.unit, w.reason, w.note, w.cost_value, w.business_date, u.display_name, i.erp_item_code
+        var w = await c.QuerySingleAsync<(string Name, decimal Qty, string? Unit, string Reason, string? Note, decimal? Value, DateOnly Day, string By, string? Code, string Kind)>("""
+            select w.name, w.qty, w.unit, w.reason, w.note, w.cost_value, w.business_date, u.display_name, i.erp_item_code, w.kind
             from wastage w join app_user u on u.id = w.recorded_by left join menu_item i on i.id = w.item_id where w.id = @wastageId
             """, new { wastageId }, tx);
-        if (!Applies(s, w.Code)) return;
+        if (!Applies(s, w.Code, w.Kind)) return;
+        var what = w.Kind == "marketing" ? "Marketing" : "Wastage";
         await c.ExecuteAsync("update wastage set approval = 'waiting' where id = @wastageId", new { wastageId }, tx);
         var cur = await c.ExecuteScalarAsync<string>("select base_currency from company where id = @companyId", new { companyId }, tx);
         var lines = new List<Notices.Line>
@@ -67,7 +81,7 @@ public static class WastageApproval
             values (@companyId, @branchId, @day, 'wastage', @title, cast(@lines as jsonb), @email, @to, '/approvals')
             """, new
             {
-                companyId, branchId, day = w.Day, title = $"Wastage to approve · {w.Qty.ToString("0.###", Inv)} × {w.Name}",
+                companyId, branchId, day = w.Day, title = $"{what} to approve · {w.Qty.ToString("0.###", Inv)} × {w.Name}",
                 lines = JsonSerializer.Serialize(lines, Web), email = smtp && to.Length > 0 ? "pending" : "none", to,
             }, tx);
     }
@@ -84,6 +98,7 @@ public static class WastageApproval
         public decimal Qty { get; set; }
         public string? Unit { get; set; }
         public string Reason { get; set; } = "";
+        public string Kind { get; set; } = "wastage";
         public string? Note { get; set; }
         public decimal? CostValue { get; set; }
         public string RecordedByName { get; set; } = "";
@@ -95,7 +110,7 @@ public static class WastageApproval
     }
 
     private const string WaitingSql = """
-        select w.id, w.branch_id, b.code as branch_code, b.name as branch_name, w.business_date, w.item_id, w.name, w.qty, w.unit, w.reason, w.note, w.cost_value,
+        select w.id, w.branch_id, b.code as branch_code, b.name as branch_name, w.business_date, w.item_id, w.name, w.qty, w.unit, w.reason, w.kind, w.note, w.cost_value,
                u.display_name as recorded_by_name, w.recorded_at, i.erp_item_code as item_code, i.erp_item_type as item_type, i.erp_unit, b.wastage_approver_id as approver_id
         from wastage w join branch b on b.id = w.branch_id join app_user u on u.id = w.recorded_by left join menu_item i on i.id = w.item_id
         where w.approval = 'waiting' and w.voided_at is null
@@ -118,12 +133,13 @@ public static class WastageApproval
                 return new
                 {
                     currency = cur, isApprover = approver || scope.IsAdmin,
-                    items = rows.Select(r => new { r.Id, r.BranchId, r.BranchCode, r.BranchName, r.BusinessDate, r.Name, r.Qty, r.Unit, r.Reason, r.Note, r.CostValue, r.RecordedByName, r.RecordedAt }),
+                    items = rows.Select(r => new { r.Id, r.BranchId, r.BranchCode, r.BranchName, r.BusinessDate, r.Name, r.Qty, r.Unit, r.Reason, r.Kind, r.Note, r.CostValue, r.RecordedByName, r.RecordedAt }),
                 };
             });
         });
 
-        // Approve (a quantity may be corrected): FACTS must hold the stock; then one posted STV50 per branch and day goes to FACTS.
+        // Approve (a quantity may be corrected): FACTS must hold the stock; then one posted STV50 per branch and day goes to FACTS
+        // (marketing: one posted MCV50 per branch and day).
         api.MapPost("/wastage/approvals/approve", async (ApproveBody body, HttpContext http, Db db, FactsSync facts, Live live) =>
         {
             var scope = await http.ScopeAsync(db);
@@ -147,8 +163,11 @@ public static class WastageApproval
             foreach (var r in list)
             {
                 var s = setups[r.BranchId];
-                if (!Applies(s, r.ItemCode)) throw new DomainException($"{s.Name} can't send wastage to FACTS (FACTS location or wastage location missing, or {r.Name} has no FACTS item).");
-                if (string.IsNullOrWhiteSpace(s.FactsUser)) throw new DomainException($"Set the approver's FACTS username for {s.Name} first (Companies & branches).");
+                if (!Applies(s, r.ItemCode, r.Kind))
+                    throw new DomainException(r.Kind == "marketing"
+                        ? $"{s.Name} can't send marketing to FACTS (FACTS location or the marketing expense account missing, or {r.Name} has no FACTS item)."
+                        : $"{s.Name} can't send wastage to FACTS (FACTS location or wastage location missing, or {r.Name} has no FACTS item).");
+                if (string.IsNullOrWhiteSpace(PostAs(s, r.Kind))) throw new DomainException($"Set the approver's FACTS username for {s.Name} first (Companies & branches).");
             }
 
             // FACTS must have the stock in its batches at the outlet (the posting takes them FIFO): checked before anything changes.
@@ -183,26 +202,31 @@ public static class WastageApproval
                     await c.ExecuteAsync("update wastage set approval = 'approved', decided_by = @u, decided_at = now(), decision_note = @note where id = @Id",
                         new { u = scope.UserId, note, r.Id }, tx);
                     await Audit.RecordAsync(c, tx, scope.CompanyId, r.BranchId, scope.UserId, "wastage", r.Id.ToString(), "approved",
-                        $"Wastage approved: {q.ToString("0.###", Inv)} × {r.Name}{(q != r.Qty ? $" (asked {r.Qty.ToString("0.###", Inv)})" : "")}", note: note);
+                        $"{(r.Kind == "marketing" ? "Marketing" : "Wastage")} approved: {q.ToString("0.###", Inv)} × {r.Name}{(q != r.Qty ? $" (asked {r.Qty.ToString("0.###", Inv)})" : "")}", note: note);
                 }
-                // One posted STV50 per branch and business day, as the branch approver's FACTS username.
+                // One posted STV50 per branch and business day, as the branch approver's FACTS username; marketing: one posted MCV50.
                 var n = 0;
-                foreach (var g in list.GroupBy(r => (r.BranchId, r.BusinessDate)))
+                foreach (var g in list.GroupBy(r => (r.BranchId, r.BusinessDate, r.Kind)))
                 {
                     var s = setups[g.Key.BranchId];
                     var postId = Guid.NewGuid();
-                    var reference = $"One POS wastage {s.Code} {g.Key.BusinessDate:yyyy-MM-dd} W-{postId.ToString("N")[..8].ToUpperInvariant()}";
-                    var xml = new XElement("data", new XElement("Transfer",
-                        new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", s.Loc), new XElement("ToLocation", s.Waste),
-                        new XElement("Reference", reference),
-                        g.Select(r => new XElement("Line", new XElement("ItemType", r.ItemType ?? "SMBK"), new XElement("ItemCode", r.ItemCode), new XElement("ItemName", r.Name),
-                            new XElement("Qty", Qty(r).ToString("0.###", Inv)), new XElement("Unit", r.ErpUnit ?? r.Unit ?? "PCS")))));
+                    var marketing = g.Key.Kind == "marketing";
+                    var reference = $"One POS {(marketing ? "marketing" : "wastage")} {s.Code} {g.Key.BusinessDate:yyyy-MM-dd} {(marketing ? "M" : "W")}-{postId.ToString("N")[..8].ToUpperInvariant()}";
+                    var lines = g.Select(r => new XElement("Line", new XElement("ItemType", r.ItemType ?? "SMBK"), new XElement("ItemCode", r.ItemCode), new XElement("ItemName", r.Name),
+                        new XElement("Qty", Qty(r).ToString("0.###", Inv)), new XElement("Unit", r.ErpUnit ?? r.Unit ?? "PCS")));
+                    var xml = marketing
+                        ? new XElement("data", new XElement("Consumption",
+                            new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("Location", s.Loc), new XElement("Account", s.MarketingAccount),
+                            new XElement("Reference", reference), lines))
+                        : new XElement("data", new XElement("Transfer",
+                            new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", s.Loc), new XElement("ToLocation", s.Waste),
+                            new XElement("Reference", reference), lines));
                     await c.ExecuteAsync("""
                         insert into erp_post (id, company_id, branch_id, kind, doc_no, business_date, amount, xml, status, facts_user)
-                        values (@postId, @co, @b, 'wastage', @reference, @day, @amount, @xml, 'pending', @user)
+                        values (@postId, @co, @b, @kind, @reference, @day, @amount, @xml, 'pending', @user)
                         """, new
                         {
-                            postId, co = scope.CompanyId, b = g.Key.BranchId, reference, day = g.Key.BusinessDate, xml = xml.ToString(SaveOptions.DisableFormatting), user = s.FactsUser!.Trim(),
+                            postId, co = scope.CompanyId, b = g.Key.BranchId, kind = g.Key.Kind, reference, day = g.Key.BusinessDate, xml = xml.ToString(SaveOptions.DisableFormatting), user = PostAs(s, g.Key.Kind),
                             amount = (await c.ExecuteScalarAsync<decimal?>("select sum(cost_value) from wastage where id = any(@ids)", new { ids = g.Select(r => r.Id).ToArray() }, tx)) ?? 0,
                         }, tx);
                     await c.ExecuteAsync("update wastage set erp_post_id = @postId, erp_status = 'pending' where id = any(@ids)", new { postId, ids = g.Select(r => r.Id).ToArray() }, tx);
