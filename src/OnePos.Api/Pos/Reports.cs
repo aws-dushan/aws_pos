@@ -121,7 +121,7 @@ public static class Reports
             });
         });
 
-        // Invoices: one row per paid, refunded or voided bill of the days — its number, who and which till, the money, how it was
+        // Invoices: one row per paid, refunded or voided bill of the days that has an invoice number — its number, who and which till, the money, how it was
         // paid (card type, platform) and whether it reached FACTS (its latest invoice posting).
         api.MapGet("/reports/invoices", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
         {
@@ -138,7 +138,7 @@ public static class Reports
                     : [scope.Branch];
                 var tz = scope.BranchId is { } b0 ? await c.ExecuteScalarAsync<string>("select time_zone from branch where id = @b0", new { b0 }, tx) ?? "Asia/Dubai" : "Asia/Dubai";
                 var rows = await c.QueryAsync<Invoice>("""
-                    select o.id, coalesce(o.invoice_no, '#' || o.number) as invoice_no, o.business_date, b.code as branch,
+                    select o.id, o.invoice_no, o.business_date, b.code as branch,
                            to_char(coalesce(o.closed_at, o.opened_at) at time zone @tz, 'YYYY-MM-DD"T"HH24:MI') as at,
                            o.order_type, dp.name as platform, o.platform_ref, o.status,
                            coalesce(cu.display_name, ou.display_name) as cashier, r.name as till,
@@ -155,7 +155,7 @@ public static class Reports
                     left join app_user ou on ou.id = o.opened_by
                     left join lateral (select u.display_name from payment p join app_user u on u.id = p.taken_by
                                        where p.order_id = o.id and p.kind = 'payment' order by p.at desc limit 1) cu on true
-                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid', 'refunded', 'void')
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid', 'refunded', 'void') and o.invoice_no is not null
                     order by coalesce(o.closed_at, o.opened_at)
                     """, new { ids, f, t, tz }, tx);
                 return new { invoices = rows };
