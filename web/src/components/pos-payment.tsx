@@ -346,7 +346,8 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
   for (const l of d.lines.filter((x) => !x.isVoid)) {
     out.push({ text: l.name.toUpperCase(), mid: fmtQty(l.qty), right: money(l.lineTotal) });
     if (bi && l.nameAr) out.push({ text: l.nameAr, align: "left", size: "small" });
-    for (const m of l.modifiers) out.push({ text: `   + ${m.name}`, right: m.price ? money(m.price * l.qty) : null, size: "small" });
+    // A combo's chosen items print without their price (the combo's own line carries it); paid extras keep theirs.
+    for (const m of l.modifiers) out.push({ text: `   + ${m.name}`, right: m.price && !m.itemId ? money(m.price * l.qty) : null, size: "small" });
     if (l.note) out.push({ text: `   - ${l.note}`, size: "small" });
     // The item's own discount (a promotion, an item discount) when that is what it got, under the item.
     if (l.discount > 0 && l.discType) out.push({ text: `   ${l.discName ?? "Discount"}`, right: `-${money(l.discount)}`, size: "small" });
