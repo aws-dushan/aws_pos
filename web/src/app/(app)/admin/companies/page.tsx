@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ErpConnectionDialog } from "@/components/erp-connection";
-import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon } from "lucide-react";
+import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { useSession } from "@/components/session";
@@ -29,6 +29,7 @@ type Branch = {
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
   marketingApproverId: string | null; marketingApprovalEmail: string | null; marketingFactsUser: string | null; marketingAccount: string | null;
+  requestApproverId: string | null; requestApprovalEmail: string | null; requestFactsUser: string | null;
   discountApprovalEmails: string[] | null;
 };
 
@@ -259,6 +260,7 @@ function CompanyDialog({ value, onClose, onSaved }: { value: Company | "new" | n
               )}
             </div>
           )}
+          {value && value !== "new" && value.erpConnector === "facts" && <RequestStoresBox company={value} />}
           {!isNew && (
             <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
               <span className="text-sm">Active <span className="text-muted-foreground">· an inactive company’s tills can’t sign in</span></span>
@@ -408,6 +410,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
           {value?.branch && <DiscountApprovalBox branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <WastageApprovalBox company={value.company} branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <MarketingBox company={value.company} branch={value.branch} onSaved={onSaved} />}
+          {value?.branch && value.company.erpConnector === "facts" && <RequestApprovalBox company={value.company} branch={value.branch} onSaved={onSaved} />}
 
           {/* Table service: the per-branch switch (REQ ORG-03, MOD). */}
           <div data-module={f.tableService ? "sales" : "fin"} className="overflow-hidden rounded-2xl border">
@@ -676,6 +679,105 @@ function MarketingBox({ company, branch, onSaved }: { company: Company; branch: 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save marketing</Button>
         {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Stock requests at one branch (STR50): who approves them (a One POS user), where requests are emailed, and the approver's FACTS
+ * username the approved STR50 is posted as. Set, the branch has a Requests tab on Stock. Saved on its own.
+ */
+function RequestApprovalBox({ company, branch, onSaved }: { company: Company; branch: Branch; onSaved: () => void }) {
+  const users = useApi<CompanyUser[]>(`/companies/${company.id}/users`);
+  const [v, setV] = useState({ approverId: branch.requestApproverId ?? "", email: branch.requestApprovalEmail ?? "", factsUser: branch.requestFactsUser ?? "" });
+  const [busy, setBusy] = useState(false);
+  async function save(off = false) {
+    setBusy(true);
+    try {
+      await api(`/branches/${branch.id}/request-approval`, "PUT", off ? { approverId: null, email: null, factsUser: null }
+        : { approverId: v.approverId || null, email: v.email.trim() || null, factsUser: v.factsUser.trim() || null });
+      if (off) setV({ approverId: "", email: "", factsUser: "" });
+      toast.success(off ? "Stock requests off for this branch." : "Stock requests saved.");
+      onSaved();
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  }
+  const on = !!branch.requestApproverId;
+  return (
+    <div data-module="inv" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><ClipboardListIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Stock requests {on ? <Pill className={TONE.done} dot>On</Pill> : <Pill className={TONE.muted}>Off</Pill>}</div>
+          <p className="text-xs text-muted-foreground">
+            The branch asks a store for stock on Stock &rarr; Requests; the request waits for the approver (email and Approvals page), who can change quantities.
+            Approved, it is posted in FACTS as a stock transfer request (STR50) as the approver&apos;s FACTS username. Off: no Requests tab.
+          </p>
+        </div>
+      </div>
+      {users.error ? <ErrorNote message={users.error} /> : (
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          <Field label="Approver" hint="The One POS user who approves the requests.">
+            <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
+              <option value="">Choose a user</option>
+              {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
+            </select>
+          </Field>
+          <Field label="Approval email"><Input type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="name@company.com" /></Field>
+          <Field label="FACTS username" hint="Posts the approved STR50 in FACTS."><Input value={v.factsUser} maxLength={20} onChange={(e) => setV({ ...v, factsUser: e.target.value })} placeholder="e.g. NaziaS" /></Field>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save stock requests</Button>
+        {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
+      </div>
+    </div>
+  );
+}
+
+/** The stores branches can ask for stock (FACTS locations, e.g. the main store 5ALK1): add one by its code, rename it, switch it off. */
+function RequestStoresBox({ company }: { company: Company }) {
+  const list = useApi<{ id: string; code: string; name: string; isActive: boolean }[]>(`/companies/${company.id}/request-stores`);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function put(body: { code: string; name?: string | null; isActive?: boolean }, done: string) {
+    setBusy(true);
+    try {
+      const r = await api<{ code: string; name: string }>(`/companies/${company.id}/request-stores`, "PUT", body);
+      toast.success(`${done}: ${r.name} (${r.code})`);
+      list.reload();
+      return true;
+    } catch (e) { toast.error((e as Error).message); return false; } finally { setBusy(false); }
+  }
+  return (
+    <div data-module="inv" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><WarehouseIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Request stores</div>
+          <p className="text-xs text-muted-foreground">The FACTS locations branches can ask for stock (Stock &rarr; Requests). Empty name: FACTS&apos; own name is used.</p>
+        </div>
+      </div>
+      <ErrorNote message={list.error} />
+      {!!list.data?.length && (
+        <div className="mb-3 divide-y rounded-xl border">
+          {list.data.map((s) => (
+            <div key={s.id} className="flex items-center gap-3 px-3 py-2">
+              <span className="w-16 font-mono text-xs text-muted-foreground">{s.code}</span>
+              <span className={s.isActive ? "min-w-0 flex-1 truncate text-sm" : "min-w-0 flex-1 truncate text-sm text-muted-foreground line-through"}>{s.name}</span>
+              <Switch on={s.isActive} onChange={(v) => void put({ code: s.code, name: s.name, isActive: v }, v ? "Switched on" : "Switched off")} label={`${s.name} active`} />
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="grid items-end gap-3 sm:grid-cols-[8rem_minmax(0,1fr)_auto]">
+        <Field label="FACTS location"><Input value={code} maxLength={20} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. 5ALK1" /></Field>
+        <Field label="Name (optional)"><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main store" /></Field>
+        <Button type="button" className="h-10" disabled={busy || !code.trim()}
+          onClick={() => void put({ code: code.trim(), name: name.trim() || null }, "Store added").then((ok) => { if (ok) { setCode(""); setName(""); } })}>
+          <PlusIcon /> Add store
+        </Button>
       </div>
     </div>
   );
