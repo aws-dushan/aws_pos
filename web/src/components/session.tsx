@@ -9,7 +9,9 @@ import { FirstPasswordScreen } from "@/components/first-password";
 
 export type Branch = { id: string; code: string; name: string; tableService: boolean; kitchenEnabled: boolean; returnsEnabled: boolean; dayControl: "manual" | "automatic" | "cashier"; isActive: boolean;
   /** Marketing give-aways on Stock: the branch has a marketing approver and expense account (Companies & branches). */
-  marketingEnabled: boolean };
+  marketingEnabled: boolean;
+  /** Stock requests (STR50) on Stock: the branch has a request approver (Companies & branches). */
+  requestsEnabled?: boolean };
 export type Company = {
   id: string; code: string; name: string; currency: string; vatRate: number; pricesIncludeVat: boolean; erpConnector: "none" | "awsone" | "facts";
   role: string | null; permissions: string[]; branches: Branch[];

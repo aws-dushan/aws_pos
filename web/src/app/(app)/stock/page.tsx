@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangleIcon, CheckCircle2Icon, MegaphoneIcon, PackageIcon, PackageOpenIcon, SendIcon, Trash2Icon, TruckIcon, Undo2Icon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, ClipboardListIcon, MegaphoneIcon, PackageIcon, PackageOpenIcon, SendIcon, Trash2Icon, TruckIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -15,6 +15,7 @@ import { Numpad } from "@/components/numpad";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { StockRequests } from "@/components/stock-requests";
 
 type Waste = {
   id: string; itemId: string; name: string; qty: number; unit: string | null; reason: Reason; kind: Kind; note: string | null; costValue: number | null;
@@ -55,16 +56,17 @@ const money = (n: number) => fmtIn(n, 2);
 /** Branch stock (REQ INV-04, INV-06): record wastage; check in deliveries sent to this branch in the ERP. */
 export default function StockPage() {
   const { company, branch } = useSession();
-  const [tab, setTab] = useState<"waste" | "marketing" | "deliveries" | "returns">("waste");
+  const [tab, setTab] = useState<"waste" | "marketing" | "requests" | "deliveries" | "returns">("waste");
   return (
     <div className="mx-auto max-w-[1100px] pb-8">
       <PageHeader title="Stock" icon={PackageIcon} module="inv"
         description="What's thrown away, what arrives, and what goes back. Stock on hand shows on the register and Menu from the ERP."
         actions={<Segmented id="stock-tab" value={tab} onChange={setTab} options={[{ value: "waste", label: "Wastage", icon: Trash2Icon },
           ...(branch?.marketingEnabled ? [{ value: "marketing" as const, label: "Marketing", icon: MegaphoneIcon }] : []),
+          ...(branch?.requestsEnabled ? [{ value: "requests" as const, label: "Requests", icon: ClipboardListIcon }] : []),
           { value: "deliveries", label: "Deliveries", icon: TruckIcon }, { value: "returns", label: "Returns", icon: Undo2Icon }]} />} />
       {tab === "waste" || tab === "marketing" ? <Wastage key={tab} kind={tab === "marketing" ? "marketing" : "wastage"} currency={company?.currency ?? "AED"} />
-        : tab === "deliveries" ? <Deliveries /> : <Returns />}
+        : tab === "requests" ? <StockRequests /> : tab === "deliveries" ? <Deliveries /> : <Returns />}
     </div>
   );
 }

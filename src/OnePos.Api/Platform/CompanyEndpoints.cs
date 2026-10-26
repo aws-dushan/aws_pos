@@ -87,6 +87,10 @@ public static class CompanyEndpoints
         public string? MarketingApprovalEmail { get; set; }
         public string? MarketingFactsUser { get; set; }
         public string? MarketingAccount { get; set; }
+        /// <summary>Stock requests (STR50): who approves, where requests are emailed, the FACTS username the STR50 is posted as.</summary>
+        public Guid? RequestApproverId { get; set; }
+        public string? RequestApprovalEmail { get; set; }
+        public string? RequestFactsUser { get; set; }
         /// <summary>Where discount requests sent to a manager are emailed (null: no email).</summary>
         public string[]? DiscountApprovalEmails { get; set; }
     }

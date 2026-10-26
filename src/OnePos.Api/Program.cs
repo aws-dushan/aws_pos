@@ -113,6 +113,7 @@ Reservations.Map(api);
 Stock.Map(api);
 WastageApproval.Map(api);
 StockReturns.Map(api);
+StockRequests.Map(api);
 Rewards.Map(api);
 Recipes.Map(api);
 Boms.Map(api);

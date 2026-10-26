@@ -28,6 +28,8 @@ public static partial class FactsPosting
     public const string PostWastageProc = "usp_ONEPOS_PostWastageTransfer";
     /// <summary>FACTS: approved marketing give-aways as a POSTED MCV50 (batch cost to the marketing expense account), db/facts/usp_ONEPOS_PostConsumption.sql.</summary>
     public const string PostConsumptionProc = "usp_ONEPOS_PostConsumption";
+    /// <summary>An outlet's approved stock request as a POSTED STR50 from the store to the outlet (db/facts/).</summary>
+    public const string PostTransferRequestProc = "usp_ONEPOS_PostTransferRequest";
     /// <summary>
     /// Who a draft transfer is created by in FACTS: it must be a FACTS user (TRANSFER_HEADER's creator is checked against
     /// USER_MASTER). POSBAKERY is the user FACTS already puts on every POS bill.
@@ -612,6 +614,7 @@ public static partial class FactsPosting
                         : p.Kind == "wastage" ? p.FactsUser is null ? WastageProc : PostWastageProc
                         : p.Kind == "marketing" ? p.FactsUser is null ? throw new InvalidOperationException("Marketing needs a FACTS user to post it.") : PostConsumptionProc
                         : p.Kind == "return" ? p.FactsUser is null ? throw new InvalidOperationException("A return needs the approver's FACTS username.") : PostWastageProc
+                        : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
                         : p.Kind == "repacking" ? p.OrderId is null ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
@@ -662,6 +665,12 @@ public static partial class FactsPosting
                         "update stock_return set erp_status = 'posted', erp_doc = @stv, erp_posted_at = now() where erp_post_id = @Id", new { stv = $"STV50 {doc}", p.Id }, tx));
                 if (p.Kind == "return" && status == "failed" && !retry)
                     await db.Company(companyId, (c, tx) => c.ExecuteAsync("update stock_return set erp_status = 'failed' where erp_post_id = @Id", new { p.Id }, tx));
+                // A stock request: posted in FACTS (the STR50 the store sends against), or given up on.
+                if (p.Kind == "request" && status == "posted" && doc != "")
+                    await db.Company(companyId, (c, tx) => c.ExecuteAsync(
+                        "update stock_request set erp_status = 'posted', erp_doc = @str, erp_posted_at = now() where erp_post_id = @Id", new { str = $"STR50 {doc}", p.Id }, tx));
+                if (p.Kind == "request" && status == "failed" && !retry)
+                    await db.Company(companyId, (c, tx) => c.ExecuteAsync("update stock_request set erp_status = 'failed' where erp_post_id = @Id", new { p.Id }, tx));
                 if (status == "failed") logger.LogWarning("Posting {Kind} {Id} to FACTS failed: {Error}", p.Kind, p.Id, error);
             }
         }
