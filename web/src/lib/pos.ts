@@ -64,7 +64,7 @@ export type Order = {
   tableIds: string[]; tableNames: string | null; lockedBy: string | null; billPrintedAt: string | null; readyAt: string | null; collectedAt: string | null; splitFrom: string | null; invoiceNo: string | null;
 };
 export type OrderLine = {
-  id: string; itemId: string | null; name: string; nameAr: string | null; unitPrice: number; qty: number; modifiers: { groupId: string; optionId: string; group: string; name: string; price: number }[];
+  id: string; itemId: string | null; name: string; nameAr: string | null; unitPrice: number; qty: number; modifiers: { groupId: string; optionId: string; group: string; name: string; price: number; /** Set on a combo's chosen item. */ itemId?: string | null }[];
   note: string | null; station: string; sentQty: number; lineTotal: number; vat: number; isVoid: boolean; voidReason: string | null; returnedQty: number;
   /** The discount the line got (the bigger of its own and its share of the bill discount). */
   discount: number;
