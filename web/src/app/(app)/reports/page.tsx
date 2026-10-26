@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3Icon, PrinterIcon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
+import { BarChart3Icon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
 import { useApi } from "@/lib/api";
 import { ExportMenu } from "@/components/export-menu";
 import { ReceiptDialog } from "@/components/pos-payment";
 import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
-import { dayReportLines, printReports, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
+import { dayReportLines, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
 import type { ReceiptLine } from "@/lib/device";
 import { toast } from "sonner";
 import { fmtIn } from "@/lib/num";
@@ -311,12 +311,6 @@ export default function ReportsPage() {
                   const ds = cd.data.days;
                   return <span className="text-sm text-muted-foreground">Net sales {cur} {money(ds.reduce((t, x) => t + (x.z?.netSales ?? 0), 0))} · variance {money(ds.reduce((t, x) => t + (x.z?.variance ?? 0), 0))} · click a row for its Z report</span>;
                 })()}
-                <Button variant="outline" size="sm" className="ml-auto" disabled={!table?.rows.length}
-                  onClick={() => {
-                    const all = (table?.rows ?? []).map((_, i) => zOf(i)).filter((x): x is ReceiptLine[] => !!x);
-                    if (!all.length) toast.error("No Z reports kept for these.");
-                    else if (!printReports([...all].reverse(), `Z reports ${from} to ${to}`)) toast.error("Allow pop-ups for One POS to print or save as PDF.");
-                  }}><PrinterIcon /> Print all Z reports</Button>
               </div>
             )}
             {invTab && (
@@ -371,7 +365,7 @@ export default function ReportsPage() {
           </StaggerItem>
 
           <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
-          <ReportDialog lines={zLines} onClose={() => setZLines(null)} />
+          <ReportDialog lines={zLines} onClose={() => setZLines(null)} viewOnly />
           <StaggerItem>
             <p className="flex items-center gap-2 text-xs text-muted-foreground"><ScaleIcon className="size-3.5" /> Item sales are each line&apos;s share of what its order was paid (discounts and service charge spread), less items that came back. Payment methods and cashiers count money on the day it changed hands, so they can differ from sales when an order is paid on a later day.</p>
           </StaggerItem>
