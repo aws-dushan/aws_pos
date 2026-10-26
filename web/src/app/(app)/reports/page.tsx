@@ -1,11 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3Icon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
+import { BarChart3Icon, PrinterIcon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
 import { useApi } from "@/lib/api";
 import { ExportMenu } from "@/components/export-menu";
 import { ReceiptDialog } from "@/components/pos-payment";
 import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
+import { dayReportLines, printReports, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
+import type { ReceiptLine } from "@/lib/device";
+import { toast } from "sonner";
 import { fmtIn } from "@/lib/num";
 import { cn } from "@/lib/utils";
 import { fmtQty, METHOD_LABEL, TYPE_LABEL, type OrderType, type PayMethod } from "@/lib/pos";
@@ -30,13 +33,18 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "closed" | "discounts" | "branches" | "exceptions" | "stock";
 type Inv = {
   id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
   status: "paid" | "refunded" | "void"; cashier: string | null; till: string | null; items: number;
   gross: number; discount: number; vat: number; net: number; refunded: number; paidBy: string | null; facts: string | null; customer?: string | null;
 };
 type InvPay = { orderId: string; type: string; amount: number };
+type ClosedDays = {
+  days: { id: string; date: string; branch: string; closedAt: string | null; closedByName: string | null; reopened: number; z: DayReport | null }[];
+  shifts: { id: string; date: string; branch: string; registerName: string; userName: string; openedAt: string; closedAt: string | null; status: ShiftStatus; openingFloat: number;
+    expectedCash: number | null; countedCash: number | null; variance: number | null; approvedByName: string | null; sales: number; z: ShiftReport | null }[];
+};
 type InvKind = "all" | "notPosted";
 const FACTS_LABEL: Record<string, string> = { posted: "Posted", pending: "Waiting", waiting: "Waiting", failed: "Failed", skipped: "Skipped" };
 const invStatus = (x: Inv) => x.status === "void" ? "Void" : x.status === "refunded" ? "Refunded" : x.refunded > 0 ? "Part refunded" : "Paid";
@@ -82,6 +90,16 @@ export default function ReportsPage() {
   const [invKind, setInvKind] = useState<InvKind>("all");
   const [invQ, setInvQ] = useState("");
   const [receipt, setReceipt] = useState<string | null>(null);
+  // Closed days (admin and finance): the days or their shifts, each with its kept Z report.
+  const [dayKind, setDayKind] = useState<"days" | "shifts">("days");
+  const cd = useApi<ClosedDays>(tab === "closed" ? `/reports/days?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  const [zLines, setZLines] = useState<ReceiptLine[] | null>(null);
+  const zTitle = (code: string) => `${company?.name ?? ""} · ${code}`;
+  const zOf = (i: number): ReceiptLine[] | null => {
+    if (dayKind === "days") { const x = cd.data?.days[i]; return x?.z ? dayReportLines({ ...x.z, status: "closed" }, zTitle(x.branch)) : null; }
+    const x = cd.data?.shifts[i];
+    return x?.z ? shiftReportLines({ ...x.z, kind: "Z" }, zTitle(x.branch)) : null;
+  };
   // The bills shown: not yet in FACTS (waiting or failed; voids never go), and the search on number, cashier, platform order or method.
   const invRows = useMemo(() => {
     const q = invQ.trim().toLowerCase();
@@ -132,6 +150,22 @@ export default function ReportsPage() {
             fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), x.paidBy ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
         };
       }
+      case "closed": {
+        const c = cd.data;
+        if (!c) return { head: [], rows: [], share: null };
+        const many = where === "all";
+        const m = (n: number | null | undefined) => n == null ? "—" : money(n);
+        if (dayKind === "days") return {
+          head: ["Day", ...(many ? ["Branch"] : []), "Closed", "Orders", "Net sales", "Float", "Expected", "Counted", "Variance"], share: null,
+          rows: c.days.map((x) => [`${shortDay(x.date)}${x.reopened ? ` (reopened ${x.reopened}×)` : ""}`, ...(many ? [x.branch] : []), `${x.closedAt ? time(x.closedAt) : "—"} · ${x.closedByName ?? "automatically"}`,
+            x.z?.sales.orders ?? "—", m(x.z?.netSales), m(x.z?.cash?.openingFloat), m(x.z?.cash?.expected), m(x.z?.cash?.counted), m(x.z?.variance)]),
+        };
+        return {
+          head: ["Day", ...(many ? ["Branch"] : []), "Till", "Cashier", "Opened", "Closed", "Sales", "Float", "Cash expected", "Counted", "Variance", "Status"], share: null,
+          rows: c.shifts.map((x) => [shortDay(x.date), ...(many ? [x.branch] : []), x.registerName, x.userName, time(x.openedAt), x.closedAt ? time(x.closedAt) : "—",
+            money(x.sales), money(x.openingFloat), m(x.expectedCash), m(x.countedCash), m(x.variance), `${SHIFT_STATUS[x.status]}${x.approvedByName ? ` (approved by ${x.approvedByName})` : ""}`]),
+        };
+      }
       case "finance": {
         if (!inv.data) return { head: [], rows: [], share: null };
         const many = where === "all";
@@ -176,13 +210,13 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", closed: "Closed days", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
-  const listTab = tab === "exceptions" || invTab;
+  const listTab = tab === "exceptions" || invTab || tab === "closed";
   const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
   const exportTable = table ? {
     title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
@@ -252,7 +286,7 @@ export default function ReportsPage() {
               <Segmented id="rep-tab" value={tab} onChange={setTab} options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
                 { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" },
-                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }] : []),
+                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, { value: "closed" as const, label: "Closed days" }] : []),
                 { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
@@ -269,6 +303,22 @@ export default function ReportsPage() {
                 <span className="text-sm text-muted-foreground">{branch?.name}, now: FACTS stock less what was sold and thrown away since. A blank price means FACTS has none, so it can&apos;t be sold there.</span>
               </div>
             )}
+            {tab === "closed" && (
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <Segmented id="days-kind" size="sm" value={dayKind} onChange={setDayKind} options={[
+                  { value: "days", label: `Days${cd.data ? ` · ${cd.data.days.length}` : ""}` }, { value: "shifts", label: `Shifts${cd.data ? ` · ${cd.data.shifts.length}` : ""}` }]} />
+                {cd.data && (() => {
+                  const ds = cd.data.days;
+                  return <span className="text-sm text-muted-foreground">Net sales {cur} {money(ds.reduce((t, x) => t + (x.z?.netSales ?? 0), 0))} · variance {money(ds.reduce((t, x) => t + (x.z?.variance ?? 0), 0))} · click a row for its Z report</span>;
+                })()}
+                <Button variant="outline" size="sm" className="ml-auto" disabled={!table?.rows.length}
+                  onClick={() => {
+                    const all = (table?.rows ?? []).map((_, i) => zOf(i)).filter((x): x is ReceiptLine[] => !!x);
+                    if (!all.length) toast.error("No Z reports kept for these.");
+                    else if (!printReports([...all].reverse(), `Z reports ${from} to ${to}`)) toast.error("Allow pop-ups for One POS to print or save as PDF.");
+                  }}><PrinterIcon /> Print all Z reports</Button>
+              </div>
+            )}
             {invTab && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="inv-kind" size="sm" value={invKind} onChange={setInvKind} options={[{ value: "all", label: "All bills" }, { value: "notPosted", label: "Not in FACTS yet" }]} />
@@ -281,7 +331,7 @@ export default function ReportsPage() {
                 })()}
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : undefined} />
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "closed" ? cd.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -302,7 +352,8 @@ export default function ReportsPage() {
                   </TableRow></TableHeader>
                   <TableBody>
                     {table.rows.slice(0, 200).map((row, ri) => (
-                      <TableRow key={ri} className={table.ids ? "cursor-pointer" : undefined} onClick={table.ids ? () => setReceipt(table.ids![ri]) : undefined}>
+                      <TableRow key={ri} className={table.ids || tab === "closed" ? "cursor-pointer" : undefined}
+                        onClick={tab === "closed" ? () => { const z = zOf(ri); if (z) setZLines(z); else toast.error("No Z report was kept for this."); } : table.ids ? () => setReceipt(table.ids![ri]) : undefined}>
                         {row.map((v, i) => (
                           <TableCell key={i} className={i === 0 ? "pl-5 font-medium" : i === row.length - 1 ? cn("pr-5", (!listTab || numCol(i)) && "text-right tabular-nums") : numCol(i) ? "text-right tabular-nums" : "text-muted-foreground"}>
                             {i === row.length - 1 && table.share ? (
@@ -315,11 +366,12 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </TablePanel>
-            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
+            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
             {tab !== "summary" && table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
           </StaggerItem>
 
           <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
+          <ReportDialog lines={zLines} onClose={() => setZLines(null)} />
           <StaggerItem>
             <p className="flex items-center gap-2 text-xs text-muted-foreground"><ScaleIcon className="size-3.5" /> Item sales are each line&apos;s share of what its order was paid (discounts and service charge spread), less items that came back. Payment methods and cashiers count money on the day it changed hands, so they can differ from sales when an order is paid on a later day.</p>
           </StaggerItem>
