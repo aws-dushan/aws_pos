@@ -146,6 +146,7 @@ public static class AuthEndpoints
                            ?? throw new ForbiddenException("You are not signed in.");
                 var companies = (await c.QueryAsync<MeCompany>("""
                     select co.id, co.code, co.name, co.base_currency as currency, co.vat_rate, co.prices_include_vat, co.erp_connector, co.vouchers_enabled, co.loyalty_enabled,
+                           co.erp_connector = 'facts' and co.facts_marketing_account is not null as marketing_enabled,
                            r.name as role, coalesce(r.permissions, '{}') as permissions
                     from company co
                     left join user_company uc on uc.company_id = co.id and uc.user_id = @id
@@ -172,7 +173,7 @@ public static class AuthEndpoints
                     } : null,
                     companies = companies.Select(co => new
                     {
-                        co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.Role,
+                        co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.MarketingEnabled, co.Role,
                         permissions = user.IsAdmin ? Permissions.All.Select(p => p.Key).ToArray() : co.Permissions,
                         branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive }),
                     }),
@@ -185,6 +186,7 @@ public static class AuthEndpoints
     {
         public bool VouchersEnabled { get; set; }
         public bool LoyaltyEnabled { get; set; }
+        public bool MarketingEnabled { get; set; }
         public Guid Id { get; set; }
         public string Code { get; set; } = "";
         public string Name { get; set; } = "";
