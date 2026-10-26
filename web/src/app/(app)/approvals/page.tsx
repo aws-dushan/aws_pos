@@ -15,6 +15,7 @@ import type { Approval } from "@/components/approval";
 import { Button } from "@/components/ui/button";
 import { WastageApprovals } from "@/components/wastage-approvals";
 import { ReturnsApprovals } from "@/components/returns-approvals";
+import { RequestsApprovals } from "@/components/requests-approvals";
 
 const KIND = {
   discount: { label: "Discount", icon: BadgePercentIcon, module: "sales" as const },
@@ -54,10 +55,11 @@ export default function ApprovalsPage() {
   return (
     <div className="mx-auto max-w-[980px] pb-8">
       <PageHeader title="Approvals" icon={ShieldCheckIcon} module="appr" count={pending.data?.length}
-        description="Wastage and returns to the factory waiting for their approver, and discounts, refunds and cash out above a cashier's limit. Approving here acts at once."
+        description="Wastage, returns to the factory and stock requests waiting for their approver, and discounts, refunds and cash out above a cashier's limit. Approving here acts at once."
         actions={<Segmented id="appr-where" value={where} onChange={setWhere} options={[{ value: "all", label: "All my branches" }, { value: "branch", label: "This branch" }]} />} />
       <WastageApprovals />
       <ReturnsApprovals />
+      <RequestsApprovals />
       <ErrorNote message={pending.error} />
       {!pending.data ? <LoadingRows rows={3} /> : pending.data.length === 0 ? (
         <EmptyState icon={ShieldCheckIcon} title="Nothing waiting" module="appr">New requests appear here the moment a till sends them.</EmptyState>

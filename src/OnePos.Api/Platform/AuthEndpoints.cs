@@ -157,7 +157,9 @@ public static class AuthEndpoints
                 var branches = (await c.QueryAsync<MeBranch>("""
                     select b.id, b.company_id, b.code, b.name, b.table_service, b.kitchen_enabled, b.returns_enabled, b.day_control, b.is_active,
                            b.marketing_approver_id is not null and b.marketing_account is not null and b.erp_location_code is not null
-                             and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as marketing_enabled
+                             and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as marketing_enabled,
+                           b.request_approver_id is not null and b.request_facts_user is not null and b.erp_location_code is not null
+                             and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as requests_enabled
                     from branch b
                     where b.company_id = any(@companyIds) and (b.is_active or @isAdmin)
                       and (@isAdmin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @id))
@@ -176,7 +178,7 @@ public static class AuthEndpoints
                     {
                         co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.Role,
                         permissions = user.IsAdmin ? Permissions.All.Select(p => p.Key).ToArray() : co.Permissions,
-                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive, b.MarketingEnabled }),
+                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive, b.MarketingEnabled, b.RequestsEnabled }),
                     }),
                 };
             });
@@ -211,6 +213,8 @@ public static class AuthEndpoints
         public bool IsActive { get; set; }
         /// <summary>Marketing give-aways on Stock: the branch has a marketing approver and expense account (Companies &amp; branches).</summary>
         public bool MarketingEnabled { get; set; }
+        /// <summary>Stock requests (STR50) on Stock: the branch has a request approver with a FACTS username (Companies &amp; branches).</summary>
+        public bool RequestsEnabled { get; set; }
     }
 
     private static Task SignInAsync(HttpContext http, Guid id, string name, bool isAdmin, Guid? tillCompany, Guid? tillBranch, Guid? tillRegister, bool mustChangePassword = false)
