@@ -82,11 +82,17 @@ public static class CompanyEndpoints
         public Guid? WastageApproverId { get; set; }
         public string? WastageApprovalEmail { get; set; }
         public string? WastageFactsUser { get; set; }
+        /// <summary>Marketing give-aways: who approves, where requests are emailed, the FACTS username the MCV50 is posted as, its expense account.</summary>
+        public Guid? MarketingApproverId { get; set; }
+        public string? MarketingApprovalEmail { get; set; }
+        public string? MarketingFactsUser { get; set; }
+        public string? MarketingAccount { get; set; }
         /// <summary>Where discount requests sent to a manager are emailed (null: no email).</summary>
         public string[]? DiscountApprovalEmails { get; set; }
     }
 
     public sealed record WastageApprovalBody(Guid? ApproverId, string? Email, string? FactsUser);
+    public sealed record MarketingBody(Guid? ApproverId, string? Email, string? FactsUser, string? Account);
     public sealed record DiscountApprovalBody(string[]? Emails);
 
     private static readonly string[] Connectors = ["none", "awsone", "facts"];
@@ -232,6 +238,47 @@ public static class CompanyEndpoints
                 [
                     new("Wastage approver", oldName, name), new("Approval email", old.WastageApprovalEmail, approver is null ? null : email),
                     new("FACTS username", old.WastageFactsUser, approver is null ? null : factsUser),
+                ]);
+                return 0;
+            });
+            await live.ToCompany(companyId, "branches.changed");
+            return Results.Ok(new { ok = true });
+        });
+
+        // Marketing give-aways at this branch (null approver: off, no Marketing tab): who approves them, the email requests go to, the
+        // FACTS username the approved MCV50 is posted as (one allowed MCV50 "Transaction Posting") and the expense account it debits.
+        api.MapPut("/branches/{id:guid}/marketing", async (Guid id, MarketingBody body, HttpContext http, Db db, Live live) =>
+        {
+            var companyId = await db.Platform((c, tx) => c.ExecuteScalarAsync<Guid?>("select company_id from branch where id = @id", new { id }, tx))
+                            ?? throw new NotFoundException("Branch not found.");
+            var scope = await http.ScopeAsync(db, companyId);
+            scope.Require("branch.manage");
+            var (approver, email, factsUser) = Pos.WastageApproval.Clean(body.ApproverId, body.Email, body.FactsUser);
+            var account = string.IsNullOrWhiteSpace(body.Account) ? null : body.Account.Trim();
+            if (account is not null && !System.Text.RegularExpressions.Regex.IsMatch(account, "^[A-Za-z0-9._-]{1,20}$"))
+                throw new DomainException("The expense account is a FACTS account code (e.g. 8003).");
+            await db.Company(companyId, async (c, tx) =>
+            {
+                var old = await c.QuerySingleAsync<BranchRow>("select * from branch where id = @id for update", new { id }, tx);
+                string? name = null;
+                if (approver is { } a)
+                {
+                    name = await c.ExecuteScalarAsync<string?>(
+                        "select u.display_name from app_user u where u.id = @a and u.is_active and (u.is_admin or exists (select 1 from user_company uc where uc.user_id = u.id and uc.company_id = @companyId))",
+                        new { a, companyId }, tx) ?? throw new DomainException("Choose an active user of this company as the approver.");
+                    if (email is null) throw new DomainException($"Enter the email {name}'s marketing requests go to.");
+                    if (account is null) throw new DomainException("Enter the FACTS expense account marketing is posted to (e.g. 8003).");
+                }
+                var on = approver is not null;
+                await c.ExecuteAsync("""
+                    update branch set marketing_approver_id = @approver, marketing_approval_email = @email, marketing_facts_user = @factsUser, marketing_account = @account
+                    where id = @id
+                    """, new { approver, email = on ? email : null, factsUser = on ? factsUser : null, account = on ? account : null, id }, tx);
+                var oldName = old.MarketingApproverId is { } o ? await c.ExecuteScalarAsync<string?>("select display_name from app_user where id = @o", new { o }, tx) : null;
+                await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "changed", $"Branch {old.Code}: marketing {(on ? "set" : "off")}",
+                [
+                    new("Marketing approver", oldName, name), new("Approval email", old.MarketingApprovalEmail, on ? email : null),
+                    new("FACTS username", old.MarketingFactsUser, on ? factsUser : null), new("Expense account", old.MarketingAccount, on ? account : null),
                 ]);
                 return 0;
             });

@@ -20,9 +20,7 @@ namespace OnePos.Api.Erp;
 /// </summary>
 public static partial class FactsPosting
 {
-    /// <summary>`MarketingAccount` / `MarketingUser`: null keeps what's set, "" clears it (no account = marketing off).</summary>
-    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null,
-                                     string? MarketingAccount = null, string? MarketingUser = null);
+    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null);
 
     /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveWastageTransfer.sql): a day's wastage as a draft STV50.</summary>
     public const string WastageProc = "usp_ONEPOS_SaveWastageTransfer";
@@ -47,8 +45,6 @@ public static partial class FactsPosting
 
     [GeneratedRegex(@"^[A-Za-z0-9_]{1,100}$")]
     private static partial Regex ProcName();
-    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,20}$")]
-    private static partial Regex AccountCode();
 
     private sealed class OrderInfo
     {
@@ -375,8 +371,8 @@ public static partial class FactsPosting
             RequireFinance(scope);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string? MarketingAccount, string? MarketingUser)>(
-                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_marketing_account, facts_marketing_user from company where id = @id", new { id = scope.CompanyId }, tx);
+                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
+                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
                 var branches = await c.QueryAsync<(Guid Id, string Code, string Name, string? Location, DateOnly? PostFrom, int Modes, int Cards)>("""
                     select b.id, b.code, b.name, b.erp_location_code, b.facts_post_from,
                            (select count(*) from erp_payment_mode m where m.branch_id = b.id)::int, (select count(*) from erp_payment_mode m where m.branch_id = b.id and m.kind = 'card')::int
@@ -388,7 +384,6 @@ public static partial class FactsPosting
                 return new
                 {
                     connector = co.Connector, posting = co.Posting, refunds = co.Refunds, refundProc = co.Proc, invoiceProc = co.InvoiceProc ?? StandardInvoiceProc, wastage = co.Wastage, repacking = co.Repacking,
-                    marketingAccount = co.MarketingAccount, marketingUser = co.MarketingUser,
                     modesReadAt = modesRead.At, modesReadOk = modesRead.Ok, modesReadError = modesRead.Message,
                     branches = branches.Select(b => new
                     {
@@ -409,30 +404,22 @@ public static partial class FactsPosting
             if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or One POS' (FIFO batches).");
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
-            if (body.MarketingAccount is { Length: > 0 } ma && !AccountCode().IsMatch(ma.Trim())) throw new DomainException("The marketing expense account is a FACTS account code (e.g. 8003).");
-            if (body.MarketingUser is { Length: > 20 }) throw new DomainException("A FACTS username has at most 20 characters.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string? MarketingAccount, string? MarketingUser)>(
-                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_marketing_account, facts_marketing_user from company where id = @id", new { id = scope.CompanyId }, tx);
+                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
+                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
                 var wastage = body.Wastage ?? old.Wastage;
-                string? Keep(string? sent, string? was) => sent is null ? was : string.IsNullOrWhiteSpace(sent) ? null : sent.Trim();
-                var marketingAccount = Keep(body.MarketingAccount, old.MarketingAccount);
-                var marketingUser = Keep(body.MarketingUser, old.MarketingUser);
                 var repacking = body.Repacking ?? old.Repacking;
                 var invoiceProc = body.InvoiceProc is null ? old.InvoiceProc : body.InvoiceProc == StandardInvoiceProc ? null : body.InvoiceProc;
-                await c.ExecuteAsync("""
-                    update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage,
-                      facts_repacking = @repacking, facts_marketing_account = @marketingAccount, facts_marketing_user = @marketingUser where id = @id
-                    """, new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, marketingAccount, marketingUser, id = scope.CompanyId }, tx);
+                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking where id = @id",
+                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, id = scope.CompanyId }, tx);
                 // A procedure now there: credit notes that waited for it can go.
                 if (proc is not null) await c.ExecuteAsync("update erp_post set status = 'pending', last_error = null, next_try_at = now() where kind = 'refund' and status = 'waiting'", transaction: tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "erp", "posting", "changed", "FACTS posting settings changed",
                     [new("Posting", old.Posting, body.Posting), new("Refunds", old.Refunds, body.Refunds), new("SR50 procedure", old.Proc, proc),
                      new("Bill procedure", old.InvoiceProc ?? StandardInvoiceProc, invoiceProc ?? StandardInvoiceProc),
                      new("Wastage", old.Wastage == "draft" ? "Draft STV from One POS" : "Finance enters", wastage == "draft" ? "Draft STV from One POS" : "Finance enters"),
-                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
-                     new("Marketing expense account", old.MarketingAccount, marketingAccount), new("Marketing posted as", old.MarketingUser, marketingUser)]);
+                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking))]);
                 return 0;
             });
             return Results.Ok(new { ok = true });

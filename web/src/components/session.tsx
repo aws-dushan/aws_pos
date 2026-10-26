@@ -7,14 +7,14 @@ import { appStorage, withBase } from "@/lib/base-path";
 import { fmtIn } from "@/lib/num";
 import { FirstPasswordScreen } from "@/components/first-password";
 
-export type Branch = { id: string; code: string; name: string; tableService: boolean; kitchenEnabled: boolean; returnsEnabled: boolean; dayControl: "manual" | "automatic" | "cashier"; isActive: boolean };
+export type Branch = { id: string; code: string; name: string; tableService: boolean; kitchenEnabled: boolean; returnsEnabled: boolean; dayControl: "manual" | "automatic" | "cashier"; isActive: boolean;
+  /** Marketing give-aways on Stock: the branch has a marketing approver and expense account (Companies & branches). */
+  marketingEnabled: boolean };
 export type Company = {
   id: string; code: string; name: string; currency: string; vatRate: number; pricesIncludeVat: boolean; erpConnector: "none" | "awsone" | "facts";
   role: string | null; permissions: string[]; branches: Branch[];
   /** Switched on by an administrator (Companies & branches). */
   vouchersEnabled: boolean; loyaltyEnabled: boolean;
-  /** Marketing give-aways on Stock: a FACTS marketing expense account is set (FACTS posting). */
-  marketingEnabled: boolean;
 };
 export type Me = {
   user: { id: string; username: string; displayName: string; isAdmin: boolean; mustChangePassword?: boolean };
