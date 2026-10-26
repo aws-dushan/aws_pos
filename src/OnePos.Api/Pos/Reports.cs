@@ -120,5 +120,55 @@ public static class Reports
                 };
             });
         });
+
+        // Invoices: one row per paid, refunded or voided bill of the days — its number, who and which till, the money, how it was
+        // paid (card type, platform) and whether it reached FACTS (its latest invoice posting).
+        api.MapGet("/reports/invoices", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("reports.view");
+            var (f, t) = from <= to ? (from, to) : (to, from);
+            if (t.DayNumber - f.DayNumber > 366) throw new DomainException("Choose at most a year.");
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var ids = branches == "all"
+                    ? (await c.QueryAsync<Guid>("""
+                        select b.id from branch b where @admin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @u)
+                        """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray()
+                    : [scope.Branch];
+                var tz = scope.BranchId is { } b0 ? await c.ExecuteScalarAsync<string>("select time_zone from branch where id = @b0", new { b0 }, tx) ?? "Asia/Dubai" : "Asia/Dubai";
+                var rows = await c.QueryAsync<Invoice>("""
+                    select o.id, coalesce(o.invoice_no, '#' || o.number) as invoice_no, o.business_date, b.code as branch,
+                           to_char(coalesce(o.closed_at, o.opened_at) at time zone @tz, 'YYYY-MM-DD"T"HH24:MI') as at,
+                           o.order_type, dp.name as platform, o.platform_ref, o.status,
+                           coalesce(cu.display_name, ou.display_name) as cashier, r.name as till,
+                           (select coalesce(sum(l.qty), 0) from order_line l where l.order_id = o.id and not l.is_void) as items,
+                           o.subtotal as gross, o.discount_total as discount, o.vat, o.total as net, o.refunded,
+                           (select string_agg(case p.method when 'card' then coalesce(initcap(regexp_replace(p.card_type, '^\S+\s+', '')), 'Card') when 'platform' then coalesce(dp.name, 'Platform')
+                                                             else initcap(p.method) end || ' ' || to_char(p.amount, 'FM999999990.00'), ' · ' order by p.at)
+                              from payment p where p.order_id = o.id and p.kind = 'payment') as paid_by,
+                           (select e.status from erp_post e where e.order_id = o.id and e.kind = 'invoice' order by e.created_at desc limit 1) as facts
+                    from pos_order o
+                    join branch b on b.id = o.branch_id
+                    left join delivery_platform dp on dp.id = o.platform_id
+                    left join register r on r.id = o.register_id
+                    left join app_user ou on ou.id = o.opened_by
+                    left join lateral (select u.display_name from payment p join app_user u on u.id = p.taken_by
+                                       where p.order_id = o.id and p.kind = 'payment' order by p.at desc limit 1) cu on true
+                    where o.branch_id = any(@ids) and o.business_date between @f and @t and o.status in ('paid', 'refunded', 'void')
+                    order by coalesce(o.closed_at, o.opened_at)
+                    """, new { ids, f, t, tz }, tx);
+                return new { invoices = rows };
+            });
+        });
+    }
+
+    public sealed class Invoice
+    {
+        public Guid Id { get; set; } public string InvoiceNo { get; set; } = ""; public DateOnly BusinessDate { get; set; } public string Branch { get; set; } = "";
+        public string At { get; set; } = ""; public string OrderType { get; set; } = ""; public string? Platform { get; set; } public string? PlatformRef { get; set; }
+        public string Status { get; set; } = ""; public string? Cashier { get; set; } public string? Till { get; set; } public decimal Items { get; set; }
+        public decimal Gross { get; set; } public decimal Discount { get; set; } public decimal Vat { get; set; } public decimal Net { get; set; } public decimal Refunded { get; set; }
+        public string? PaidBy { get; set; } public string? Facts { get; set; }
     }
 }
