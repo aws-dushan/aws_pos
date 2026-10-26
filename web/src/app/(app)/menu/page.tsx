@@ -16,6 +16,7 @@ import { Stagger, StaggerItem } from "@/components/motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const TONES: Tone[] = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
@@ -272,7 +273,9 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name" required><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
             <Field label="Arabic name"><Input dir="rtl" value={f.nameAr} onChange={(e) => setF({ ...f, nameAr: e.target.value })} /></Field>
-            <Field label={`Price (${currency})`} required><Input inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>
+            {f.isCombo
+              ? <Field label="Price" hint="The prices on its choices (each a menu item)."><Input value="Priced by its choices" readOnly disabled /></Field>
+              : <Field label={`Price (${currency})`} required><Input inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>}
             <Field label="Category">
               <select className="h-8 w-full rounded-lg border border-input bg-card px-2.5 text-sm dark:bg-input/30" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
                 {menu.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -288,7 +291,7 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
             <span className="text-sm"><span className="font-medium">This is a combo</span> <span className="text-muted-foreground">· one price for a set of items the customer chooses, e.g. a main + a drink</span></span>
             <Switch on={f.isCombo} onChange={(v) => setF({ ...f, isCombo: v, station: v ? "none" : f.station })} label="Combo" />
           </div>
-          <Field label={f.isCombo ? "Combo choices" : "Option groups"} hint={f.isCombo ? "Tap the choice groups this combo offers, e.g. Choose a main, Choose a drink. Make them in the Option groups tab, linking each option to a menu item." : "Tap to attach. Required groups must be chosen at the register."}>
+          <Field label={f.isCombo ? "Combo choices" : "Option groups"} hint={f.isCombo ? "Tap the choice groups this combo offers, e.g. Choose a main, Choose a drink. Make them in the Option groups tab, linking each option to a menu item. Every choice must be a menu item; FACTS gets each chosen item with its own code, at the price set on the choice." : "Tap to attach. Required groups must be chosen at the register."}>
             <div className="flex flex-wrap gap-2">
               {menu.groups.map((g) => {
                 const on = f.groupIds.includes(g.id);
@@ -318,8 +321,8 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
             </button>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="ERP item code" hint="Links to the AWS One / FACTS item (phase 3)."><Input value={f.erpItemCode} onChange={(e) => setF({ ...f, erpItemCode: e.target.value })} /></Field>
-            {existing && (existing.erpPriced
+            {!f.isCombo && <Field label="ERP item code" hint="Links to the AWS One / FACTS item (phase 3)."><Input value={f.erpItemCode} onChange={(e) => setF({ ...f, erpItemCode: e.target.value })} /></Field>}
+            {existing && !f.isCombo && (existing.erpPriced
               ? <Field label={`Price at ${branchName ?? "this branch"}`} hint="From this branch's FACTS price type; change it in FACTS."><Input value={f.branchPrice || "No price in FACTS"} readOnly disabled /></Field>
               : <Field label={`Price at ${branchName ?? "this branch"}`} hint="Empty = the company price."><Input inputMode="decimal" value={f.branchPrice} onChange={(e) => setF({ ...f, branchPrice: e.target.value })} placeholder={String(existing.price)} /></Field>)}
           </div>
@@ -361,6 +364,41 @@ function PriceHistory({ itemId, currency, branchName }: { itemId: string; curren
         </div>
       )}
     </div>
+  );
+}
+
+/** Choose the menu item an option is: search by name or ERP item code; each shows its code. */
+function ItemPicker({ items, value, onChange }: { items: MenuItem[]; value: string; onChange: (item: MenuItem | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const chosen = items.find((x) => x.id === value);
+  const term = q.trim().toLowerCase();
+  const found = items.filter((x) => !x.isCombo && (!term || x.name.toLowerCase().includes(term) || (x.erpItemCode ?? "").toLowerCase().includes(term))).slice(0, 50);
+  const pick = (it: MenuItem | null) => { onChange(it); setOpen(false); setQ(""); };
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ(""); }}>
+      <PopoverTrigger render={
+        <button type="button" aria-label="Menu item" className="flex h-8 min-w-0 items-center rounded-lg border border-input bg-card px-2 text-left text-sm dark:bg-input/30">
+          <span className={cn("min-w-0 flex-1 truncate", !chosen && "text-muted-foreground")}>{chosen ? chosen.name : "Not an item"}</span>
+          {chosen?.erpItemCode && <span className="ml-1.5 shrink-0 text-xs text-muted-foreground tabular-nums">{chosen.erpItemCode}</span>}
+        </button>
+      } />
+      <PopoverContent align="start" className="w-80 gap-1.5 p-1.5">
+        <Input autoFocus value={q} placeholder="Search name or item code" onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (found[0]) pick(found[0]); } }} />
+        <div className="max-h-64 overflow-y-auto">
+          {!term && <button type="button" onClick={() => pick(null)} className="w-full rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted">Not an item</button>}
+          {found.map((x) => (
+            <button key={x.id} type="button" onClick={() => pick(x)}
+              className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", x.id === value && "bg-muted")}>
+              <span className="min-w-0 flex-1 truncate">{x.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{x.erpItemCode ?? "No item code"}</span>
+            </button>
+          ))}
+          {!found.length && <div className="px-2 py-3 text-center text-sm text-muted-foreground">No item matches.</div>}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -411,15 +449,13 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
           </div>
           <div className="space-y-2">
             <div className="text-[0.8rem] font-medium text-foreground/80">Options</div>
-            <p className="text-xs text-muted-foreground">For a combo, link an option to a menu item: the kitchen gets that item. Extra price = the upcharge.</p>
+            <p className="text-xs text-muted-foreground">For a combo, every option must be a menu item: the kitchen gets that item, and FACTS gets it with its item code at the price here (its price in the combo; it starts at the item&apos;s menu price). Otherwise the price is the upcharge.</p>
             {opts.map((o, i) => (
               <div key={o.id ?? `new-${i}`} className="grid grid-cols-[1fr_9rem_6rem_auto_auto] gap-2">
                 <Input value={o.name} placeholder={`Option ${i + 1}`} onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
-                <select aria-label="Menu item" value={o.itemId} className="h-8 min-w-0 rounded-lg border border-input bg-card px-2 text-sm dark:bg-input/30"
-                  onChange={(e) => { const it = items.find((x) => x.id === e.target.value); setOpts(opts.map((x, j) => (j === i ? { ...x, itemId: e.target.value, name: x.name.trim() || !it ? x.name : it.name } : x))); }}>
-                  <option value="">Not an item</option>
-                  {items.filter((x) => !x.isCombo).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </select>
+                <ItemPicker items={items} value={o.itemId}
+                  onChange={(it) => setOpts(opts.map((x, j) => (j === i ? { ...x, itemId: it?.id ?? "", name: x.name.trim() || !it ? x.name : it.name,
+                    price: it && !Number(x.price) ? String(it.branchPrice ?? it.price) : x.price } : x)))} />
                 <Input value={o.price} inputMode="decimal" aria-label="Extra price" onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} />
                 <Button type="button" variant="ghost" size="icon" disabled={!o.id} title={o.id ? "Recipe: what this option adds (e.g. extra cheese)" : "Save the group first"}
                   aria-label="Option recipe" onClick={() => o.id && setRecipeFor({ kind: "option", id: o.id, name: o.name })}><CookingPotIcon /></Button>
