@@ -20,12 +20,16 @@ namespace OnePos.Api.Erp;
 /// </summary>
 public static partial class FactsPosting
 {
-    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null);
+    /// <summary>`MarketingAccount` / `MarketingUser`: null keeps what's set, "" clears it (no account = marketing off).</summary>
+    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null,
+                                     string? MarketingAccount = null, string? MarketingUser = null);
 
     /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveWastageTransfer.sql): a day's wastage as a draft STV50.</summary>
     public const string WastageProc = "usp_ONEPOS_SaveWastageTransfer";
     /// <summary>FACTS: approved wastage as a POSTED STV50 (batches FIFO, FACTS' own approval), as the branch approver's FACTS user.</summary>
     public const string PostWastageProc = "usp_ONEPOS_PostWastageTransfer";
+    /// <summary>FACTS: approved marketing give-aways as a POSTED MCV50 (batch cost to the marketing expense account), db/facts/usp_ONEPOS_PostConsumption.sql.</summary>
+    public const string PostConsumptionProc = "usp_ONEPOS_PostConsumption";
     /// <summary>
     /// Who a draft transfer is created by in FACTS: it must be a FACTS user (TRANSFER_HEADER's creator is checked against
     /// USER_MASTER). POSBAKERY is the user FACTS already puts on every POS bill.
@@ -43,6 +47,8 @@ public static partial class FactsPosting
 
     [GeneratedRegex(@"^[A-Za-z0-9_]{1,100}$")]
     private static partial Regex ProcName();
+    [GeneratedRegex(@"^[A-Za-z0-9._-]{1,20}$")]
+    private static partial Regex AccountCode();
 
     private sealed class OrderInfo
     {
@@ -248,7 +254,7 @@ public static partial class FactsPosting
         var lines = (await c.QueryAsync<(Guid Id, string? Code, string? Type, string Name, decimal Qty, string? Unit, decimal? Cost)>("""
             select w.id, i.erp_item_code, i.erp_item_type, w.name, w.qty, coalesce(i.erp_unit, w.unit), w.cost_value
             from wastage w left join menu_item i on i.id = w.item_id
-            where w.branch_id = @branchId and w.business_date = @day and w.voided_at is null and w.erp_status = 'pending' and w.erp_post_id is null and w.approval = 'none'
+            where w.branch_id = @branchId and w.business_date = @day and w.kind = 'wastage' and w.voided_at is null and w.erp_status = 'pending' and w.erp_post_id is null and w.approval = 'none'
             order by w.recorded_at for update of w
             """, new { branchId, day }, tx)).Where(l => l.Code is not null && l.Type is not null).ToList();
         if (lines.Count == 0) return 0;
@@ -296,8 +302,8 @@ public static partial class FactsPosting
             RequireFinance(scope);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
-                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
+                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string? MarketingAccount, string? MarketingUser)>(
+                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_marketing_account, facts_marketing_user from company where id = @id", new { id = scope.CompanyId }, tx);
                 var branches = await c.QueryAsync<(Guid Id, string Code, string Name, string? Location, DateOnly? PostFrom, int Modes, int Cards)>("""
                     select b.id, b.code, b.name, b.erp_location_code, b.facts_post_from,
                            (select count(*) from erp_payment_mode m where m.branch_id = b.id)::int, (select count(*) from erp_payment_mode m where m.branch_id = b.id and m.kind = 'card')::int
@@ -309,6 +315,7 @@ public static partial class FactsPosting
                 return new
                 {
                     connector = co.Connector, posting = co.Posting, refunds = co.Refunds, refundProc = co.Proc, invoiceProc = co.InvoiceProc ?? StandardInvoiceProc, wastage = co.Wastage, repacking = co.Repacking,
+                    marketingAccount = co.MarketingAccount, marketingUser = co.MarketingUser,
                     modesReadAt = modesRead.At, modesReadOk = modesRead.Ok, modesReadError = modesRead.Message,
                     branches = branches.Select(b => new
                     {
@@ -329,22 +336,30 @@ public static partial class FactsPosting
             if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or One POS' (FIFO batches).");
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
+            if (body.MarketingAccount is { Length: > 0 } ma && !AccountCode().IsMatch(ma.Trim())) throw new DomainException("The marketing expense account is a FACTS account code (e.g. 8003).");
+            if (body.MarketingUser is { Length: > 20 }) throw new DomainException("A FACTS username has at most 20 characters.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
-                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
+                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string? MarketingAccount, string? MarketingUser)>(
+                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_marketing_account, facts_marketing_user from company where id = @id", new { id = scope.CompanyId }, tx);
                 var wastage = body.Wastage ?? old.Wastage;
+                string? Keep(string? sent, string? was) => sent is null ? was : string.IsNullOrWhiteSpace(sent) ? null : sent.Trim();
+                var marketingAccount = Keep(body.MarketingAccount, old.MarketingAccount);
+                var marketingUser = Keep(body.MarketingUser, old.MarketingUser);
                 var repacking = body.Repacking ?? old.Repacking;
                 var invoiceProc = body.InvoiceProc is null ? old.InvoiceProc : body.InvoiceProc == StandardInvoiceProc ? null : body.InvoiceProc;
-                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking where id = @id",
-                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, id = scope.CompanyId }, tx);
+                await c.ExecuteAsync("""
+                    update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage,
+                      facts_repacking = @repacking, facts_marketing_account = @marketingAccount, facts_marketing_user = @marketingUser where id = @id
+                    """, new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, marketingAccount, marketingUser, id = scope.CompanyId }, tx);
                 // A procedure now there: credit notes that waited for it can go.
                 if (proc is not null) await c.ExecuteAsync("update erp_post set status = 'pending', last_error = null, next_try_at = now() where kind = 'refund' and status = 'waiting'", transaction: tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "erp", "posting", "changed", "FACTS posting settings changed",
                     [new("Posting", old.Posting, body.Posting), new("Refunds", old.Refunds, body.Refunds), new("SR50 procedure", old.Proc, proc),
                      new("Bill procedure", old.InvoiceProc ?? StandardInvoiceProc, invoiceProc ?? StandardInvoiceProc),
                      new("Wastage", old.Wastage == "draft" ? "Draft STV from One POS" : "Finance enters", wastage == "draft" ? "Draft STV from One POS" : "Finance enters"),
-                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking))]);
+                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
+                     new("Marketing expense account", old.MarketingAccount, marketingAccount), new("Marketing posted as", old.MarketingUser, marketingUser)]);
                 return 0;
             });
             return Results.Ok(new { ok = true });
@@ -535,6 +550,7 @@ public static partial class FactsPosting
                 {
                     var proc = p.Kind == "invoice" ? p.InvoiceProc is FifoInvoiceProc ? FifoInvoiceProc : StandardInvoiceProc
                         : p.Kind == "wastage" ? p.FactsUser is null ? WastageProc : PostWastageProc
+                        : p.Kind == "marketing" ? p.FactsUser is null ? throw new InvalidOperationException("Marketing needs a FACTS user to post it.") : PostConsumptionProc
                         : p.Kind == "return" ? p.FactsUser is null ? throw new InvalidOperationException("A return needs the approver's FACTS username.") : PostWastageProc
                         : p.Kind == "repacking" ? p.OrderId is null ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
@@ -571,13 +587,14 @@ public static partial class FactsPosting
                     where id = @Id
                     """, new { final = retry ? "pending" : status, attempts, error, doc, batchNote, p.Id }, tx));
                 // Wastage: approved wastage was POSTED in FACTS (counted there from now on); a day's draft STV50 waits for finance.
-                if (p.Kind == "wastage" && status == "posted" && doc != "")
+                // Marketing: the approved give-aways were POSTED in FACTS as an MCV50.
+                if (p.Kind is "wastage" or "marketing" && status == "posted" && doc != "")
                     await db.Company(companyId, (c, tx) => c.ExecuteAsync("""
                         update wastage set erp_status = case when @posted then 'posted' else 'draft' end, erp_doc = @stv,
                           erp_matched_at = case when @posted then now() else erp_matched_at end
                         where erp_post_id = @Id and voided_at is null
-                        """, new { stv = $"STV50 {doc}", posted = p.FactsUser is not null, p.Id }, tx));
-                if (p.Kind == "wastage" && p.FactsUser is not null && status == "failed" && !retry)
+                        """, new { stv = $"{(p.Kind == "marketing" ? "MCV50" : "STV50")} {doc}", posted = p.FactsUser is not null, p.Id }, tx));
+                if (p.Kind is "wastage" or "marketing" && p.FactsUser is not null && status == "failed" && !retry)
                     await db.Company(companyId, (c, tx) => c.ExecuteAsync("update wastage set erp_status = 'failed' where erp_post_id = @Id and voided_at is null", new { p.Id }, tx));
                 // A return to the factory: posted in FACTS (the STV50 back to the delivery's from-location), or given up on.
                 if (p.Kind == "return" && status == "posted" && doc != "")

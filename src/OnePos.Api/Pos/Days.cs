@@ -294,7 +294,9 @@ public static class Days
         var cash = await DayCashAsync(c, tx, day.Id);
         var open = await c.QuerySingleAsync<(int Count, decimal Value)>("select count(*)::int, coalesce(sum(total), 0) from pos_order where branch_id = @b and status = 'open'", args, tx);
         var waste = await c.QuerySingleAsync<(int Count, decimal Value)>(
-            "select count(*)::int, coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null", args, tx);
+            "select count(*)::int, coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null and kind = 'wastage'", args, tx);
+        var given = await c.QuerySingleAsync<(int Count, decimal Value)>(
+            "select count(*)::int, coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null and kind = 'marketing'", args, tx);
         return new
         {
             date = day.Date, status = day.Status,
@@ -311,6 +313,7 @@ public static class Days
             cash,
             openOrders = new { open.Count, open.Value },
             wastage = new { waste.Count, waste.Value },
+            marketing = new { given.Count, given.Value },
             noSales = await c.ExecuteScalarAsync<int>("select count(*)::int from no_sale where branch_id = @b and business_date = @d", args, tx),
         };
     }

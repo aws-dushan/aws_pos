@@ -13,6 +13,8 @@ export type Company = {
   role: string | null; permissions: string[]; branches: Branch[];
   /** Switched on by an administrator (Companies & branches). */
   vouchersEnabled: boolean; loyaltyEnabled: boolean;
+  /** Marketing give-aways on Stock: a FACTS marketing expense account is set (FACTS posting). */
+  marketingEnabled: boolean;
 };
 export type Me = {
   user: { id: string; username: string; displayName: string; isAdmin: boolean; mustChangePassword?: boolean };

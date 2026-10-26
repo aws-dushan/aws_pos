@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangleIcon, CheckCircle2Icon, PackageIcon, PackageOpenIcon, SendIcon, Trash2Icon, TruckIcon, Undo2Icon } from "lucide-react";
+import { AlertTriangleIcon, CheckCircle2Icon, MegaphoneIcon, PackageIcon, PackageOpenIcon, SendIcon, Trash2Icon, TruckIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 
 type Waste = {
-  id: string; itemId: string; name: string; qty: number; unit: string | null; reason: Reason; note: string | null; costValue: number | null;
+  id: string; itemId: string; name: string; qty: number; unit: string | null; reason: Reason; kind: Kind; note: string | null; costValue: number | null;
   erpStatus: "none" | "pending" | "draft" | "posted" | "failed"; erpDoc: string | null; recordedByName: string; recordedAt: string; voidedAt: string | null;
   approval: "none" | "waiting" | "approved" | "rejected"; requestedQty: number | null; decisionNote: string | null; decidedByName: string | null;
 };
@@ -26,7 +26,9 @@ type Moves = {
   linked: boolean; location: string | null; wasteLocation: string | null; matched: number;
   moves: { docType: string; docNo: string; date: string; posted: boolean; lines: { line: number; code: string; name: string; qty: number; unit: string | null; batch: string | null; matched: string | null }[] }[];
 };
-type Reason = "expired" | "damaged" | "quality" | "returned" | "staff" | "calibration" | "other";
+type Reason = "expired" | "damaged" | "quality" | "returned" | "staff" | "calibration" | "other" | "tasting" | "promotion" | "influencer" | "gift";
+/** wastage: thrown away; marketing: given away (tasting, promotion…), posted in FACTS as an MCV50 once approved. */
+type Kind = "wastage" | "marketing";
 type Delivery = {
   docType: string; docNo: string; date: string; from: string; fromName: string | null; narration: string | null; totalQty: number; posted: boolean;
   /** `line`: the line on the transfer; an item can be on it twice (e.g. two batches). */
@@ -45,32 +47,40 @@ const RETURN_REASONS: Record<ReturnReason, string> = { short: "Short delivered",
 /** The reasons chosen on the Returns tab ("short delivered" is a delivery's own difference). */
 const PICK_REASONS = (Object.keys(RETURN_REASONS) as ReturnReason[]).filter((r) => r !== "short");
 
-const REASONS: Record<Reason, string> = { expired: "Expired", damaged: "Damaged", quality: "Quality", returned: "Customer return", staff: "Staff meal", calibration: "Machine calibration", other: "Other" };
+const WASTE_REASONS: Partial<Record<Reason, string>> = { expired: "Expired", damaged: "Damaged", quality: "Quality", returned: "Customer return", staff: "Staff meal", calibration: "Machine calibration", other: "Other" };
+const MARKETING_REASONS: Partial<Record<Reason, string>> = { tasting: "Tasting / sampling", promotion: "Promotion / event", influencer: "Influencer / media", gift: "Gift to customer", other: "Other" };
+const REASONS: Record<Reason, string> = { ...WASTE_REASONS, ...MARKETING_REASONS } as Record<Reason, string>;
 const money = (n: number) => fmtIn(n, 2);
 
 /** Branch stock (REQ INV-04, INV-06): record wastage; check in deliveries sent to this branch in the ERP. */
 export default function StockPage() {
   const { company } = useSession();
-  const [tab, setTab] = useState<"waste" | "deliveries" | "returns">("waste");
+  const [tab, setTab] = useState<"waste" | "marketing" | "deliveries" | "returns">("waste");
   return (
     <div className="mx-auto max-w-[1100px] pb-8">
       <PageHeader title="Stock" icon={PackageIcon} module="inv"
         description="What's thrown away, what arrives, and what goes back. Stock on hand shows on the register and Menu from the ERP."
-        actions={<Segmented id="stock-tab" value={tab} onChange={setTab} options={[{ value: "waste", label: "Wastage", icon: Trash2Icon }, { value: "deliveries", label: "Deliveries", icon: TruckIcon }, { value: "returns", label: "Returns", icon: Undo2Icon }]} />} />
-      {tab === "waste" ? <Wastage currency={company?.currency ?? "AED"} /> : tab === "deliveries" ? <Deliveries /> : <Returns />}
+        actions={<Segmented id="stock-tab" value={tab} onChange={setTab} options={[{ value: "waste", label: "Wastage", icon: Trash2Icon },
+          ...(company?.marketingEnabled ? [{ value: "marketing" as const, label: "Marketing", icon: MegaphoneIcon }] : []),
+          { value: "deliveries", label: "Deliveries", icon: TruckIcon }, { value: "returns", label: "Returns", icon: Undo2Icon }]} />} />
+      {tab === "waste" || tab === "marketing" ? <Wastage key={tab} kind={tab === "marketing" ? "marketing" : "wastage"} currency={company?.currency ?? "AED"} />
+        : tab === "deliveries" ? <Deliveries /> : <Returns />}
     </div>
   );
 }
 
-function Wastage({ currency }: { currency: string }) {
+/** Wastage (thrown away), or marketing (given away): the same screen, each with its own reasons and way to FACTS. */
+function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
+  const mkt = kind === "marketing";
   const { can } = useSession();
   // The branch's staff record wastage; finance reads it (any day) and notes the FACTS document once posted there.
   const records = can("pos.sell") || can("kitchen.view");
   const finance = can("day.manage") || can("facts.post");
   const [day, setDay] = useState("");
-  const list = useApi<{ date: string; wastage: Waste[]; byReason: { reason: Reason; lines: number; value: number }[]; total: number; erpLinked: boolean; factsWastage: "finance" | "draft"; approver: string | null }>(`/stock/wastage${day ? `?date=${day}` : ""}`);
+  const list = useApi<{ date: string; wastage: Waste[]; byReason: { reason: Reason; lines: number; value: number }[]; total: number; erpLinked: boolean; factsWastage: "finance" | "draft"; approver: string | null; marketingApprover: string | null }>(
+    `/stock/wastage?kind=${kind}${day ? `&date=${day}` : ""}`);
   // What's moved to the wastage location in FACTS; reading it also marks lines posted (matched, or drafts finance has posted).
-  const moves = useApi<Moves>("/stock/wastage/moves?days=7");
+  const moves = useApi<Moves>(mkt ? null : "/stock/wastage/moves?days=7");
   useLiveEvent(["stock.changed"], () => moves.reload());
   const menu = useApi<Menu>(records ? "/pos/menu" : null);
   useLiveEvent(["stock.changed"], () => list.reload());
@@ -107,7 +117,7 @@ function Wastage({ currency }: { currency: string }) {
     <div className="grid gap-4 md:grid-cols-[280px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)] lg:gap-5">
       <section className="surface h-fit p-5" data-module="inv">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="font-heading font-semibold">{records ? "Record wastage" : "Wastage"}</h2>
+          <h2 className="font-heading font-semibold">{mkt ? (records ? "Record a give-away" : "Marketing") : records ? "Record wastage" : "Wastage"}</h2>
           <Input type="date" aria-label="Day" value={day || d?.date || ""} onChange={(e) => setDay(e.target.value)} className="h-9 w-40" />
         </div>
         {records && <div className="relative">
@@ -122,11 +132,14 @@ function Wastage({ currency }: { currency: string }) {
             </div>
           )}
         </div>}
-        <p className="mt-3 text-sm text-muted-foreground">{!d?.erpLinked ? "Kept for the day's records."
+        <p className="mt-3 text-sm text-muted-foreground">{mkt ? (d?.marketingApprover
+            ? `Items given away for marketing (tasting, promotions, influencers, gifts). Each entry waits for ${d.marketingApprover}'s approval. Approved, it is posted in FACTS straight away as a material consumption (MCV50) to the marketing expense account, at batch cost.`
+            : "This branch needs its FACTS location and a wastage approver (Companies & branches) before marketing can be recorded.")
+          : !d?.erpLinked ? "Kept for the day's records."
           : d.approver ? `Each entry waits for ${d.approver}'s approval. Approved, it is posted in FACTS straight away: a transfer to the wastage location, batches oldest first.`
           : d.factsWastage === "draft" ? "The day's wastage goes to FACTS as one draft transfer to the wastage location at the day's close (night); finance gives the batches and posts it there."
             : "Kept for the day's records. Finance posts it in FACTS (a transfer to the outlet's wastage location, by FIFO batch); it's matched here by itself."}</p>
-        {d?.factsWastage === "draft" && finance && d.wastage.some((w) => w.erpStatus === "pending" && !w.voidedAt) && (
+        {!mkt && d?.factsWastage === "draft" && finance && d.wastage.some((w) => w.erpStatus === "pending" && !w.voidedAt) && (
           <Button variant="outline" className="mt-3 h-10 w-full" onClick={() => void sendNow()}><SendIcon /> Send waiting wastage to FACTS now</Button>
         )}
         {d && d.byReason.length > 0 && (
@@ -166,10 +179,11 @@ function Wastage({ currency }: { currency: string }) {
               </div>
             ))}
           </div>
-        ) : <EmptyState icon={Trash2Icon} title="Nothing thrown away this day" module="inv">{records ? "Find an item on the left to record wastage." : "Pick another day on the left."}</EmptyState>}
+        ) : <EmptyState icon={mkt ? MegaphoneIcon : Trash2Icon} title={mkt ? "Nothing given away this day" : "Nothing thrown away this day"} module="inv">
+            {records ? `Find an item on the left to record ${mkt ? "what was given away" : "wastage"}.` : "Pick another day on the left."}</EmptyState>}
 
         {/* What's moved to the wastage location in FACTS (last 7 days). */}
-        {moves.data?.linked && (
+        {!mkt && moves.data?.linked && (
           <div className="mt-5">
             <h3 className="mb-2 text-sm font-semibold">Moved to {moves.data.wasteLocation} in FACTS <span className="font-normal text-muted-foreground">· last 7 days</span></h3>
             {moves.data.moves.length ? (
@@ -195,40 +209,43 @@ function Wastage({ currency }: { currency: string }) {
             ) : <p className="text-sm text-muted-foreground">Nothing moved there in the last 7 days.</p>}
           </div>
         )}
-        {moves.data && !moves.data.linked && moves.data.location && (
+        {!mkt && moves.data && !moves.data.linked && moves.data.location && (
           <p className="mt-4 text-xs text-muted-foreground">Set this branch&apos;s wastage location (Companies &amp; branches) to see what finance moved there in FACTS.</p>
         )}
       </section>
 
-      <WasteDialog item={item} onClose={() => setItem(null)} onDone={() => { setItem(null); list.reload(); }} />
+      <WasteDialog kind={kind} item={item} onClose={() => setItem(null)} onDone={() => { setItem(null); list.reload(); }} />
     </div>
   );
 }
 
-function WasteDialog({ item, onClose, onDone }: { item: MenuItem | null; onClose: () => void; onDone: () => void }) {
+function WasteDialog({ kind, item, onClose, onDone }: { kind: Kind; item: MenuItem | null; onClose: () => void; onDone: () => void }) {
+  const mkt = kind === "marketing";
+  const first: Reason = mkt ? "tasting" : "expired";
+  const reasons = mkt ? MARKETING_REASONS : WASTE_REASONS;
   const [qty, setQty] = useState("1");
-  const [reason, setReason] = useState<Reason>("expired");
+  const [reason, setReason] = useState<Reason>(first);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
-  if ((item?.id ?? null) !== seen) { setSeen(item?.id ?? null); setQty("1"); setReason("expired"); setNote(""); }
+  if ((item?.id ?? null) !== seen) { setSeen(item?.id ?? null); setQty("1"); setReason(first); setNote(""); }
   async function save() {
     setBusy(true);
-    try { await api("/stock/wastage", "POST", { itemId: item!.id, qty: Number(qty), reason, note: note || null }); toast.success(`${qty} × ${item!.name} recorded as wastage`); onDone(); }
+    try { await api("/stock/wastage", "POST", { itemId: item!.id, qty: Number(qty), reason, note: note || null, kind }); toast.success(`${qty} × ${item!.name} recorded as ${mkt ? "given away (marketing)" : "wastage"}`); onDone(); }
     catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
   return (
     <Dialog open={!!item} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Wastage · {item?.name}</DialogTitle>
-          <DialogDescription>How much was thrown away{item?.erpUnit ? `, in ${item.erpUnit.toLowerCase()}` : ""}, and why?</DialogDescription>
+          <DialogTitle>{mkt ? "Marketing" : "Wastage"} · {item?.name}</DialogTitle>
+          <DialogDescription>How much was {mkt ? "given away" : "thrown away"}{item?.erpUnit ? `, in ${item.erpUnit.toLowerCase()}` : ""}, and {mkt ? "what for" : "why"}?</DialogDescription>
         </DialogHeader>
         <div className="rounded-xl border bg-muted/50 px-4 py-3 text-right font-heading text-3xl font-semibold tabular-nums">{qty || "0"}</div>
         <Numpad value={qty} onChange={setQty} decimals={item?.qtyDecimals ?? 0} max={7}
           onEnter={() => { if (!busy && Number(qty) > 0 && !(reason === "other" && !note.trim())) void save(); }} />
         <div className="flex flex-wrap gap-2">
-          {(Object.keys(REASONS) as Reason[]).map((r) => (
+          {(Object.keys(reasons) as Reason[]).map((r) => (
             <button key={r} type="button" onClick={() => setReason(r)}
               className={cn("h-10 rounded-full border px-4 text-sm active:scale-[0.97]", reason === r ? "border-primary bg-primary/10 font-medium text-primary" : "bg-card hover:bg-muted")}>{REASONS[r]}</button>
           ))}
@@ -236,7 +253,7 @@ function WasteDialog({ item, onClose, onDone }: { item: MenuItem | null; onClose
         <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={reason === "other" ? "What happened (needed)" : "Note (optional)"} className="h-11" />
         <DialogFooter>
           <Button variant="outline" className="h-12" onClick={onClose}>Cancel</Button>
-          <Button className="h-12 min-w-36" disabled={busy || !(Number(qty) > 0) || (reason === "other" && !note.trim())} onClick={() => void save()}><Trash2Icon /> Record</Button>
+          <Button className="h-12 min-w-36" disabled={busy || !(Number(qty) > 0) || (reason === "other" && !note.trim())} onClick={() => void save()}>{mkt ? <MegaphoneIcon /> : <Trash2Icon />} Record</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
