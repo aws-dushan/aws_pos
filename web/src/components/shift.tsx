@@ -360,8 +360,8 @@ export async function printLines(lines: ReceiptLine[]): Promise<boolean> {
   }
 }
 
-/** A report shown on screen, as it prints: monospace, receipt width. */
-export function ReportDialog({ lines, onClose }: { lines: ReceiptLine[] | null; onClose: () => void }) {
+/** A report shown on screen, as it prints: monospace, receipt width. `viewOnly`: no print buttons (Reports › Closed days). */
+export function ReportDialog({ lines, onClose, viewOnly }: { lines: ReceiptLine[] | null; onClose: () => void; viewOnly?: boolean }) {
   return (
     <Dialog open={!!lines} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-sm">
@@ -374,28 +374,12 @@ export function ReportDialog({ lines, onClose }: { lines: ReceiptLine[] | null; 
           ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" className="h-11" onClick={() => window.print()}><PrinterIcon /> Browser print</Button>
-          <Button className="h-11" onClick={() => lines && void printLines(lines)}><PrinterIcon /> Print</Button>
+          {viewOnly ? <Button variant="outline" className="h-11" onClick={onClose}>Close</Button> : <>
+            <Button variant="outline" className="h-11" onClick={() => window.print()}><PrinterIcon /> Browser print</Button>
+            <Button className="h-11" onClick={() => lines && void printLines(lines)}><PrinterIcon /> Print</Button>
+          </>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
-}
-
-/** Several reports (e.g. a month of Z reports) as one document to print or save as PDF: each on its own A4 page, as it prints on the till. */
-export function printReports(reports: ReceiptLine[][], title: string): boolean {
-  const esc = (v: string) => v.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch]!);
-  const line = (l: ReceiptLine) => l.rule ? `<hr>` : `<div class="l ${l.align === "center" ? "c" : ""} ${l.bold ? "b" : ""} ${l.size === "large" ? "lg" : l.size === "small" ? "sm" : ""}"><span>${esc(l.text ?? "")}</span>${l.right != null ? `<span>${esc(l.right)}</span>` : ""}</div>`;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
-    @page { size: A4; margin: 14mm; }
-    body { margin: 0; font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace; color: #000; }
-    .r { width: 80mm; margin: 0 auto; break-after: page; } .r:last-child { break-after: auto; }
-    .l { display: flex; justify-content: space-between; gap: 12px; } .c { justify-content: center; text-align: center; } .b { font-weight: 700; }
-    .lg { font-size: 15px; } .sm { font-size: 10.5px; } hr { border: 0; border-top: 1px dashed #888; margin: 6px 0; }
-  </style></head><body>${reports.map((r) => `<div class="r">${r.map(line).join("")}</div>`).join("")}
-  <script>window.onload = () => { window.print(); };</script></body></html>`;
-  const w = window.open("", "_blank");
-  if (!w) return false;
-  w.document.open(); w.document.write(html); w.document.close();
-  return true;
 }
