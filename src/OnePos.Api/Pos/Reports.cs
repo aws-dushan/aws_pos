@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Dapper;
 using OnePos.Api.Data;
 using OnePos.Api.Platform;
@@ -288,6 +289,61 @@ public static class Reports
                 };
             });
         });
+
+        // Closed days (admin and finance): each closed business day of the days with its kept Z report, and each shift of those days with its
+        // own (kept when the shift closed). Open days aren't here: their X report is on the Day page.
+        api.MapGet("/reports/days", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("facts.post");
+            var (f, t) = from <= to ? (from, to) : (to, from);
+            if (t.DayNumber - f.DayNumber > 366) throw new DomainException("Choose at most a year.");
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var ids = branches == "all"
+                    ? (await c.QueryAsync<Guid>("""
+                        select b.id from branch b where @admin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @u)
+                        """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray()
+                    : [scope.Branch];
+                var days = await c.QueryAsync<ClosedDay>("""
+                    select d.id, d.date, b.code as branch, d.closed_at, cu.display_name as closed_by_name, d.reopened, d.z_report::text as z
+                    from business_day d join branch b on b.id = d.branch_id left join app_user cu on cu.id = d.closed_by
+                    where d.branch_id = any(@ids) and d.date between @f and @t and d.status = 'closed'
+                    order by d.date desc, b.code
+                    """, new { ids, f, t }, tx);
+                // Sales: what the shift took less what it paid back.
+                var shifts = await c.QueryAsync<ClosedShift>("""
+                    select s.id, d.date, b.code as branch, r.name as register_name, u.display_name as user_name, s.opened_at, s.closed_at, s.status,
+                           s.opening_float, s.expected_cash, s.counted_cash, s.variance, a.display_name as approved_by_name,
+                           coalesce((select sum(case p.kind when 'payment' then p.amount else -p.amount end) from payment p where p.shift_id = s.id), 0) as sales,
+                           s.z_report::text as z
+                    from shift s join business_day d on d.id = s.business_day_id join branch b on b.id = s.branch_id join register r on r.id = s.register_id
+                    join app_user u on u.id = s.user_id left join app_user a on a.id = s.approved_by
+                    where s.branch_id = any(@ids) and d.date between @f and @t and d.status = 'closed'
+                    order by d.date desc, b.code, s.opened_at
+                    """, new { ids, f, t }, tx);
+                static JsonElement? Json(string? z) => z is null ? null : JsonDocument.Parse(z).RootElement;
+                return new
+                {
+                    days = days.Select(x => new { x.Id, x.Date, x.Branch, x.ClosedAt, x.ClosedByName, x.Reopened, z = Json(x.Z) }),
+                    shifts = shifts.Select(x => new { x.Id, x.Date, x.Branch, x.RegisterName, x.UserName, x.OpenedAt, x.ClosedAt, x.Status, x.OpeningFloat, x.ExpectedCash, x.CountedCash, x.Variance, x.ApprovedByName, x.Sales, z = Json(x.Z) }),
+                };
+            });
+        });
+    }
+
+    public sealed class ClosedDay
+    {
+        public Guid Id { get; set; } public DateOnly Date { get; set; } public string Branch { get; set; } = ""; public DateTime? ClosedAt { get; set; } public string? ClosedByName { get; set; }
+        public int Reopened { get; set; } public string? Z { get; set; }
+    }
+
+    public sealed class ClosedShift
+    {
+        public Guid Id { get; set; } public DateOnly Date { get; set; } public string Branch { get; set; } = ""; public string RegisterName { get; set; } = ""; public string UserName { get; set; } = "";
+        public DateTime OpenedAt { get; set; } public DateTime? ClosedAt { get; set; } public string Status { get; set; } = ""; public decimal OpeningFloat { get; set; }
+        public decimal? ExpectedCash { get; set; } public decimal? CountedCash { get; set; } public decimal? Variance { get; set; } public string? ApprovedByName { get; set; }
+        public decimal Sales { get; set; } public string? Z { get; set; }
     }
 
     public sealed class Invoice
