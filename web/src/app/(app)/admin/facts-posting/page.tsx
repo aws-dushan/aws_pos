@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Branch = { id: string; code: string; name: string; location: string | null; postFrom: string | null; paymentModes: number; cardTypes: number; queue: Record<string, number> };
-type Settings = { connector: string; posting: boolean; modesReadAt: string | null; modesReadOk: boolean | null; modesReadError: string | null; refunds: "none" | "sr50"; refundProc: string | null; invoiceProc: string; wastage: "finance" | "draft"; repacking: "off" | "draft" | "posted"; marketingAccount: string | null; marketingUser: string | null; branches: Branch[] };
+type Settings = { connector: string; posting: boolean; modesReadAt: string | null; modesReadOk: boolean | null; modesReadError: string | null; refunds: "none" | "sr50"; refundProc: string | null; invoiceProc: string; wastage: "finance" | "draft"; repacking: "off" | "draft" | "posted"; branches: Branch[] };
 type Preview = { date: string; bills: number; total: number; vat: number; withProblems: number; items: { id: string; invoiceNo: string; total: number; vat: number; problems: string[]; xml: string }[] };
 type LogRow = { id: string; kind: "invoice" | "refund" | "wastage" | "repacking" | "return" | "marketing"; docNo: string; businessDate: string; amount: number; status: string; attempts: number; lastError: string | null; factsDoc: string | null; createdAt: string; postedAt: string | null; batchNote: string | null };
 
@@ -42,7 +42,6 @@ export default function FactsPostingPage() {
   const [xml, setXml] = useState<{ title: string; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [proc, setProc] = useState<string | null>(null);
-  const [mkt, setMkt] = useState<{ account: string; user: string } | null>(null);
   const d = s.data;
   const procValue = proc ?? d?.refundProc ?? "";
   // This branch's queue: what waits and what failed (push now / re-push failed).
@@ -55,8 +54,7 @@ export default function FactsPostingPage() {
     setBusy(name);
     try { await fn(); toast.success(ok); s.reload(); log.reload(); } catch (e) { toast.error((e as Error).message); } finally { setBusy(null); }
   }
-  const mktValue = mkt ?? { account: d?.marketingAccount ?? "", user: d?.marketingUser ?? "" };
-  const saveCompany = (patch: Partial<{ posting: boolean; refunds: string; refundProc: string | null; invoiceProc: string; wastage: string; repacking: string; marketingAccount: string; marketingUser: string }>) =>
+  const saveCompany = (patch: Partial<{ posting: boolean; refunds: string; refundProc: string | null; invoiceProc: string; wastage: string; repacking: string }>) =>
     run("company", () => api("/erp/posting/company", "PUT", { posting: d!.posting, refunds: d!.refunds, refundProc: procValue || null, invoiceProc: d!.invoiceProc, wastage: d!.wastage, repacking: d!.repacking, ...patch }), "Saved.");
 
   return (
@@ -103,21 +101,6 @@ export default function FactsPostingPage() {
                 : d.repacking === "draft"
                 ? "Each branch's day of made-to-order items (those with a BOM under BOMs) goes to FACTS at the day's close as one draft RPO50: the items sold in, their raw materials out (procedure usp_ONEPOS_SaveRepacking), not posted: finance gives the batches and posts it there."
                 : "Nothing is sent for BOM items; finance makes repacking vouchers in FACTS by hand."}
-            </p>
-          </div>
-          <div className="space-y-2">
-            <span className="block text-[0.8rem] font-medium text-foreground/80">Marketing (items given away)</span>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="grid gap-1 text-xs text-muted-foreground">Expense account
-                <Input value={mktValue.account} disabled={!admin} onChange={(e) => setMkt({ ...mktValue, account: e.target.value })} placeholder="e.g. 8003" className="h-10 w-36" /></label>
-              <label className="grid gap-1 text-xs text-muted-foreground">Posted in FACTS as
-                <Input value={mktValue.user} disabled={!admin} onChange={(e) => setMkt({ ...mktValue, user: e.target.value })} placeholder="the approver" className="h-10 w-44" /></label>
-              {admin && mkt && <Button className="h-10" disabled={!!busy} onClick={() => void saveCompany({ marketingAccount: mkt.account.trim(), marketingUser: mkt.user.trim() }).then(() => setMkt(null))}>Save</Button>}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {d.marketingAccount
-                ? `On: Stock has a Marketing tab. Items given away wait for the branch's wastage approver; approved, they go to FACTS as one posted MCV50 per day (procedure usp_ONEPOS_PostConsumption): stock out of the outlet at batch cost, oldest batch first, to account ${d.marketingAccount}, posted as ${d.marketingUser || "the approver's FACTS user"} (who must be allowed MCV50 posting in FACTS).`
-                : "Off. Set the FACTS expense account (e.g. 8003 Sales Promotion) to turn on the Marketing tab on Stock. Clear it to turn it off."}
             </p>
           </div>
           <div className="space-y-2">

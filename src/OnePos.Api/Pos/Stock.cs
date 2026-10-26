@@ -82,8 +82,8 @@ public static class Stock
                     factsWastage = await c.ExecuteScalarAsync<string>("select case when co.facts_wastage = 'draft' and b.erp_waste_location is not null then 'draft' else 'finance' end from branch b join company co on co.id = b.company_id where b.id = @b", new { b = scope.Branch }, tx),
                     // Marketing: who approves it here (null = it can't be recorded: no approver, or the branch isn't linked to FACTS).
                     marketingApprover = await c.ExecuteScalarAsync<string?>("""
-                        select u.display_name from branch b join company co on co.id = b.company_id join app_user u on u.id = b.wastage_approver_id
-                        where b.id = @b and co.erp_connector = 'facts' and co.facts_marketing_account is not null and b.erp_location_code is not null
+                        select u.display_name from branch b join company co on co.id = b.company_id join app_user u on u.id = b.marketing_approver_id
+                        where b.id = @b and co.erp_connector = 'facts' and b.marketing_account is not null and b.erp_location_code is not null
                         """, new { b = scope.Branch }, tx),
                 };
             });
@@ -110,12 +110,11 @@ public static class Stock
                 if (marketing)
                 {
                     // Marketing always goes to FACTS (an MCV50 once approved): FACTS must be set up for it.
-                    var ready = await c.QuerySingleAsync<(bool On, bool Approver)>("""
-                        select co.erp_connector = 'facts' and co.facts_marketing_account is not null, b.wastage_approver_id is not null
+                    var on = await c.ExecuteScalarAsync<bool>("""
+                        select co.erp_connector = 'facts' and b.marketing_account is not null and b.marketing_approver_id is not null
                         from branch b join company co on co.id = b.company_id where b.id = @b
                         """, new { b = scope.Branch }, tx);
-                    if (!ready.On) throw new DomainException("Marketing isn't switched on: finance sets the marketing expense account (FACTS posting).");
-                    if (!linked || !ready.Approver) throw new DomainException("This branch needs its FACTS location and a wastage approver (Companies & branches) to record marketing.");
+                    if (!on || !linked) throw new DomainException("Marketing isn't set up at this branch: its FACTS location, marketing approver and expense account (Companies & branches).");
                     if (item.Code is null) throw new DomainException($"{item.Name} has no FACTS item, so it can't go to FACTS as marketing.");
                 }
                 var price = item.BranchPrice ?? item.Price;

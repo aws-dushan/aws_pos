@@ -146,7 +146,6 @@ public static class AuthEndpoints
                            ?? throw new ForbiddenException("You are not signed in.");
                 var companies = (await c.QueryAsync<MeCompany>("""
                     select co.id, co.code, co.name, co.base_currency as currency, co.vat_rate, co.prices_include_vat, co.erp_connector, co.vouchers_enabled, co.loyalty_enabled,
-                           co.erp_connector = 'facts' and co.facts_marketing_account is not null as marketing_enabled,
                            r.name as role, coalesce(r.permissions, '{}') as permissions
                     from company co
                     left join user_company uc on uc.company_id = co.id and uc.user_id = @id
@@ -156,7 +155,9 @@ public static class AuthEndpoints
                     order by co.name
                     """, new { me.Id, isAdmin = user.IsAdmin, tillCompany = me.TillCompanyId }, tx)).ToList();
                 var branches = (await c.QueryAsync<MeBranch>("""
-                    select b.id, b.company_id, b.code, b.name, b.table_service, b.kitchen_enabled, b.returns_enabled, b.day_control, b.is_active
+                    select b.id, b.company_id, b.code, b.name, b.table_service, b.kitchen_enabled, b.returns_enabled, b.day_control, b.is_active,
+                           b.marketing_approver_id is not null and b.marketing_account is not null and b.erp_location_code is not null
+                             and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as marketing_enabled
                     from branch b
                     where b.company_id = any(@companyIds) and (b.is_active or @isAdmin)
                       and (@isAdmin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @id))
@@ -173,9 +174,9 @@ public static class AuthEndpoints
                     } : null,
                     companies = companies.Select(co => new
                     {
-                        co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.MarketingEnabled, co.Role,
+                        co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.Role,
                         permissions = user.IsAdmin ? Permissions.All.Select(p => p.Key).ToArray() : co.Permissions,
-                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive }),
+                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive, b.MarketingEnabled }),
                     }),
                 };
             });
@@ -186,7 +187,6 @@ public static class AuthEndpoints
     {
         public bool VouchersEnabled { get; set; }
         public bool LoyaltyEnabled { get; set; }
-        public bool MarketingEnabled { get; set; }
         public Guid Id { get; set; }
         public string Code { get; set; } = "";
         public string Name { get; set; } = "";
@@ -209,6 +209,8 @@ public static class AuthEndpoints
         public bool ReturnsEnabled { get; set; }
         public string DayControl { get; set; } = "";
         public bool IsActive { get; set; }
+        /// <summary>Marketing give-aways on Stock: the branch has a marketing approver and expense account (Companies &amp; branches).</summary>
+        public bool MarketingEnabled { get; set; }
     }
 
     private static Task SignInAsync(HttpContext http, Guid id, string name, bool isAdmin, Guid? tillCompany, Guid? tillBranch, Guid? tillRegister, bool mustChangePassword = false)

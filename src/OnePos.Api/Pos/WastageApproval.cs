@@ -16,8 +16,8 @@ namespace OnePos.Api.Pos;
 /// at once as a POSTED STV50 to the branch's wastage location (usp_ONEPOS_PostWastageTransfer: batches FIFO, FACTS' own approval,
 /// as the approver's FACTS username), never a draft; approving checks FACTS has the stock first. Rejected, it is taken off and
 /// never sent. A branch without an approver works as before. Marketing give-aways (wastage of kind 'marketing') always wait for the
-/// approver; approved, they go to FACTS as a POSTED MCV50 at the outlet (usp_ONEPOS_PostConsumption: batch cost to the company's
-/// marketing expense account), as the company's marketing FACTS user, else the approver's.
+/// branch's marketing approver; approved, they go to FACTS as a POSTED MCV50 at the outlet (usp_ONEPOS_PostConsumption: batch cost
+/// to the branch's marketing expense account), as the marketing approver's FACTS username.
 /// </summary>
 public static class WastageApproval
 {
@@ -34,27 +34,27 @@ public static class WastageApproval
     };
 
     public sealed record Setup(Guid? ApproverId, string? Email, string? FactsUser, string? Loc, string? Waste, string Connector, string Code, string Name,
-                               string? MarketingAccount, string? MarketingUser);
+                               Guid? MarketingApproverId, string? MarketingEmail, string? MarketingUser, string? MarketingAccount);
 
     public static Task<Setup> SetupAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid branchId) =>
         c.QuerySingleAsync<Setup>("""
             select b.wastage_approver_id as ApproverId, b.wastage_approval_email as Email, b.wastage_facts_user as FactsUser, b.erp_location_code as Loc,
                    b.erp_waste_location as Waste, co.erp_connector as Connector, b.code as Code, b.name as Name,
-                   co.facts_marketing_account as MarketingAccount, co.facts_marketing_user as MarketingUser
+                   b.marketing_approver_id as MarketingApproverId, b.marketing_approval_email as MarketingEmail, b.marketing_facts_user as MarketingUser,
+                   b.marketing_account as MarketingAccount
             from branch b join company co on co.id = b.company_id where b.id = @branchId
             """, new { branchId }, tx);
 
     /// <summary>
-    /// Approval applies: an approver is set and it can go to FACTS (linked branch, a FACTS item, and the wastage location for wastage,
-    /// the marketing expense account for marketing).
+    /// Approval applies: its approver is set and it can go to FACTS (linked branch, a FACTS item, and the wastage location for wastage,
+    /// the marketing approver and expense account for marketing).
     /// </summary>
     public static bool Applies(Setup s, string? itemCode, string kind = "wastage") =>
-        s.ApproverId is not null && s.Connector == "facts" && s.Loc is not null && itemCode is not null
-        && (kind == "marketing" ? s.MarketingAccount is not null : s.Waste is not null);
+        s.Connector == "facts" && s.Loc is not null && itemCode is not null
+        && (kind == "marketing" ? s.MarketingApproverId is not null && s.MarketingAccount is not null : s.ApproverId is not null && s.Waste is not null);
 
-    /// <summary>The FACTS user who posts it: marketing's own (allowed MCV50 posting), else the branch approver's.</summary>
-    private static string? PostAs(Setup s, string kind) =>
-        kind == "marketing" && !string.IsNullOrWhiteSpace(s.MarketingUser) ? s.MarketingUser.Trim() : s.FactsUser?.Trim();
+    /// <summary>The FACTS user who posts it: the marketing approver's for marketing (allowed MCV50 posting), else the wastage approver's.</summary>
+    private static string? PostAs(Setup s, string kind) => (kind == "marketing" ? s.MarketingUser : s.FactsUser)?.Trim();
 
     /// <summary>Just recorded (same transaction): waits for the branch's approver, who gets it under the bell and by email.</summary>
     public static async Task RequestAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, Guid wastageId)
@@ -75,7 +75,7 @@ public static class WastageApproval
         };
         if (!string.IsNullOrWhiteSpace(w.Note)) lines.Add(new("Note", w.Note!));
         var smtp = await c.ExecuteScalarAsync<bool>("select smtp_settings is not null from company where id = @companyId", new { companyId }, tx);
-        var to = s.Email is { Length: > 0 } e ? new[] { e } : [];
+        var to = (w.Kind == "marketing" ? s.MarketingEmail : s.Email) is { Length: > 0 } e ? new[] { e } : [];
         await c.ExecuteAsync("""
             insert into notice (company_id, branch_id, business_date, kind, title, lines, email_status, email_to, link)
             values (@companyId, @branchId, @day, 'wastage', @title, cast(@lines as jsonb), @email, @to, '/approvals')
@@ -111,7 +111,8 @@ public static class WastageApproval
 
     private const string WaitingSql = """
         select w.id, w.branch_id, b.code as branch_code, b.name as branch_name, w.business_date, w.item_id, w.name, w.qty, w.unit, w.reason, w.kind, w.note, w.cost_value,
-               u.display_name as recorded_by_name, w.recorded_at, i.erp_item_code as item_code, i.erp_item_type as item_type, i.erp_unit, b.wastage_approver_id as approver_id
+               u.display_name as recorded_by_name, w.recorded_at, i.erp_item_code as item_code, i.erp_item_type as item_type, i.erp_unit,
+               case when w.kind = 'marketing' then b.marketing_approver_id else b.wastage_approver_id end as approver_id
         from wastage w join branch b on b.id = w.branch_id join app_user u on u.id = w.recorded_by left join menu_item i on i.id = w.item_id
         where w.approval = 'waiting' and w.voided_at is null
         """;
@@ -120,16 +121,16 @@ public static class WastageApproval
 
     public static void Map(RouteGroupBuilder api)
     {
-        // Waiting for me: the branches I approve wastage for (an administrator sees all).
+        // Waiting for me: the branches I approve wastage or marketing for (an administrator sees all).
         api.MapGet("/wastage/approvals", async (HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var rows = (await c.QueryAsync<WaitingRow>($"{WaitingSql} and (@admin or b.wastage_approver_id = @u) order by w.recorded_at",
+                var rows = (await c.QueryAsync<WaitingRow>($"{WaitingSql} and (@admin or case when w.kind = 'marketing' then b.marketing_approver_id else b.wastage_approver_id end = @u) order by w.recorded_at",
                     new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToList();
                 var cur = await c.ExecuteScalarAsync<string>("select base_currency from company where id = @co", new { co = scope.CompanyId }, tx);
-                var approver = await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where wastage_approver_id = @u)", new { u = scope.UserId }, tx);
+                var approver = await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where wastage_approver_id = @u or marketing_approver_id = @u)", new { u = scope.UserId }, tx);
                 return new
                 {
                     currency = cur, isApprover = approver || scope.IsAdmin,
@@ -148,7 +149,7 @@ public static class WastageApproval
             var rows = await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<WaitingRow>($"{WaitingSql} and w.id = any(@ids)", new { ids }, tx));
             var list = rows.ToList();
             if (list.Count != ids.Length) throw new DomainException("Some of these were decided already, or taken off. Refresh and try again.");
-            if (list.Any(r => !MayDecide(scope, r.ApproverId))) throw new ForbiddenException("You don't approve wastage for that branch.");
+            if (list.Any(r => !MayDecide(scope, r.ApproverId))) throw new ForbiddenException("You don't approve these for that branch.");
             var qtyOf = body.Lines.Where(l => l.Qty is not null).ToDictionary(l => l.Id, l => l.Qty!.Value);
             foreach (var (id, q) in qtyOf)
                 if (q <= 0) throw new DomainException("A quantity must be above zero; reject it instead.");
@@ -167,7 +168,7 @@ public static class WastageApproval
                     throw new DomainException(r.Kind == "marketing"
                         ? $"{s.Name} can't send marketing to FACTS (FACTS location or the marketing expense account missing, or {r.Name} has no FACTS item)."
                         : $"{s.Name} can't send wastage to FACTS (FACTS location or wastage location missing, or {r.Name} has no FACTS item).");
-                if (string.IsNullOrWhiteSpace(PostAs(s, r.Kind))) throw new DomainException($"Set the approver's FACTS username for {s.Name} first (Companies & branches).");
+                if (string.IsNullOrWhiteSpace(PostAs(s, r.Kind))) throw new DomainException($"Set the {(r.Kind == "marketing" ? "marketing" : "wastage")} approver's FACTS username for {s.Name} first (Companies & branches).");
             }
 
             // FACTS must have the stock in its batches at the outlet (the posting takes them FIFO): checked before anything changes.

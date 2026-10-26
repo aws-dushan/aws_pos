@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ErpConnectionDialog } from "@/components/erp-connection";
-import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, Trash2Icon } from "lucide-react";
+import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { useSession } from "@/components/session";
@@ -28,6 +28,7 @@ type Branch = {
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
+  marketingApproverId: string | null; marketingApprovalEmail: string | null; marketingFactsUser: string | null; marketingAccount: string | null;
   discountApprovalEmails: string[] | null;
 };
 
@@ -406,6 +407,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
           )}
           {value?.branch && <DiscountApprovalBox branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <WastageApprovalBox company={value.company} branch={value.branch} onSaved={onSaved} />}
+          {value?.branch && value.company.erpConnector === "facts" && <MarketingBox company={value.company} branch={value.branch} onSaved={onSaved} />}
 
           {/* Table service: the per-branch switch (REQ ORG-03, MOD). */}
           <div data-module={f.tableService ? "sales" : "fin"} className="overflow-hidden rounded-2xl border">
@@ -619,6 +621,60 @@ function WastageApprovalBox({ company, branch, onSaved }: { company: Company; br
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save wastage approval</Button>
+        {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Marketing give-aways at one branch: who approves them (a One POS user), where requests are emailed, the approver's FACTS username
+ * the approved MCV50 is posted as (it must be allowed MCV50 "Transaction Posting" there), and the FACTS expense account it debits.
+ * Set, the branch has a Marketing tab on Stock. Saved on its own.
+ */
+function MarketingBox({ company, branch, onSaved }: { company: Company; branch: Branch; onSaved: () => void }) {
+  const users = useApi<CompanyUser[]>(`/companies/${company.id}/users`);
+  const [v, setV] = useState({ approverId: branch.marketingApproverId ?? "", email: branch.marketingApprovalEmail ?? "", factsUser: branch.marketingFactsUser ?? "", account: branch.marketingAccount ?? "" });
+  const [busy, setBusy] = useState(false);
+  async function save(off = false) {
+    setBusy(true);
+    try {
+      await api(`/branches/${branch.id}/marketing`, "PUT", off ? { approverId: null, email: null, factsUser: null, account: null }
+        : { approverId: v.approverId || null, email: v.email.trim() || null, factsUser: v.factsUser.trim() || null, account: v.account.trim() || null });
+      if (off) setV({ approverId: "", email: "", factsUser: "", account: "" });
+      toast.success(off ? "Marketing off for this branch." : "Marketing saved.");
+      onSaved();
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  }
+  const on = !!branch.marketingApproverId;
+  return (
+    <div data-module="sales" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><MegaphoneIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Marketing (items given away) {on ? <Pill className={TONE.done} dot>On</Pill> : <Pill className={TONE.muted}>Off</Pill>}</div>
+          <p className="text-xs text-muted-foreground">
+            Items given away at this branch (tasting, promotions, influencers, gifts) are recorded on Stock &rarr; Marketing and wait for the approver (email and
+            Approvals page). Approved, they are posted in FACTS as a material consumption (MCV50) at batch cost to the expense account, as the approver&apos;s
+            FACTS username. Off: no Marketing tab.
+          </p>
+        </div>
+      </div>
+      {users.error ? <ErrorNote message={users.error} /> : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Approver (One POS user)">
+            <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
+              <option value="">Choose a user</option>
+              {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
+            </select>
+          </Field>
+          <Field label="Approval email"><Input type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="name@company.com" /></Field>
+          <Field label="FACTS username" hint="Posts the MCV50 in FACTS (must be allowed MCV50 posting)."><Input value={v.factsUser} maxLength={20} onChange={(e) => setV({ ...v, factsUser: e.target.value })} placeholder="e.g. MalikaT" /></Field>
+          <Field label="Expense account" hint="FACTS account the give-aways are charged to."><Input value={v.account} maxLength={20} onChange={(e) => setV({ ...v, account: e.target.value })} placeholder="e.g. 8003" /></Field>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save marketing</Button>
         {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
       </div>
     </div>
