@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { BarChart3Icon, ReceiptIcon, RotateCcwIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
 import { useApi } from "@/lib/api";
 import { ExportMenu } from "@/components/export-menu";
+import { ReceiptDialog } from "@/components/pos-payment";
 import { fmtIn } from "@/lib/num";
 import { cn } from "@/lib/utils";
 import { fmtQty, METHOD_LABEL, TYPE_LABEL, type OrderType, type PayMethod } from "@/lib/pos";
@@ -28,7 +29,15 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "discounts" | "branches" | "exceptions" | "stock";
+type Inv = {
+  id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
+  status: "paid" | "refunded" | "void"; cashier: string | null; till: string | null; items: number;
+  gross: number; discount: number; vat: number; net: number; refunded: number; paidBy: string | null; facts: string | null;
+};
+type InvKind = "all" | "notPosted";
+const FACTS_LABEL: Record<string, string> = { posted: "Posted", pending: "Waiting", waiting: "Waiting", failed: "Failed", skipped: "Skipped" };
+const invStatus = (x: Inv) => x.status === "void" ? "Void" : x.status === "refunded" ? "Refunded" : x.refunded > 0 ? "Part refunded" : "Paid";
 type StockKind = "all" | "out" | "negative" | "noPlatform";
 type StockRep = {
   platforms: { id: string; name: string }[];
@@ -63,6 +72,16 @@ export default function ReportsPage() {
   const ex = useApi<Exc>(tab === "exceptions" ? `/reports/exceptions?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const [stockKind, setStockKind] = useState<StockKind>("all");
   const st = useApi<StockRep>(tab === "stock" ? "/reports/stock" : null);
+  const inv = useApi<{ invoices: Inv[] }>(tab === "invoices" ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  const [invKind, setInvKind] = useState<InvKind>("all");
+  const [invQ, setInvQ] = useState("");
+  const [receipt, setReceipt] = useState<string | null>(null);
+  // The bills shown: not yet in FACTS (waiting or failed; voids never go), and the search on number, cashier, platform order or method.
+  const invRows = useMemo(() => {
+    const q = invQ.trim().toLowerCase();
+    return (inv.data?.invoices ?? []).filter((x) => (invKind === "all" || (x.status !== "void" && x.facts !== "posted" && x.facts !== "skipped" && x.facts !== null))
+      && (!q || [x.invoiceNo, x.cashier, x.platformRef, x.paidBy, x.platform].some((v) => v?.toLowerCase().includes(q))));
+  }, [inv.data, invKind, invQ]);
   const stockMatch = useMemo(() => {
     const s = st.data;
     const noPlatform = (x: StockRep["items"][number]) => !!s?.platforms.length && s.platforms.every((p) => x.platforms[p.id] == null);
@@ -91,6 +110,16 @@ export default function ReportsPage() {
       case "days": return { head: ["Day", "Orders", "Sales", "Average"], rows: d.byDay.map((x) => [shortDay(x.day), x.orders, money(x.sales), money(x.orders ? x.sales / x.orders : 0)]), share: null };
       case "methods": return { head: ["Method", "Payments", "Taken", "Refunded", "Net"], rows: d.byMethod.map((x) => [METHOD_LABEL[x.method] ?? x.method, x.count, money(x.taken), money(x.refunded), money(x.net)]), share: null };
       case "cashiers": return { head: ["Cashier", "Payments", "Taken", "Refunded", "Net"], rows: d.byCashier.map((x) => [x.name, x.payments, money(x.taken), money(x.refunded), money(x.net)]), share: null };
+      case "invoices": {
+        if (!inv.data) return { head: [], rows: [], share: null };
+        const many = where === "all";
+        return {
+          head: ["Invoice no", ...(many ? ["Branch"] : []), "Date & time", "Type", "Platform order", "Cashier", "Till", "Items", "Gross", "Discount", "VAT", "Net", "Refunded", "Paid by", "Status", "FACTS"],
+          share: null, ids: invRows.map((x) => x.id),
+          rows: invRows.map((x) => [x.invoiceNo, ...(many ? [x.branch] : []), time(x.at), x.platform ?? TYPE_LABEL[x.orderType], x.platformRef ?? "—", x.cashier ?? "—", x.till ?? "—",
+            fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), x.paidBy ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
+        };
+      }
       case "discounts": {
         const all = d.byDiscount.reduce((t, x) => t + x.amount, 0) || 1;
         const kind = { promotion: "Promotion", cashier: "Cashier discount", typed: "Typed", platform: "Platform offer" };
@@ -125,13 +154,14 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, where]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
-  const numCol = (i: number) => tab === "exceptions" ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
+  const listTab = tab === "exceptions" || tab === "invoices";
+  const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
   const exportTable = table ? {
     title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
     subtitle: tab === "stock"
@@ -199,7 +229,7 @@ export default function ReportsPage() {
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
               <Segmented id="rep-tab" value={tab} onChange={setTab} options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
-                { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "discounts", label: "Discounts" },
+                { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" }, { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
                 { value: "stock", label: "Stock" },
@@ -213,7 +243,18 @@ export default function ReportsPage() {
                 <span className="text-sm text-muted-foreground">{branch?.name}, now: FACTS stock less what was sold and thrown away since. A blank price means FACTS has none, so it can&apos;t be sold there.</span>
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : undefined} />
+            {tab === "invoices" && (
+              <div className="mb-3 flex flex-wrap items-center gap-3">
+                <Segmented id="inv-kind" size="sm" value={invKind} onChange={setInvKind} options={[{ value: "all", label: "All bills" }, { value: "notPosted", label: "Not in FACTS yet" }]} />
+                <Input type="search" value={invQ} onChange={(e) => setInvQ(e.target.value)} placeholder="Invoice no, cashier, platform order or method" className="h-9 w-72" />
+                {inv.data && (() => {
+                  const sold = invRows.filter((x) => x.status !== "void");
+                  const sum = (k: "net" | "vat" | "discount" | "refunded") => money(sold.reduce((t, x) => t + x[k], 0));
+                  return <span className="text-sm text-muted-foreground">{sold.length} bills · net {cur} {sum("net")} · VAT {sum("vat")} · discount {sum("discount")} · refunded {sum("refunded")}</span>;
+                })()}
+              </div>
+            )}
+            <ErrorNote message={tab === "stock" ? st.error : tab === "invoices" ? inv.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -230,13 +271,13 @@ export default function ReportsPage() {
               <TablePanel className="max-h-[70vh] overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0 [&_tbody_td:first-child]:bg-card [&_thead_th:first-child]:left-0 [&_thead_th:first-child]:z-20">
                 <Table bare>
                   <TableHeader><TableRow>
-                    {table.head.map((h, i) => <TableHead key={h} className={i === 0 ? "pl-5" : i === table.head.length - 1 ? cn("pr-5", (tab !== "exceptions" || numCol(i)) && "text-right") : numCol(i) ? "text-right" : ""}>{h}</TableHead>)}
+                    {table.head.map((h, i) => <TableHead key={h} className={i === 0 ? "pl-5" : i === table.head.length - 1 ? cn("pr-5", (!listTab || numCol(i)) && "text-right") : numCol(i) ? "text-right" : ""}>{h}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
                     {table.rows.slice(0, 200).map((row, ri) => (
-                      <TableRow key={ri}>
+                      <TableRow key={ri} className={table.ids ? "cursor-pointer" : undefined} onClick={table.ids ? () => setReceipt(table.ids![ri]) : undefined}>
                         {row.map((v, i) => (
-                          <TableCell key={i} className={i === 0 ? "pl-5 font-medium" : i === row.length - 1 ? cn("pr-5", (tab !== "exceptions" || numCol(i)) && "text-right tabular-nums") : numCol(i) ? "text-right tabular-nums" : "text-muted-foreground"}>
+                          <TableCell key={i} className={i === 0 ? "pl-5 font-medium" : i === row.length - 1 ? cn("pr-5", (!listTab || numCol(i)) && "text-right tabular-nums") : numCol(i) ? "text-right tabular-nums" : "text-muted-foreground"}>
                             {i === row.length - 1 && table.share ? (
                               <span className="inline-flex items-center gap-2"><span className="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(100, table.share[ri] * 100)}%` }} /></span>{v}</span>
                             ) : v}
@@ -247,10 +288,11 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </TablePanel>
-            ) : tab === "stock" && !st.data ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
+            ) : (tab === "stock" && !st.data) || (tab === "invoices" && !inv.data && !inv.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
             {table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
           </StaggerItem>
 
+          <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
           <StaggerItem>
             <p className="flex items-center gap-2 text-xs text-muted-foreground"><ScaleIcon className="size-3.5" /> Item sales are each line&apos;s share of what its order was paid (discounts and service charge spread), less items that came back. Payment methods and cashiers count money on the day it changed hands, so they can differ from sales when an order is paid on a later day.</p>
           </StaggerItem>
