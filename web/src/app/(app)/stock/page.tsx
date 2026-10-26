@@ -54,14 +54,14 @@ const money = (n: number) => fmtIn(n, 2);
 
 /** Branch stock (REQ INV-04, INV-06): record wastage; check in deliveries sent to this branch in the ERP. */
 export default function StockPage() {
-  const { company } = useSession();
+  const { company, branch } = useSession();
   const [tab, setTab] = useState<"waste" | "marketing" | "deliveries" | "returns">("waste");
   return (
     <div className="mx-auto max-w-[1100px] pb-8">
       <PageHeader title="Stock" icon={PackageIcon} module="inv"
         description="What's thrown away, what arrives, and what goes back. Stock on hand shows on the register and Menu from the ERP."
         actions={<Segmented id="stock-tab" value={tab} onChange={setTab} options={[{ value: "waste", label: "Wastage", icon: Trash2Icon },
-          ...(company?.marketingEnabled ? [{ value: "marketing" as const, label: "Marketing", icon: MegaphoneIcon }] : []),
+          ...(branch?.marketingEnabled ? [{ value: "marketing" as const, label: "Marketing", icon: MegaphoneIcon }] : []),
           { value: "deliveries", label: "Deliveries", icon: TruckIcon }, { value: "returns", label: "Returns", icon: Undo2Icon }]} />} />
       {tab === "waste" || tab === "marketing" ? <Wastage key={tab} kind={tab === "marketing" ? "marketing" : "wastage"} currency={company?.currency ?? "AED"} />
         : tab === "deliveries" ? <Deliveries /> : <Returns />}
@@ -134,7 +134,7 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
         </div>}
         <p className="mt-3 text-sm text-muted-foreground">{mkt ? (d?.marketingApprover
             ? `Items given away for marketing (tasting, promotions, influencers, gifts). Each entry waits for ${d.marketingApprover}'s approval. Approved, it is posted in FACTS straight away as a material consumption (MCV50) to the marketing expense account, at batch cost.`
-            : "This branch needs its FACTS location and a wastage approver (Companies & branches) before marketing can be recorded.")
+            : "Marketing isn't set up at this branch: its FACTS location, marketing approver and expense account (Companies & branches).")
           : !d?.erpLinked ? "Kept for the day's records."
           : d.approver ? `Each entry waits for ${d.approver}'s approval. Approved, it is posted in FACTS straight away: a transfer to the wastage location, batches oldest first.`
           : d.factsWastage === "draft" ? "The day's wastage goes to FACTS as one draft transfer to the wastage location at the day's close (night); finance gives the batches and posts it there."
