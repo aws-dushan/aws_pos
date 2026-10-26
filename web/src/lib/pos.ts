@@ -98,8 +98,12 @@ export const METHOD_LABEL: Record<PayMethod, string> = { cash: "Cash", card: "Ca
 export const imageUrl = (companyId: string | undefined, i: MenuItem) =>
   i.hasImage && companyId ? withBase(`/api/menu/images/${companyId}/${i.id}?v=${encodeURIComponent(i.imageAt ?? "")}`) : null;
 
-/** The price the branch sells an item at. */
-export const priceOf = (i: MenuItem) => i.branchPrice ?? i.price;
+/** An item's own price here; a combo has none (it costs the prices on its choices). */
+export const priceOf = (i: MenuItem) => (i.isCombo ? 0 : i.branchPrice ?? i.price);
+
+/** The least an item costs with its required choices: a combo's "from" price. */
+export const leastPrice = (i: MenuItem, groups: ModifierGroup[]) => priceOf(i) + groups.reduce((t, g) =>
+  t + g.options.filter((o) => o.isActive).map((o) => o.price).sort((a, b) => a - b).slice(0, g.minSelect).reduce((s, p) => s + p, 0), 0);
 
 /** How an order is named on screen: its table, its customer, or its type. */
 export function orderLabel(o: Order) {

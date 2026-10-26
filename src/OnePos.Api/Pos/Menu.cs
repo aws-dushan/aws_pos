@@ -160,6 +160,7 @@ public static class Menu
                     values (@co, @CategoryId, @Name, @NameAr, @Description, @Price, @Station, @ErpItemCode, @sort, @combo) returning id
                     """, new { co = scope.CompanyId, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, sort, combo = b.IsCombo == true }, tx);
                 await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? []);
+                await CheckComboAsync(c, tx, id, null);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "menu_item", id.ToString(), "created", $"Menu item {b.Name} created",
                     Audit.Created(("Price", b.Price), ("Station", b.Station)));
                 return id;
@@ -184,6 +185,7 @@ public static class Menu
                     """, new { id, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, Sort = b.Sort ?? old.Sort, IsActive = b.IsActive ?? old.IsActive,
                                combo = b.IsCombo ?? old.IsCombo }, tx);
                 await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? []);
+                await CheckComboAsync(c, tx, id, null);
                 if (old.Price != b.Price)
                     await c.ExecuteAsync("""
                         insert into item_price_history (company_id, item_id, old_price, new_price, source, changed_by) values (@co, @id, @old, @new, 'manual', @userId)
@@ -207,7 +209,9 @@ public static class Menu
             if (body.Price is < 0) throw new DomainException("A price can't be negative.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var name = await c.ExecuteScalarAsync<string?>("select name from menu_item where id = @id", new { id }, tx) ?? throw new NotFoundException("Item not found.");
+                var (name, isCombo) = await c.QuerySingleOrDefaultAsync<(string? Name, bool IsCombo)>("select name, is_combo from menu_item where id = @id", new { id }, tx);
+                if (name is null) throw new NotFoundException("Item not found.");
+                if (isCombo && body.Price is not null) throw new DomainException($"{name} is a combo: its price is the prices on its choices.");
                 var was = await c.QuerySingleOrDefaultAsync<(decimal? Price, bool ErpPriced)>(
                     "select price, erp_priced from branch_item where branch_id = @branchId and item_id = @id for update", new { branchId, id }, tx);
                 if (was.ErpPriced && (body.Price is not null || body.ClearPrice == true))
@@ -275,6 +279,7 @@ public static class Menu
                 var old = await c.QuerySingleOrDefaultAsync<Group>("select * from modifier_group where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Modifier group not found.");
                 await c.ExecuteAsync("update modifier_group set name = @Name, min_select = @MinSelect, max_select = @MaxSelect where id = @id", new { id, b.Name, b.MinSelect, b.MaxSelect }, tx);
                 await SetOptionsAsync(c, tx, scope.CompanyId, id, b.Options ?? []);
+                await CheckComboAsync(c, tx, null, id);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "modifier_group", id.ToString(), "changed", $"Modifier group {old.Name} changed",
                     [new("Name", old.Name, b.Name), new("Min", old.MinSelect, b.MinSelect), new("Max", old.MaxSelect, b.MaxSelect)]);
                 return 0;
@@ -345,8 +350,10 @@ public static class Menu
         return b with
         {
             Name = b.Name.Trim(), NameAr = string.IsNullOrWhiteSpace(b.NameAr) ? null : b.NameAr.Trim(),
-            Description = string.IsNullOrWhiteSpace(b.Description) ? null : b.Description.Trim(), Price = Money.Round(b.Price), Station = station,
-            ErpItemCode = string.IsNullOrWhiteSpace(b.ErpItemCode) ? null : b.ErpItemCode.Trim(),
+            // A combo costs what its chosen items cost in it (the prices on its choices): no price of its own.
+            Description = string.IsNullOrWhiteSpace(b.Description) ? null : b.Description.Trim(), Price = b.IsCombo == true ? 0 : Money.Round(b.Price), Station = station,
+            // A combo has no FACTS item of its own: FACTS gets its chosen items, each with its own code.
+            ErpItemCode = b.IsCombo == true || string.IsNullOrWhiteSpace(b.ErpItemCode) ? null : b.ErpItemCode.Trim(),
         };
     }
 
@@ -369,6 +376,25 @@ public static class Menu
         var ids = (b.GroupIds ?? []).Distinct().ToArray();
         if (await c.ExecuteScalarAsync<int>("select count(*) from modifier_group where id = any(@ids)", new { ids }, tx) != ids.Length)
             throw new DomainException("A chosen modifier group no longer exists.");
+    }
+
+    /// <summary>
+    /// A combo (this one, or every combo using this group) is priced and posted by its choices: each active choice must be a menu item,
+    /// with an ERP item code where the company posts to FACTS, so FACTS gets each item at its price in the combo.
+    /// </summary>
+    private static async Task CheckComboAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid? itemId, Guid? groupId)
+    {
+        var facts = await c.ExecuteScalarAsync<bool>("select erp_connector = 'facts' from company", transaction: tx);
+        var bad = (await c.QueryAsync<string>("""
+            select distinct g.name || ': ' || o.name from menu_item ci
+            join menu_item_modifier mm on mm.item_id = ci.id join modifier_group g on g.id = mm.group_id
+            join modifier_option o on o.group_id = g.id and o.is_active
+            left join menu_item i on i.id = o.item_id
+            where ci.is_combo and (ci.id = @itemId or g.id = @groupId) and (i.id is null or (@facts and i.erp_item_code is null))
+            order by 1
+            """, new { itemId, groupId, facts }, tx)).ToList();
+        if (bad.Count > 0)
+            throw new DomainException($"Every choice in a combo must be a menu item{(facts ? " with an ERP item code" : "")}. Fix: {string.Join(", ", bad)}.");
     }
 
     private static async Task SetGroupsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid itemId, Guid[] groupIds)

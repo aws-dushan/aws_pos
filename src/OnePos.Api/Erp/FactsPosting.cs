@@ -97,6 +97,53 @@ public static partial class FactsPosting
         public string? Code { get; set; }
         public string? Type { get; set; }
         public string? Unit { get; set; }
+        public bool IsCombo { get; set; }
+    }
+
+    /// <summary>One FACTS item that a unit of a bill line is, at its rate; Mods are the line's chosen options that go with it.</summary>
+    private sealed record Part(string Name, string? Code, string? Type, string? Unit, decimal Rate, List<JsonElement> Mods);
+
+    private static Guid? ComboItemId(JsonElement m) =>
+        m.TryGetProperty("itemId", out var v) && v.ValueKind == JsonValueKind.String && Guid.TryParse(v.GetString(), out var g) ? g : null;
+
+    private static decimal ModPrice(JsonElement m) => m.TryGetProperty("price", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : 0;
+
+    /// <summary>The FACTS code, type and unit of the menu items chosen in these combo lines.</summary>
+    private static async Task<Dictionary<Guid, (string? Code, string? Type, string? Unit)>> ComboItemsAsync(NpgsqlConnection c, NpgsqlTransaction tx, IEnumerable<string> modifiers)
+    {
+        var ids = modifiers.SelectMany(m => JsonDocument.Parse(m).RootElement.EnumerateArray().Select(ComboItemId)).OfType<Guid>().Distinct().ToArray();
+        if (ids.Length == 0) return [];
+        return (await c.QueryAsync<(Guid Id, string? Code, string? Type, string? Unit)>(
+            "select id, erp_item_code, erp_item_type, erp_unit from menu_item where id = any(@ids)", new { ids }, tx)).ToDictionary(x => x.Id, x => (x.Code, x.Type, x.Unit));
+    }
+
+    /// <summary>
+    /// What one unit of a bill line is in FACTS: its own item, or for a combo (no FACTS code of its own) each chosen item at the price
+    /// set on that choice in the combo. Anything else in the combo's price (its own price, a chosen extra that isn't an item) goes on
+    /// the first item, so the parts add up to the line. A combo with no chosen item stays one part (and fails for having no code).
+    /// </summary>
+    private static List<Part> Parts(string name, bool isCombo, string modifiers, decimal unitPrice, string? code, string? type, string? unit,
+        IReadOnlyDictionary<Guid, (string? Code, string? Type, string? Unit)> items)
+    {
+        var mods = JsonDocument.Parse(modifiers).RootElement.EnumerateArray().ToList();
+        var chosen = isCombo ? mods.Where(m => ComboItemId(m) is { } id && items.ContainsKey(id)).ToList() : [];
+        if (chosen.Count == 0) return [new(name, code, type, unit, unitPrice, mods)];
+        var extras = mods.Where(m => ComboItemId(m) is null).ToList();
+        return chosen.Select((m, k) =>
+        {
+            var it = items[ComboItemId(m)!.Value];
+            var rate = k == 0 ? unitPrice - chosen.Skip(1).Sum(ModPrice) : ModPrice(m);
+            return new Part(m.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "", it.Code, it.Type, it.Unit, rate, k == 0 ? extras : []);
+        }).ToList();
+    }
+
+    /// <summary>An amount shared by weight, rounded to fils; the last share takes what rounding leaves.</summary>
+    private static decimal[] Share(decimal amount, decimal[] weights)
+    {
+        var total = weights.Sum();
+        var r = weights.Select(w => total == 0 ? 0 : Money.Round(amount * w / total)).ToArray();
+        r[^1] = amount - r[..^1].Sum();
+        return r;
     }
 
     private const string OrderSql = """
@@ -127,10 +174,17 @@ public static partial class FactsPosting
         if (o.InvoiceNo is null) problems.Add("The bill has no invoice number (not paid).");
         else if (o.FactsNo is null) problems.Add($"Invoice {o.InvoiceNo} is longer than the {FactsNoLength} characters FACTS takes.");
         var lines = (await c.QueryAsync<LineInfo>("""
-            select l.name, l.qty, l.unit_price, l.line_total, l.discount, l.vat, l.modifiers::text as modifiers, i.erp_item_code as code, i.erp_item_type as type, i.erp_unit as unit
+            select l.name, l.qty, l.unit_price, l.line_total, l.discount, l.vat, l.modifiers::text as modifiers, i.erp_item_code as code, i.erp_item_type as type, i.erp_unit as unit,
+                   coalesce(i.is_combo, false) as is_combo
             from order_line l left join menu_item i on i.id = l.item_id where l.order_id = @orderId and not l.is_void order by l.sort
             """, new { orderId }, tx)).ToList();
-        foreach (var l in lines.Where(l => l.Code is null || l.Type is null)) problems.Add($"{l.Name} isn't a FACTS item (no item code).");
+        var comboItems = await ComboItemsAsync(c, tx, lines.Where(l => l.IsCombo).Select(l => l.Modifiers));
+        var parts = lines.Select(l => Parts(l.Name, l.IsCombo, l.Modifiers, l.UnitPrice, l.Code, l.Type, l.Unit, comboItems)).ToList();
+        foreach (var (l, ps) in lines.Zip(parts))
+            foreach (var p in ps.Where(p => p.Code is null || p.Type is null))
+                problems.Add(!l.IsCombo ? $"{l.Name} isn't a FACTS item (no item code)."
+                    : ps.Count == 1 && p.Name == l.Name ? $"Combo {l.Name} has no chosen item to send to FACTS."
+                    : $"{p.Name} in combo {l.Name} isn't a FACTS item (no item code).");
         var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @BranchId", new { o.BranchId }, tx)).ToList();
         var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType)>(
             "select method, amount, card_type from payment where order_id = @orderId and kind = 'payment' order by at", new { orderId }, tx)).ToList();
@@ -160,16 +214,25 @@ public static partial class FactsPosting
                 new XElement("ReceiptChequeNo", ""), new XElement("ReceiptChequeDate", "")));
         }
 
-        var details = lines.Select((l, i) =>
+        // A FACTS line per part: a combo line's gross (by its items' rates), discount and VAT are shared out so its lines add up to it.
+        var details = lines.Zip(parts, discounts).SelectMany(x =>
         {
-            var mods = JsonDocument.Parse(l.Modifiers).RootElement.EnumerateArray().Select(m => new XElement("Modifiers",
-                new XElement("ModifierCode", ""), new XElement("ModifierQty", N(l.Qty, 3)), new XElement("ModifierRate", N(m.TryGetProperty("price", out var pr) ? pr.GetDecimal() : 0)),
-                new XElement("ModifierName", m.TryGetProperty("name", out var nm) ? nm.GetString() : ""), new XElement("ModifierUnit", l.Unit ?? "PCS")));
+            var (l, ps, discount) = x;
+            var gross = ps.Select(p => Money.Round(p.Rate * l.Qty)).ToArray();
+            gross[0] = l.LineTotal - gross[1..].Sum();
+            var disc = Share(discount, gross);
+            var vat = Share(l.Vat, gross);
+            return ps.Select((p, k) => (p, l.Qty, Gross: gross[k], Disc: disc[k], Vat: vat[k]));
+        }).Select((x, i) =>
+        {
+            var mods = x.p.Mods.Select(m => new XElement("Modifiers",
+                new XElement("ModifierCode", ""), new XElement("ModifierQty", N(x.Qty, 3)), new XElement("ModifierRate", N(ModPrice(m))),
+                new XElement("ModifierName", m.TryGetProperty("name", out var nm) ? nm.GetString() : ""), new XElement("ModifierUnit", x.p.Unit ?? "PCS")));
             return new XElement("InvoiceDetails",
-                new XElement("ItemSrNo", i + 1), new XElement("ItemType", l.Type ?? ""), new XElement("ItemCode", l.Code ?? ""),
-                new XElement("ItemQty", N(l.Qty, 3)), new XElement("ItemUnit", l.Unit ?? "PCS"), new XElement("ItemRate", N(l.UnitPrice)),
-                new XElement("ItemGrossAmount", N(l.LineTotal)), new XElement("ItemDiscountAmount", N(discounts[i])), new XElement("ItemDiscountPercentage", N(l.LineTotal == 0 ? 0 : Math.Round(discounts[i] * 100 / l.LineTotal, 2, MidpointRounding.AwayFromZero))),
-                new XElement("ItemAmount", N(l.LineTotal - discounts[i])), new XElement("VATPercentage", N(o.VatRate)), new XElement("VATAmount", N(l.Vat)),
+                new XElement("ItemSrNo", i + 1), new XElement("ItemType", x.p.Type ?? ""), new XElement("ItemCode", x.p.Code ?? ""),
+                new XElement("ItemQty", N(x.Qty, 3)), new XElement("ItemUnit", x.p.Unit ?? "PCS"), new XElement("ItemRate", N(x.p.Rate)),
+                new XElement("ItemGrossAmount", N(x.Gross)), new XElement("ItemDiscountAmount", N(x.Disc)), new XElement("ItemDiscountPercentage", N(x.Gross == 0 ? 0 : Math.Round(x.Disc * 100 / x.Gross, 2, MidpointRounding.AwayFromZero))),
+                new XElement("ItemAmount", N(x.Gross - x.Disc)), new XElement("VATPercentage", N(o.VatRate)), new XElement("VATAmount", N(x.Vat)),
                 mods);
         });
         var at = (o.ClosedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm:ss", Inv);
@@ -206,10 +269,20 @@ public static partial class FactsPosting
                    (select p.card_type from payment p where p.credit_note_id = n.id limit 1) from credit_note n where n.id = @creditNoteId
             """, new { creditNoteId }, tx);
         var o = await c.QuerySingleAsync<OrderInfo>($"{OrderSql} where o.id = @OrderId", new { n.OrderId }, tx);
-        var lines = await c.QueryAsync<(string? Code, string? Type, string? Unit, decimal Qty, decimal Amount, decimal Vat, bool Restock)>("""
-            select i.erp_item_code, i.erp_item_type, i.erp_unit, cl.qty, cl.amount, cl.vat, cl.restock from credit_note_line cl
-            join order_line l on l.id = cl.order_line_id left join menu_item i on i.id = l.item_id where cl.credit_note_id = @creditNoteId
-            """, new { creditNoteId }, tx);
+        var refunded = (await c.QueryAsync<(string? Code, string? Type, string? Unit, decimal Qty, decimal Amount, decimal Vat, bool Restock, string Name, bool IsCombo, string Modifiers, decimal UnitPrice)>("""
+            select i.erp_item_code, i.erp_item_type, i.erp_unit, cl.qty, cl.amount, cl.vat, cl.restock, l.name, coalesce(i.is_combo, false), l.modifiers::text, l.unit_price
+            from credit_note_line cl join order_line l on l.id = cl.order_line_id left join menu_item i on i.id = l.item_id where cl.credit_note_id = @creditNoteId
+            """, new { creditNoteId }, tx)).ToList();
+        // A combo comes back as its items, as it was sold: the amount and VAT shared by their rates.
+        var comboItems = await ComboItemsAsync(c, tx, refunded.Where(l => l.IsCombo).Select(l => l.Modifiers));
+        var lines = refunded.SelectMany(l =>
+        {
+            var ps = Parts(l.Name, l.IsCombo, l.Modifiers, l.UnitPrice, l.Code, l.Type, l.Unit, comboItems);
+            var weights = ps.Select(p => p.Rate).ToArray();
+            var amount = Share(l.Amount, weights);
+            var vat = Share(l.Vat, weights);
+            return ps.Select((p, k) => (p.Code, p.Type, p.Unit, l.Qty, Amount: amount[k], Vat: vat[k], l.Restock));
+        }).ToList();
         var xml = new XElement("data", new XElement("CreditNote",
             new XElement("CreditNoteNo", FactsNo(n.Number, o.DocPrefix) ?? n.Number), new XElement("CreditNoteDate", n.Day.ToString("yyyy-MM-dd", Inv)), new XElement("InvoiceNo", o.FactsNo ?? ""),
             new XElement("LocationCode", o.Location ?? ""), new XElement("NetAmount", N(n.Total)), new XElement("TotalVATAmount", N(n.Vat)), new XElement("Reason", n.Reason),

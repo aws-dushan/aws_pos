@@ -12,7 +12,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { shortcutTitle } from "@/lib/shortcuts";
 import { DiscountDialog, PlatformOfferDialog } from "@/components/discount-dialog";
 import { fmtIn } from "@/lib/num";
-import { byWeight, fmtQty, imageUrl, orderNo, initials, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
+import { byWeight, fmtQty, imageUrl, orderNo, initials, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ObjectStatus, PageHeader, Segmented, TONE } from "@/components/kit";
@@ -335,7 +335,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
           ) : items.length ? (
             <motion.div key={cat + q} className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
               initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }}>
-              {items.map((i) => <ItemTile key={i.id} item={i} shortRule={menu.data?.shortStock ?? "allow"} image={imageUrl(company?.id, i)} qty={qtyOf(i.id)} currency={cur} tone={tone(i)} hasOptions={groupsOf(i).length > 0} disabled={closed} onTap={() => tapItem(i)} />)}
+              {items.map((i) => <ItemTile key={i.id} item={i} shortRule={menu.data?.shortStock ?? "allow"} image={imageUrl(company?.id, i)} qty={qtyOf(i.id)} currency={cur} tone={tone(i)} hasOptions={groupsOf(i).length > 0} price={i.isCombo ? leastPrice(i, groupsOf(i)) : priceOf(i)} disabled={closed} onTap={() => tapItem(i)} />)}
             </motion.div>
           ) : (
             <EmptyState compact icon={UtensilsCrossedIcon} title={menu.data?.items.length ? "Nothing matches" : "The menu is empty"} module="inv">
@@ -588,8 +588,8 @@ function OrderDetailsFields({ order: o, currency, platforms, onAttach, onSave, o
 }
 
 /** A menu tile: photo (or the category colour with initials), name, price; tap to add (or choose options). The count on the order pops on each tap. */
-function ItemTile({ item, shortRule, image, qty, currency, tone, hasOptions, disabled, onTap }: {
-  item: MenuItem; shortRule: ShortStock; image: string | null; qty: number; currency: string; tone: string; hasOptions: boolean; disabled: boolean; onTap: () => void;
+function ItemTile({ item, shortRule, image, qty, currency, tone, hasOptions, price, disabled, onTap }: {
+  item: MenuItem; shortRule: ShortStock; image: string | null; qty: number; currency: string; tone: string; hasOptions: boolean; price: number; disabled: boolean; onTap: () => void;
 }) {
   return (
     <motion.button type="button" data-module={tone} onClick={onTap} disabled={disabled || noPrice(item)}
@@ -613,7 +613,7 @@ function ItemTile({ item, shortRule, image, qty, currency, tone, hasOptions, dis
         {/* The whole name shows: smaller letters, up to 4 lines, the longest names (e.g. "EB OUTLET - BAKED CROISSANT ALMOND 90GM") smaller still. */}
         <span title={item.name} className={cn("line-clamp-4 leading-tight font-medium wrap-break-word", item.name.length > 30 ? "text-[0.72rem]" : "text-[0.8rem]")}>{item.name}</span>
         <span className="mt-auto flex items-baseline justify-between gap-2 text-xs text-muted-foreground tabular-nums">
-          {noPrice(item) ? <span className="font-medium text-warning">No price yet</span> : <span>{currency} <span className="text-[0.9rem] font-semibold text-foreground">{fmtIn(priceOf(item), 2)}</span></span>}
+          {noPrice(item) ? <span className="font-medium text-warning">No price yet</span> : <span>{item.isCombo && "from "}{currency} <span className="text-[0.9rem] font-semibold text-foreground">{fmtIn(price, 2)}</span></span>}
           {item.stockLeft !== null && <span className={cn(item.stockLeft <= 0 && "font-medium text-danger")}>{item.stockLeft <= 0 ? "No stock" : `${fmtIn(item.stockLeft, item.stockLeft % 1 ? 2 : 0)} left`}</span>}
         </span>
       </span>
