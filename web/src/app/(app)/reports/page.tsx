@@ -6,6 +6,7 @@ import { useApi } from "@/lib/api";
 import { ExportMenu } from "@/components/export-menu";
 import { ReceiptDialog } from "@/components/pos-payment";
 import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
+import { ComparisonView, comparisonSections, type Comparison } from "@/components/branch-comparison";
 import { dayReportLines, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
 import type { ReceiptLine } from "@/lib/device";
 import { toast } from "sonner";
@@ -33,7 +34,7 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "closed" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "discounts" | "branches" | "exceptions" | "stock";
 type Inv = {
   id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
   status: "paid" | "refunded" | "void"; cashier: string | null; till: string | null; items: number;
@@ -86,6 +87,9 @@ export default function ReportsPage() {
   const invTab = tab === "invoices" || tab === "finance";
   const summary = useApi<Summary>(tab === "summary" ? `/reports/summary?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const sections = useMemo(() => summary.data ? summarySections(summary.data, where === "all") : null, [summary.data, where]);
+  // Branch comparison: always every branch of mine, whatever "This branch / All my branches" says.
+  const cmp = useApi<Comparison>(tab === "compare" ? `/reports/branch-comparison?from=${from}&to=${to}` : null);
+  const cmpSections = useMemo(() => cmp.data ? comparisonSections(cmp.data) : null, [cmp.data]);
   const inv = useApi<{ invoices: Inv[]; payments: InvPay[] | null }>(invTab ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}${tab === "finance" ? "&finance=true" : ""}` : null);
   const [invKind, setInvKind] = useState<InvKind>("all");
   const [invQ, setInvQ] = useState("");
@@ -211,7 +215,7 @@ export default function ReportsPage() {
       }
     }
   }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", closed: "Closed days", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
@@ -286,13 +290,15 @@ export default function ReportsPage() {
               <Segmented id="rep-tab" value={tab} onChange={setTab} options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
                 { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" },
-                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, { value: "closed" as const, label: "Closed days" }] : []),
+                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, { value: "compare" as const, label: "Branch comparison" }, { value: "closed" as const, label: "Closed days" }] : []),
                 { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
                 { value: "stock", label: "Stock" },
               ]} />
-              {tab === "summary"
+              {tab === "compare"
+                ? <ExportMenu name={`branch-comparison-${company?.code}-${from}-to-${to}`} tables={cmpSections?.filter((s) => s.rows.length)} heading={{ title: "Branch comparison", subtitle: `${company?.name ?? ""} · ${from} to ${to}` }} />
+                : tab === "summary"
                 ? <ExportMenu name={`summary-${label}`} tables={sections} heading={{ title: "Summary", subtitle: `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}` }} />
                 : <ExportMenu name={`${tab === "exceptions" ? exKind : tab}-${label}`} table={exportTable} />}
             </div>
@@ -325,7 +331,7 @@ export default function ReportsPage() {
                 })()}
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "closed" ? cd.error : undefined} />
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -337,7 +343,7 @@ export default function ReportsPage() {
                 )}
               </div>
             )}
-            {tab === "summary" ? (sections ? <SummaryView sections={sections} /> : !summary.error && <LoadingRows />) : table?.rows.length ? (
+            {tab === "compare" ? (cmp.data && cmpSections ? <ComparisonView data={cmp.data} sections={cmpSections} /> : !cmp.error && <LoadingRows />) : tab === "summary" ? (sections ? <SummaryView sections={sections} /> : !summary.error && <LoadingRows />) : table?.rows.length ? (
               // Scrolls inside its own box (both ways), so the sideways scrollbar is always on screen; headings and the first column stay put.
               <TablePanel className="max-h-[70vh] overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0 [&_tbody_td:first-child]:bg-card [&_thead_th:first-child]:left-0 [&_thead_th:first-child]:z-20">
                 <Table bare>
@@ -361,7 +367,7 @@ export default function ReportsPage() {
                 </Table>
               </TablePanel>
             ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
-            {tab !== "summary" && table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
+            {tab !== "summary" && tab !== "compare" && table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
           </StaggerItem>
 
           <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />

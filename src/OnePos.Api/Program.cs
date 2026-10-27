@@ -109,6 +109,7 @@ Approvals.Map(api);
 Paper.Map(api);
 Customers.Map(api);
 Reports.Map(api);
+BranchComparison.Map(api);
 StockReport.Map(api);
 Reservations.Map(api);
 Stock.Map(api);

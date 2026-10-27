@@ -77,13 +77,13 @@ export function summarySections(s: Summary, many: boolean): ExportTable[] {
 }
 
 /** The sections on screen, two side by side where there is room; the money columns on the right, each total in bold. */
-export function SummaryView({ sections }: { sections: ExportTable[] }) {
+export function SummaryView({ sections, wide }: { sections: ExportTable[]; wide?: boolean }) {
   return (
     <div className="grid items-start gap-5 lg:grid-cols-2">
       {sections.map((t) => {
         const right = (i: number) => i > 0 && t.rows.every((r) => r[i] === "" || r[i] === "—" || typeof r[i] === "number" || /^-?[\d,]+(\.\d+)?%?$/.test(String(r[i])));
         return (
-          <section key={t.title} className={cn("min-w-0", (t.title === "Transactions" || t.title === "Expenses") && "lg:col-span-2")}>
+          <section key={t.title} className={cn("min-w-0", (wide || t.title === "Transactions" || t.title === "Expenses") && "lg:col-span-2")}>
             <h2 className="mb-2 font-heading font-semibold">{t.title}</h2>
             <TablePanel className="max-h-[60vh] overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10">
               <Table bare>
