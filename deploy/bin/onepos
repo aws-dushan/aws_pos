@@ -1,0 +1,202 @@
+#!/bin/bash
+# One POS — control script on the application server (AWS-App). Installed as /opt/aws/onepos/bin/onepos. deploy/README.md has the procedures.
+#
+#   onepos status                          what runs where, versions, health, last backups
+#   onepos load <version>                  load a release's images from /opt/aws/onepos/releases/<version>/ (deploy/release.sh copies them)
+#   onepos deploy <live|test> <version>    back up (live), switch to <version>, wait until healthy; on failure go back to the previous version
+#   onepos rollback <live|test>            back to the version before the current one
+#   onepos backup <live|test>              database dump + files now
+#   onepos restore <live|test> <dump> [files.tgz]   replace the environment's database (and files) with a backup — asks to type the name
+#   onepos refresh-test                    test := latest live backup (database + files); proves the restore procedure every time
+#   onepos logs <live|test> [api|web|backup]
+#   onepos route                           (re)install the /onepos + /onepos-test routes on the shared gateway
+#   onepos publish-device <live|test> <folder>   publish a Device Service release (its .msi + latest.json) to the environment; every
+#                                          till's Device Service picks it up within 6 hours (deploy/release.sh does this for both)
+set -euo pipefail
+
+ROOT=${ONEPOS_ROOT:-/opt/aws/onepos}
+COMPOSE=$ROOT/compose.app.yml
+LOG=$ROOT/deploy.log
+EDGE_DIR=${EDGE_DIR:-/opt/aws/edge}
+EDGE_CONTAINER=${EDGE_CONTAINER:-aws-edge-nginx-1}
+
+say() { echo "$(date '+%F %T')  $*" | tee -a "$LOG"; }
+die() { say "ERROR: $*"; exit 1; }
+envfile() { local f=$ROOT/$1/.env; [ -f "$f" ] || die "no environment '$1' ($f)"; echo "$f"; }
+val() { grep -E "^$2=" "$(envfile "$1")" | head -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//'; }
+setval() {
+  local f; f=$(envfile "$1")
+  if grep -qE "^$2=" "$f"; then sed -i "s|^$2=.*|$2=$3|" "$f"; else echo "$2=$3" >> "$f"; fi
+}
+dc() { local e=$1; shift; docker compose -f "$COMPOSE" -p "onepos-$e" --env-file "$(envfile "$e")" "$@"; }
+check_env() { [[ "$1" == live || "$1" == test ]] || die "environment must be live or test"; }
+
+health() { docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || echo missing; }
+
+wait_healthy() {
+  local c=$1 limit=$2 t=0 s
+  while :; do
+    s=$(health "$c")
+    [ "$s" = healthy ] && return 0
+    [ "$s" = unhealthy ] || [ "$s" = exited ] || [ "$s" = missing ] && [ $t -gt 30 ] && return 1
+    [ $t -ge "$limit" ] && return 1
+    sleep 5; t=$((t + 5))
+  done
+}
+
+has_images() {
+  local e=$1 v=$2 pg
+  pg=$(release_pg "$v")
+  docker image inspect "onepos-api:$v" "onepos-web-$e:$v" "$pg" >/dev/null 2>&1
+}
+release_pg() { cat "$ROOT/releases/$1/PG_IMAGE" 2>/dev/null || echo "onepos-postgres:missing"; }
+
+cmd_load() {
+  local v=${1:?version}; local d=$ROOT/releases/$v
+  [ -d "$d" ] || die "no release folder $d"
+  for t in "$d"/*.tar.gz; do say "load $(basename "$t")"; gunzip -c "$t" | docker load -q; done
+  # Keep the three newest releases on disk for rollback (the server's weekly image prune removes unused images after 7 days).
+  ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +4 | while read -r old; do say "remove old release $(basename "$old")"; rm -rf "$old"; done
+}
+
+# The API runs as uid 1654 in its container: its files folder (sign-in keys, pictures, installers) must belong to that user.
+own_files() {
+  local d; d=$(val "$1" DATA_DIR)/files
+  [ "$(stat -c %u "$d")" = 1654 ] && return 0
+  docker run --rm -v "$d:/data" alpine:3.20 chown -R 1654:1654 /data
+}
+
+cmd_publish_device() {
+  local e=$1 src=${2:?folder with the .msi and latest.json}; check_env "$e"
+  [ -f "$src/latest.json" ] || die "no latest.json in $src"
+  local d; d=$(val "$e" DATA_DIR)/files
+  mkdir -p "$d"; own_files "$e"
+  docker run --rm -v "$d:/data" -v "$(readlink -f "$src"):/in:ro" alpine:3.20     sh -c 'mkdir -p /data/releases/device-service && cp /in/*.msi /data/releases/device-service/ && cp /in/latest.json /data/releases/device-service/latest.json && chown -R 1654:1654 /data/releases'
+  say "Device Service $(grep -o '"version": *"[^"]*"' "$src/latest.json" | cut -d'"' -f4) published to $e"
+}
+
+cmd_backup() {
+  check_env "$1"
+  say "backup $1"
+  docker exec "onepos-$1-backup" onepos-app-backup now 2>&1 | tee -a "$LOG"
+  return "${PIPESTATUS[0]}"
+}
+
+cmd_deploy() {
+  local e=$1 v=${2:?version}; check_env "$e"
+  if ! has_images "$e" "$v"; then cmd_load "$v"; fi
+  has_images "$e" "$v" || die "images for $v are not on this server (deploy/release.sh copies them)"
+  local prev; prev=$(val "$e" ONEPOS_VERSION)
+  say "deploy $e: ${prev:-none} -> $v"
+  if [ "$e" = live ] && [ -n "$prev" ] && [ "$(health onepos-live-backup)" != missing ]; then
+    cmd_backup live || die "the backup before the deploy failed; nothing was changed"
+  fi
+  [ -n "$prev" ] && setval "$e" PREVIOUS_VERSION "$prev"
+  setval "$e" ONEPOS_VERSION "$v"
+  setval "$e" PG_IMAGE "$(release_pg "$v")"
+  mkdir -p "$(val "$e" DATA_DIR)/files" "$(val "$e" BACKUP_DIR)"
+  own_files "$e"
+  dc "$e" up -d --remove-orphans 2>&1 | tee -a "$LOG"
+  # The API applies the database migrations at start; a large one can take minutes.
+  if wait_healthy "onepos-$e-api" 900 && wait_healthy "onepos-$e-web" 300; then
+    say "deploy $e $v: healthy"
+    docker exec "onepos-$e-api" curl -fsS http://127.0.0.1:8080/health >/dev/null
+    return 0
+  fi
+  say "deploy $e $v FAILED — last API log lines:"
+  docker logs --tail 40 "onepos-$e-api" 2>&1 | tee -a "$LOG" || true
+  if [ -n "$prev" ]; then
+    say "going back to $prev"
+    setval "$e" ONEPOS_VERSION "$prev"; setval "$e" PG_IMAGE "$(release_pg "$prev")"
+    dc "$e" up -d 2>&1 | tee -a "$LOG"
+    say "if $v applied a migration the previous version can't run on, restore the backup taken just before: onepos restore $e <dump>"
+  fi
+  exit 1
+}
+
+cmd_rollback() {
+  local e=$1; check_env "$e"
+  local prev; prev=$(val "$e" PREVIOUS_VERSION)
+  [ -n "$prev" ] || die "no previous version recorded for $e"
+  cmd_deploy "$e" "$prev"
+}
+
+# Replaces the environment's database with a pg_dump (and its files with a files backup). The API is stopped meanwhile.
+cmd_restore() {
+  local e=$1 dump=${2:?dump file} files=${3:-}; check_env "$e"
+  [ -f "$dump" ] || die "no file $dump"
+  if [ "${ONEPOS_YES:-}" != "$e" ]; then
+    read -r -p "This REPLACES the $e database with $(basename "$dump"). Type '$e' to go on: " answer
+    [ "$answer" = "$e" ] || die "cancelled"
+  fi
+  local v; v=$(val "$e" ONEPOS_VERSION)
+  say "restore $e from $(basename "$dump") ${files:+and $(basename "$files")}"
+  dc "$e" stop api web
+  local b="onepos-$e-backup"
+  docker cp "$dump" "$b:/tmp/restore.dump"
+  docker exec -e PGDATABASE=postgres "$b" sh -c '
+    set -e
+    psql -h "$DB_HOST" -p "$DB_PORT" -U onepos_owner -v ON_ERROR_STOP=1 -c "select pg_terminate_backend(pid) from pg_stat_activity where datname = '"'"'onepos'"'"' and pid <> pg_backend_pid()" >/dev/null
+    psql -h "$DB_HOST" -p "$DB_PORT" -U onepos_owner -v ON_ERROR_STOP=1 -c "drop database if exists onepos" -c "create database onepos owner onepos_owner"
+    pg_restore -h "$DB_HOST" -p "$DB_PORT" -U onepos_owner -d onepos --no-owner --role=onepos_owner -j 2 /tmp/restore.dump
+    rm -f /tmp/restore.dump' 2>&1 | tee -a "$LOG"
+  # Role settings (timeouts, JIT) are kept by the cluster, not the dump: re-apply them from this release's migrations.
+  docker run --rm --entrypoint sh "onepos-api:$v" -c 'cat /app/migrations/*.sql' | grep -E '^ALTER ROLE' \
+    | docker exec -i "$b" psql -h "$(val "$e" DB_HOST)" -p "$(val "$e" DB_PORT)" -U onepos_owner -d onepos -q -v ON_ERROR_STOP=1 2>&1 | tee -a "$LOG"
+  # This environment's own passwords (a dump from elsewhere doesn't carry roles, but be sure).
+  docker exec -i "$b" psql -h "$(val "$e" DB_HOST)" -p "$(val "$e" DB_PORT)" -U onepos_owner -d onepos -q -v ON_ERROR_STOP=1 \
+    -v app="$(val "$e" DB_APP_PASSWORD)" <<'SQL'
+ALTER ROLE onepos_app PASSWORD :'app';
+SQL
+  docker exec "$b" psql -h "$(val "$e" DB_HOST)" -p "$(val "$e" DB_PORT)" -U onepos_owner -d onepos -q -c "analyze"
+  if [ -n "$files" ]; then
+    [ -f "$files" ] || die "no file $files"
+    local fdir; fdir=$(val "$e" DATA_DIR)/files
+    say "restore files into $fdir"
+    docker run --rm -v "$fdir:/data" -v "$(dirname "$(readlink -f "$files")"):/in:ro" alpine:3.20 \
+      sh -c "find /data -mindepth 1 -delete && tar -xzf /in/$(basename "$files") -C /data && chown -R 1654:1654 /data"
+  fi
+  dc "$e" start api web
+  wait_healthy "onepos-$e-api" 900 && wait_healthy "onepos-$e-web" 300 || die "restored, but the API did not come back healthy (onepos logs $e api)"
+  say "restore $e: done"
+}
+
+cmd_refresh_test() {
+  cmd_backup live || die "live backup failed"
+  local d f
+  d=$(ls -1t "$(val live BACKUP_DIR)"/db/onepos-live-*.dump | head -1)
+  f=$(ls -1t "$(val live BACKUP_DIR)"/files/onepos-live-*.tgz | head -1)
+  ONEPOS_YES=test cmd_restore test "$d" "$f"
+  say "test now holds live as of $(basename "$d")"
+}
+
+cmd_status() {
+  for e in live test; do
+    [ -f "$ROOT/$e/.env" ] || { echo "$e: not installed"; continue; }
+    printf '%s  version %-22s api %-10s web %-10s backup %-8s last backup %s\n' "$e" "$(val "$e" ONEPOS_VERSION)" \
+      "$(health "onepos-$e-api")" "$(health "onepos-$e-web")" "$(health "onepos-$e-backup")" "$(cat "$(val "$e" BACKUP_DIR)/last-ok" 2>/dev/null || echo never)"
+    printf '      %s\n' "$(val "$e" PUBLIC_URL)"
+  done
+  echo "releases on disk: $(ls -1t "$ROOT/releases" 2>/dev/null | tr '\n' ' ')"
+}
+
+cmd_route() {
+  install -m 644 "$ROOT/edge-onepos.conf" "$EDGE_DIR/apps/onepos.conf"
+  docker exec "$EDGE_CONTAINER" nginx -t 2>&1 | tail -1
+  docker exec "$EDGE_CONTAINER" nginx -s reload
+  say "route /onepos + /onepos-test installed on $EDGE_CONTAINER"
+}
+
+case "${1:-status}" in
+  status) cmd_status ;;
+  load) cmd_load "${2:-}" ;;
+  deploy) cmd_deploy "${2:-}" "${3:-}" ;;
+  rollback) cmd_rollback "${2:-}" ;;
+  backup) cmd_backup "${2:-}" ;;
+  restore) cmd_restore "${2:-}" "${3:-}" "${4:-}" ;;
+  refresh-test) cmd_refresh_test ;;
+  logs) check_env "${2:-}"; docker logs --tail 200 -f "onepos-$2-${3:-api}" ;;
+  route) cmd_route ;;
+  publish-device) cmd_publish_device "${2:-}" "${3:-}" ;;
+  *) sed -n '2,17p' "$0"; exit 1 ;;
+esac

@@ -1,0 +1,53 @@
+#!/bin/bash
+# One POS — database control on the data server (AWS-Data). Installed as /opt/aws/onepos/bin/onepos-db.
+#
+#   onepos-db status                       containers, sizes, last pgBackRest backup per environment
+#   onepos-db up <live|test> [pg_image]    start / update the environment's database (pg_image: a new onepos-postgres release image)
+#   onepos-db backup <live|test> [full|diff]   pgBackRest backup now
+#   onepos-db info <live|test>             pgBackRest backups and the recovery window
+#   onepos-db pitr <live|test> "<YYYY-MM-DD HH:MM:SS>"   restore the database to that moment (asks to type the name; API must be stopped)
+set -euo pipefail
+
+ROOT=${ONEPOS_ROOT:-/opt/aws/onepos}
+COMPOSE=$ROOT/compose.data.yml
+LOG=$ROOT/db.log
+say() { echo "$(date '+%F %T')  $*" | tee -a "$LOG"; }
+die() { say "ERROR: $*"; exit 1; }
+envfile() { local f=$ROOT/$1/.env; [ -f "$f" ] || die "no environment '$1' ($f)"; echo "$f"; }
+val() { grep -E "^$2=" "$(envfile "$1")" | head -1 | cut -d= -f2- | sed 's/[[:space:]]*#.*$//'; }
+setval() { local f; f=$(envfile "$1"); if grep -qE "^$2=" "$f"; then sed -i "s|^$2=.*|$2=$3|" "$f"; else echo "$2=$3" >> "$f"; fi; }
+check_env() { [[ "${1:-}" == live || "${1:-}" == test ]] || die "environment must be live or test"; }
+dc() { local e=$1; shift; docker compose -f "$COMPOSE" -p "onepos-$e-db" --env-file "$(envfile "$e")" "$@"; }
+pgbr() { docker exec "onepos-$1-db" gosu postgres pgbackrest --stanza=onepos "${@:2}"; }
+
+case "${1:-status}" in
+  status)
+    for e in live test; do
+      [ -f "$ROOT/$e/.env" ] || { echo "$e: not installed"; continue; }
+      c=onepos-$e-db
+      printf '%s  %-30s %-10s port %s  data %s  last backup %s\n' "$e" "$(val "$e" PG_IMAGE)" \
+        "$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo missing)" "$(val "$e" DB_PORT)" \
+        "$(docker exec "$c" psql -U onepos_owner -d onepos -Atc "select pg_size_pretty(pg_database_size('onepos'))" 2>/dev/null || echo '?')" "$(docker exec "$c" cat /var/lib/pgbackrest/last-ok 2>/dev/null || echo 'none yet (first full only)')"
+    done
+    df -h "$ROOT" | tail -1 ;;
+  up)
+    check_env "${2:-}"; e=$2
+    [ -n "${3:-}" ] && setval "$e" PG_IMAGE "$3"
+    mkdir -p "$(val "$e" DATA_DIR)/pgdata" "$(val "$e" DATA_DIR)/pgbackrest"
+    say "up $e ($(val "$e" PG_IMAGE))"
+    dc "$e" up -d 2>&1 | tee -a "$LOG" ;;
+  backup) check_env "${2:-}"; say "backup $2 ${3:-diff}"; pgbr "$2" --type="${3:-diff}" backup 2>&1 | tee -a "$LOG" ;;
+  info) check_env "${2:-}"; pgbr "$2" info ;;
+  pitr)
+    check_env "${2:-}"; e=$2; target=${3:?time}
+    read -r -p "This REWINDS the $e database to $target (later changes are lost). Type '$e' to go on: " a
+    [ "$a" = "$e" ] || die "cancelled"
+    say "pitr $e to $target"
+    dc "$e" stop db
+    img=$(val "$e" PG_IMAGE); d=$(val "$e" DATA_DIR)
+    docker run --rm -v "$d/pgdata:/var/lib/postgresql/data" -v "$d/pgbackrest:/var/lib/pgbackrest" --entrypoint bash "$img" -c \
+      "gosu postgres pgbackrest --stanza=onepos --delta --type=time '--target=$target' --target-action=promote restore" 2>&1 | tee -a "$LOG"
+    dc "$e" start db
+    say "pitr $e: started; check the data, then start the API (on the app server: onepos deploy $e <current version>)" ;;
+  *) sed -n '2,10p' "$0"; exit 1 ;;
+esac
