@@ -12,8 +12,9 @@ namespace OnePos.Api.Platform;
 public static class UserEndpoints
 {
     /// <summary>Limits: the user's own over the role's (null value: no limit for them; left out: as the role). Not sent: unchanged.</summary>
+    /// <summary>IsAdmin: an administrator of One POS (every company); only an administrator changes it. Not sent: unchanged.</summary>
     public sealed record UserBody(string? Username, string DisplayName, string? Password, Guid RoleId, Guid[]? BranchIds, string? Pin, bool? ClearPin, bool? IsActive,
-        JsonElement? Limits = null);
+        JsonElement? Limits = null, bool? IsAdmin = null);
     public sealed record RoleBody(string Name, string[]? Permissions, JsonElement? Limits);
 
     public sealed class UserRow
@@ -98,6 +99,7 @@ public static class UserEndpoints
                 await c.ExecuteAsync("insert into user_company (user_id, company_id, role_id, pin_lookup, limits) values (@id, @companyId, @RoleId, @lookup, cast(@limits as jsonb))",
                     new { id, companyId, body.RoleId, lookup, limits = Permissions.CleanUserLimits(body.Limits) }, tx);
                 await SetBranchesAsync(c, tx, id, companyId, body.BranchIds ?? []);
+                if (body.IsAdmin == true) await SetAdminAsync(c, tx, scope, id, existing?.IsAdmin ?? false, true);
                 await Audit.RecordAsync(c, tx, companyId, null, scope.UserId, "user", id.ToString(), "added", $"User {username} added",
                     Audit.Created(("Name", body.DisplayName.Trim()), ("Role", body.RoleId), ("Branches", (body.BranchIds ?? []).Length), ("PIN set", lookup is not null)));
                 return id;
@@ -118,6 +120,9 @@ public static class UserEndpoints
                     """, new { id, companyId }, tx) ?? throw new NotFoundException("User not found in this company.");
                 if (old.IsAdmin && !scope.IsAdmin) throw new ForbiddenException("Only administrators can change an administrator.");
                 if (id == scope.UserId && body.IsActive is false) throw new DomainException("You can't switch yourself off.");
+                if (old.IsAdmin && old.IsActive && body.IsActive is false && await OtherAdminsAsync(c, tx, id) == 0)
+                    throw new DomainException("This is the last administrator: make someone else an administrator first.");
+                if (body.IsAdmin is { } admin && admin != old.IsAdmin) await SetAdminAsync(c, tx, scope, id, old.IsAdmin, admin);
                 await CheckRoleAndBranchesAsync(c, tx, companyId, body);
                 if (body.Password is { Length: > 0 }) Passwords.Check(body.Password, old.Username);
                 await c.ExecuteAsync("""
@@ -232,5 +237,24 @@ public static class UserEndpoints
             new { userId, companyId }, tx);
         await c.ExecuteAsync("insert into user_branch (user_id, branch_id) select @userId, unnest(@ids) on conflict do nothing",
             new { userId, ids = branchIds.Distinct().ToArray() }, tx);
+    }
+
+    /// <summary>Active administrators other than this user.</summary>
+    private static Task<int> OtherAdminsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid id) =>
+        c.ExecuteScalarAsync<int>("select count(*)::int from app_user where is_admin and is_active and id <> @id", new { id }, tx);
+
+    /// <summary>
+    /// Makes a user an administrator of One POS (every company) or takes it away: only an administrator does it, never for themselves,
+    /// and never the last active administrator. Recorded in the audit log.
+    /// </summary>
+    private static async Task SetAdminAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, Guid id, bool was, bool admin)
+    {
+        if (!scope.IsAdmin) throw new ForbiddenException("Only an administrator can make someone an administrator.");
+        if (!admin && id == scope.UserId) throw new DomainException("You can't take administrator away from yourself.");
+        if (!admin && await OtherAdminsAsync(c, tx, id) == 0) throw new DomainException("This is the last administrator: make someone else an administrator first.");
+        await c.ExecuteAsync("update app_user set is_admin = @admin where id = @id", new { id, admin }, tx);
+        var name = await c.ExecuteScalarAsync<string>("select username from app_user where id = @id", new { id }, tx);
+        await Audit.RecordAsync(c, tx, null, null, scope.UserId, "user", id.ToString(), admin ? "admin_on" : "admin_off",
+            admin ? $"{name} made an administrator" : $"{name} is no longer an administrator", [new("Administrator", was, admin)]);
     }
 }

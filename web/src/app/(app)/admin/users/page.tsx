@@ -113,7 +113,7 @@ export default function UsersPage() {
 function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | null; roles: Role[]; onClose: () => void; onSaved: () => void }) {
   const { company, me } = useSession();
   const isNew = value === "new";
-  const blank = { username: "", displayName: "", password: "", roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true };
+  const blank = { username: "", displayName: "", password: "", roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true, isAdmin: false };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +123,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
     setSeen(value);
     setPinPad(false);
     setLimits(limitState(value && value !== "new" ? value : null));
-    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive });
+    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive, isAdmin: value.isAdmin });
     else setF({ ...blank, roleId: roles.find((r) => r.name === "Cashier")?.id ?? roles[0]?.id ?? "", branchIds: company?.branches.length === 1 ? [company.branches[0].id] : [] });
   }
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -246,6 +246,16 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             <Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder={existing?.hasPassword ? "Leave empty to keep it" : "Optional"} />
           </Field>
 
+          {/* Only an administrator makes (or unmakes) an administrator; never themselves. */}
+          {me.user.isAdmin && existing?.id !== me.user.id && (
+            <div data-module="admin" className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
+              <span className="text-sm"><span className="font-medium">Administrator</span> <span className="text-muted-foreground">· everything in every company: companies, branches, email server, problem reports</span></span>
+              <Switch on={f.isAdmin} label="Administrator" onChange={async (v) => {
+                if (v && !(await confirmDialog({ title: `Make ${f.displayName || "this user"} an administrator?`, message: "They can do everything in every company of One POS.", confirmLabel: "Make administrator" }))) return;
+                set("isAdmin", v);
+              }} />
+            </div>
+          )}
           {existing && existing.id !== me.user.id && (
             <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
               <span className="text-sm">Active <span className="text-muted-foreground">· a switched-off user can’t sign in anywhere</span></span>

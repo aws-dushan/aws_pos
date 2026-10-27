@@ -90,6 +90,8 @@ public static class RequestContext
     /// <summary>A user's scope in a company and branch (their role's permissions and limits), e.g. a manager approving at a till.</summary>
     public static async Task<Scope> LoadScopeAsync(Db db, Guid userId, bool isAdmin, Guid companyId, Guid? branchId, Guid? registerId = null)
     {
+        // Administrator: the sign-in says so AND the user still is one (taken away, it ends at once, not at the next sign-in).
+        isAdmin = isAdmin && await db.Platform((c, tx) => c.ExecuteScalarAsync<bool>("select coalesce((select is_admin and is_active from app_user where id = @userId), false)", new { userId }, tx));
         var row = await db.Platform((c, tx) => c.QuerySingleOrDefaultAsync<(bool Ok, string[]? Perms, bool BranchOk, string? Limits, bool RegisterOk)>("""
             select (co.is_active or @isAdmin) and (@isAdmin or uc.user_id is not null) as ok,
                    r.permissions as perms,
