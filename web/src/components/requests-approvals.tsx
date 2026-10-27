@@ -42,17 +42,15 @@ export function RequestsApprovals() {
   const q = (l: Line) => qty[l.id] ?? String(l.qty);
   const bad = chosen.find((r) => r.lines.some((l) => q(l).trim() === "" || !(Number(q(l)) >= 0)) || r.lines.every((l) => !(Number(q(l)) > 0)));
 
-  // One request at a time (each is its own STR50); what FACTS or One POS refuses is said, the rest go through.
+  // All together: those of the same branch and store go to FACTS as one STR50 (their lines one after another).
   async function approve() {
     setBusy("approve");
-    const failed: string[] = [];
-    for (const r of chosen)
-      try { await api(`/requests/approvals/${r.id}/approve`, "POST", { lines: r.lines.map((l) => ({ id: l.id, qty: Number(q(l)) })), note: null }); }
-      catch (e) { failed.push(`${r.number}: ${(e as Error).message}`); }
-    const ok = chosen.length - failed.length;
-    if (ok) toast.success(`Approved ${ok}. Posting to FACTS now.`);
-    if (failed.length) toast.error(failed.join("\n"), { duration: 12000 });
-    setPicked(new Set()); setQty({}); setBusy(null); list.reload();
+    try {
+      await api("/requests/approvals/approve", "POST", { requests: chosen.map((r) => ({ id: r.id, lines: r.lines.map((l) => ({ id: l.id, qty: Number(q(l)) })) })), note: null });
+      const strs = new Set(chosen.map((r) => `${r.branchName}|${r.storeCode}`)).size;
+      toast.success(`Approved ${chosen.length}. Posting to FACTS now as ${strs} stock transfer request${strs === 1 ? "" : "s"} (STR50).`);
+      setPicked(new Set()); setQty({}); list.reload();
+    } catch (e) { toast.error((e as Error).message, { duration: 12000 }); } finally { setBusy(null); }
   }
   async function reject() {
     const note = await promptReason({ title: `Reject ${chosen.length} request${chosen.length === 1 ? "" : "s"}?`, confirmLabel: "Reject", tone: "danger", reason: { label: "Why", placeholder: "The branch sees this" } });
@@ -69,7 +67,7 @@ export function RequestsApprovals() {
 
   return (
     <FieldGroup title={`Stock requests to approve (${items.length})`} className="mb-5 p-4"
-      description="What a branch asks a store for. Tick the requests, change a quantity where needed (0 takes the line off), then approve or reject them together. Approved, each is posted in FACTS straight away as a stock transfer request (STR50) to the store.">
+      description="What a branch asks a store for. Tick the requests, change a quantity where needed (0 takes the line off), then approve or reject them together. Approved, they are posted in FACTS straight away: one stock transfer request (STR50) per branch and store, with all their lines.">
       <ErrorNote message={list.error} />
       <div className="space-y-3">
         {items.map((r) => (

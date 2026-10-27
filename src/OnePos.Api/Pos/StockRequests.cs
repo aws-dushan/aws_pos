@@ -25,6 +25,8 @@ public static class StockRequests
     public sealed record RequestBody(string StoreCode, DateOnly? NeededBy, string? Note, NewLine[] Lines);
     public sealed record ApproveLine(Guid Id, decimal Qty);
     public sealed record ApproveBody(ApproveLine[] Lines, string? Note);
+    public sealed record ApproveRequest(Guid Id, ApproveLine[]? Lines);
+    public sealed record ApproveManyBody(ApproveRequest[] Requests, string? Note);
     public sealed record RejectBody(string Note);
     public sealed record StoreBody(string Code, string? Name, bool? IsActive);
     public sealed record ApprovalBody(Guid? ApproverId, string? Email, string? FactsUser);
@@ -63,6 +65,8 @@ public static class StockRequests
         public Guid Id { get; set; }
         public Guid RequestId { get; set; }
         public int Line { get; set; }
+        /// <summary>Its line on the STR50 (several requests approved together share one STR50); null before 0079: its own line.</summary>
+        public int? StrLine { get; set; }
         public string ItemType { get; set; } = "";
         public string ItemCode { get; set; } = "";
         public string ItemName { get; set; } = "";
@@ -110,7 +114,7 @@ public static class StockRequests
     private static object Shape(RequestRow r, List<LineRow> lines, Dictionary<(string, int), decimal> delivered)
     {
         var mine = lines.Where(l => l.RequestId == r.Id).ToList();
-        decimal? Got(LineRow l) => r.ErpDoc is { } d && delivered.TryGetValue((d, l.Line), out var q) ? q : null;
+        decimal? Got(LineRow l) => r.ErpDoc is { } d && delivered.TryGetValue((d, l.StrLine ?? l.Line), out var q) ? q : null;
         var got = mine.Select(Got).ToList();
         // Posted: what the store sent so far, line by line.
         var delivery = r.ErpStatus != "posted" || got.All(g => g is null) ? null
@@ -124,6 +128,78 @@ public static class StockRequests
     }
 
     private static bool MayDecide(Scope scope, Guid? approverId) => scope.IsAdmin || approverId == scope.UserId;
+
+    /// <summary>
+    /// Approves waiting requests (all or nothing), with the approver's quantities (0 takes a line off). Requests of the same branch and
+    /// store go to FACTS as one STR50: their lines one after another (each line keeps its STR50 line number, so what arrives shows per
+    /// line). Answers the branches touched.
+    /// </summary>
+    private static async Task<List<Guid>> ApproveAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, IEnumerable<ApproveRequest> wanted, string? decisionNote)
+    {
+        var asked = wanted.GroupBy(w => w.Id).Select(g => g.First()).ToList();
+        var ids = asked.Select(w => w.Id).ToArray();
+        var rows = (await c.QueryAsync<RequestRow>($"{RowSql} where r.id = any(@ids) order by r.requested_at for update of r", new { ids }, tx)).ToList();
+        if (rows.Count != ids.Length) throw new NotFoundException("Some of these requests were not found. Refresh and try again.");
+        if (rows.Any(r => r.Approval != "waiting")) throw new DomainException("Some of these were decided already, or cancelled. Refresh and try again.");
+        if (rows.Any(r => !MayDecide(scope, r.ApproverId))) throw new ForbiddenException("You don't approve requests for that branch.");
+        if (rows.FirstOrDefault(r => r.Loc is null || string.IsNullOrWhiteSpace(r.FactsUser)) is { } noUser)
+            throw new DomainException($"Set the request approver's FACTS username for {noUser.BranchName} first (Companies & branches).");
+        var lines = await LinesAsync(c, tx, ids);
+        var qtyOf = asked.SelectMany(w => w.Lines ?? []).GroupBy(l => l.Id).ToDictionary(g => g.Key, g => g.First().Qty);
+        if (qtyOf.Values.Any(q => q < 0)) throw new DomainException("A quantity can't be below zero.");
+        decimal Qty(LineRow l) => qtyOf.TryGetValue(l.Id, out var q) ? q : l.Qty;
+        var note = string.IsNullOrWhiteSpace(decisionNote) ? null : decisionNote.Trim();
+
+        var kept = new Dictionary<Guid, List<LineRow>>();
+        foreach (var r in rows)
+        {
+            var mine = lines.Where(l => l.RequestId == r.Id).ToList();
+            var keep = mine.Where(l => Qty(l) > 0).ToList();
+            if (keep.Count == 0) throw new DomainException($"REQ-{r.Number}: every quantity is zero; reject it instead.");
+            kept[r.Id] = keep;
+            // Lines taken off go; the rest are numbered again in order.
+            await c.ExecuteAsync("delete from stock_request_line where request_id = @Id and not (id = any(@keep))", new { r.Id, keep = keep.Select(l => l.Id).ToArray() }, tx);
+            await c.ExecuteAsync("update stock_request_line set line = -line where request_id = @Id", new { r.Id }, tx);
+            var i = 0;
+            foreach (var l in keep)
+                await c.ExecuteAsync("update stock_request_line set line = @n, requested_qty = case when @q <> qty then coalesce(requested_qty, qty) end, qty = @q where id = @Id",
+                    new { n = ++i, q = Qty(l), l.Id }, tx);
+            var changed = mine.Where(l => Qty(l) != l.Qty).Select(l => $"{l.ItemName} {l.Qty.ToString("0.###", Inv)} → {Qty(l).ToString("0.###", Inv)}").ToList();
+            await c.ExecuteAsync("update stock_request set approval = 'approved', decided_by = @u, decided_at = now(), decision_note = @note where id = @Id", new { r.Id, u = scope.UserId, note }, tx);
+            await Audit.RecordAsync(c, tx, scope.CompanyId, r.BranchId, scope.UserId, "stock_request", r.Id.ToString(), "approved",
+                $"REQ-{r.Number} approved: {keep.Count} item{(keep.Count == 1 ? "" : "s")} from {r.StoreCode}{(changed.Count > 0 ? $" (changed: {string.Join("; ", changed)})" : "")}", note: note);
+        }
+
+        // One STR50 per branch and store: the requests' lines one after another, each line keeping its STR50 line number.
+        foreach (var g in rows.GroupBy(r => (r.BranchId, r.StoreCode)))
+        {
+            var group = g.ToList();
+            var first = group[0];
+            var nums = string.Join(", ", group.Select(r => $"REQ-{r.Number}"));
+            var needed = group.Where(r => r.NeededBy is not null).Select(r => r.NeededBy!.Value).DefaultIfEmpty().Min();
+            var notes = string.Join(" · ", group.Where(r => r.Note is not null).Select(r => r.Note));
+            // The narration the store sees in FACTS: our numbers, when it's needed (the earliest), and the outlet's notes.
+            var reference = $"One POS {first.BranchCode} {nums}{(needed != default ? $" for {needed.ToString("dd MMM", Inv)}" : "")}{(notes.Length > 0 ? $" · {notes}" : "")}";
+            if (reference.Length > 200) reference = reference[..197] + "...";
+            var day = await Days.DateAsync(c, tx, first.BranchId);
+            var all = group.SelectMany(r => kept[r.Id]).ToList();
+            var strLine = 0;
+            foreach (var l in all) await c.ExecuteAsync("update stock_request_line set str_line = @n where id = @Id", new { n = ++strLine, l.Id }, tx);
+            var xml = new XElement("data", new XElement("Transfer",
+                new XElement("DocDate", day.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", first.StoreCode), new XElement("ToLocation", first.Loc),
+                new XElement("Reference", reference),
+                all.Select(l => new XElement("Line", new XElement("ItemType", l.ItemType), new XElement("ItemCode", l.ItemCode), new XElement("ItemName", l.ItemName),
+                    new XElement("Qty", Qty(l).ToString("0.###", Inv)), new XElement("Unit", l.Unit ?? "PCS")))));
+            var postId = Guid.NewGuid();
+            var docNo = $"{first.BranchCode} {string.Join("+", group.Select(r => $"REQ-{r.Number}"))}";
+            await c.ExecuteAsync("""
+                insert into erp_post (id, company_id, branch_id, kind, doc_no, business_date, amount, xml, status, facts_user)
+                values (@postId, @co, @b, 'request', @docNo, @day, 0, @xml, 'pending', @user)
+                """, new { postId, co = scope.CompanyId, b = first.BranchId, docNo = docNo.Length > 60 ? docNo[..57] + "..." : docNo, day, xml = xml.ToString(SaveOptions.DisableFormatting), user = first.FactsUser!.Trim() }, tx);
+            await c.ExecuteAsync("update stock_request set erp_post_id = @postId, erp_status = 'pending' where id = any(@ids)", new { postId, ids = group.Select(r => r.Id).ToArray() }, tx);
+        }
+        return rows.Select(r => r.BranchId).Distinct().ToList();
+    }
 
     public static void Map(RouteGroupBuilder api)
     {
@@ -301,52 +377,21 @@ public static class StockRequests
         api.MapPost("/requests/approvals/{id:guid}/approve", async (Guid id, ApproveBody body, HttpContext http, Db db, Live live) =>
         {
             var scope = await http.ScopeAsync(db);
-            var branchId = await db.Company(scope.CompanyId, async (c, tx) =>
-            {
-                var r = await c.QuerySingleOrDefaultAsync<RequestRow>($"{RowSql} where r.id = @id for update of r", new { id }, tx) ?? throw new NotFoundException("Request not found.");
-                if (r.Approval != "waiting") throw new DomainException("This request was decided already, or cancelled. Refresh and try again.");
-                if (!MayDecide(scope, r.ApproverId)) throw new ForbiddenException("You don't approve requests for that branch.");
-                if (r.Loc is null || string.IsNullOrWhiteSpace(r.FactsUser)) throw new DomainException($"Set the request approver's FACTS username for {r.BranchName} first (Companies & branches).");
-                var lines = await LinesAsync(c, tx, [id]);
-                var qtyOf = (body.Lines ?? []).ToDictionary(l => l.Id, l => l.Qty);
-                if (qtyOf.Values.Any(q => q < 0)) throw new DomainException("A quantity can't be below zero.");
-                decimal Qty(LineRow l) => qtyOf.TryGetValue(l.Id, out var q) ? q : l.Qty;
-                var keep = lines.Where(l => Qty(l) > 0).ToList();
-                if (keep.Count == 0) throw new DomainException("Every quantity is zero: reject the request instead.");
-                var note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
-
-                // Lines taken off go; the rest are numbered again in order (their numbers are the STR50's lines).
-                await c.ExecuteAsync("delete from stock_request_line where request_id = @id and not (id = any(@keep))", new { id, keep = keep.Select(l => l.Id).ToArray() }, tx);
-                await c.ExecuteAsync("update stock_request_line set line = -line where request_id = @id", new { id }, tx);
-                var i = 0;
-                foreach (var l in keep)
-                    await c.ExecuteAsync("update stock_request_line set line = @n, requested_qty = case when @q <> qty then coalesce(requested_qty, qty) end, qty = @q where id = @Id",
-                        new { n = ++i, q = Qty(l), l.Id }, tx);
-                var changed = lines.Where(l => Qty(l) != l.Qty).Select(l => $"{l.ItemName} {l.Qty.ToString("0.###", Inv)} → {Qty(l).ToString("0.###", Inv)}").ToList();
-                await c.ExecuteAsync("update stock_request set approval = 'approved', decided_by = @u, decided_at = now(), decision_note = @note where id = @id", new { id, u = scope.UserId, note }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, r.BranchId, scope.UserId, "stock_request", id.ToString(), "approved",
-                    $"REQ-{r.Number} approved: {keep.Count} item{(keep.Count == 1 ? "" : "s")} from {r.StoreCode}{(changed.Count > 0 ? $" (changed: {string.Join("; ", changed)})" : "")}", note: note);
-
-                // The narration the store sees in FACTS: our number, when it's needed, and the outlet's note.
-                var reference = $"One POS {r.BranchCode} REQ-{r.Number}{(r.NeededBy is { } nb ? $" for {nb.ToString("dd MMM", Inv)}" : "")}{(r.Note is { } n ? $" · {n}" : "")}";
-                if (reference.Length > 200) reference = reference[..197] + "...";
-                var day = await Days.DateAsync(c, tx, r.BranchId);
-                var xml = new XElement("data", new XElement("Transfer",
-                    new XElement("DocDate", day.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", r.StoreCode), new XElement("ToLocation", r.Loc),
-                    new XElement("Reference", reference),
-                    keep.Select(l => new XElement("Line", new XElement("ItemType", l.ItemType), new XElement("ItemCode", l.ItemCode), new XElement("ItemName", l.ItemName),
-                        new XElement("Qty", Qty(l).ToString("0.###", Inv)), new XElement("Unit", l.Unit ?? "PCS")))));
-                var postId = Guid.NewGuid();
-                await c.ExecuteAsync("""
-                    insert into erp_post (id, company_id, branch_id, kind, doc_no, business_date, amount, xml, status, facts_user)
-                    values (@postId, @co, @b, 'request', @docNo, @day, 0, @xml, 'pending', @user)
-                    """, new { postId, co = scope.CompanyId, b = r.BranchId, docNo = $"{r.BranchCode} REQ-{r.Number}", day, xml = xml.ToString(SaveOptions.DisableFormatting), user = r.FactsUser!.Trim() }, tx);
-                await c.ExecuteAsync("update stock_request set erp_post_id = @postId, erp_status = 'pending' where id = @id", new { postId, id }, tx);
-                return r.BranchId;
-            });
+            var branches = await db.Company(scope.CompanyId, (c, tx) => ApproveAsync(c, tx, scope, [new(id, body.Lines)], body.Note));
             FactsPosting.Sender.Wake();
-            await live.ToBranch(branchId, "stock.changed");
+            foreach (var b in branches) await live.ToBranch(b, "stock.changed");
             return Results.Ok(new { id });
+        });
+
+        // Approve several together: those of the same branch and store go to FACTS as ONE STR50, their lines one after another.
+        api.MapPost("/requests/approvals/approve", async (ApproveManyBody body, HttpContext http, Db db, Live live) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            if (body.Requests is not { Length: > 0 }) throw new DomainException("Choose the requests to approve.");
+            var branches = await db.Company(scope.CompanyId, (c, tx) => ApproveAsync(c, tx, scope, body.Requests, body.Note));
+            FactsPosting.Sender.Wake();
+            foreach (var b in branches) await live.ToBranch(b, "stock.changed");
+            return Results.Ok(new { approved = body.Requests.Length });
         });
 
         // Reject: nothing goes to FACTS; the reason is shown to the branch.
