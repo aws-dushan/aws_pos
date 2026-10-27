@@ -32,6 +32,7 @@ builder.Services.AddHostedService<SalesSummary.Builder>();
 builder.Services.AddHostedService<EmptyOrderSweep>();
 builder.Services.AddHostedService<Days.AutoDay>();
 builder.Services.AddHostedService<Notices.Sender>();
+builder.Services.AddHostedService<ApprovalReminders>();
 builder.Services.AddHostedService<OnePos.Api.Erp.FactsPosting.Sender>();
 builder.Services.AddSignalR();
 // Answers go compressed (Brotli, else gzip; the fastest level): the register's menu is ~67 KB of JSON and ~8 KB compressed, which

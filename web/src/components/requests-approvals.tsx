@@ -36,6 +36,13 @@ export function RequestsApprovals() {
   );
 }
 
+/** Waiting past 12 hours (when reminders go to the approver): how long, in red. */
+const hoursSince = (at: string) => Math.floor((Date.now() - new Date(at).getTime()) / 3_600_000);
+export function Overdue({ at }: { at: string }) {
+  const h = hoursSince(at);
+  return h >= 12 ? <span className="font-medium text-danger"> · waiting {h} h</span> : null;
+}
+
 function RequestToDecide({ r, onDone }: { r: Waiting; onDone: () => void }) {
   const [qty, setQty] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
@@ -69,20 +76,20 @@ function RequestToDecide({ r, onDone }: { r: Waiting; onDone: () => void }) {
         <div className="min-w-0 flex-1">
           <div className="font-medium">{r.number} · {r.branchName} <span className="font-normal text-muted-foreground">from {r.storeName} ({r.storeCode})</span></div>
           <div className="text-xs text-muted-foreground">
-            {r.requestedByName}, {timeAgo(r.requestedAt)}{r.neededBy ? ` · needed by ${new Date(r.neededBy).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}{r.note ? ` · ${r.note}` : ""}
+            {r.requestedByName}, {timeAgo(r.requestedAt)}<Overdue at={r.requestedAt} />{r.neededBy ? ` · needed by ${new Date(r.neededBy).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}{r.note ? ` · ${r.note}` : ""}
           </div>
         </div>
       </div>
       <div className="divide-y">
         <div className="hidden gap-3 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
-          <span className="flex-1">Item</span><span className="w-20 text-right">At branch</span><span className="w-20 text-right">At store</span><span className="w-[7.5rem] text-right">Quantity</span>
+          <span className="flex-1">Item</span><span className="w-20 text-right">At branch</span><span className="w-20 text-right">At store</span><span className="w-30 text-right">Quantity</span>
         </div>
         {r.lines.map((l) => (
           <div key={l.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
             <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{l.itemName}</div><div className="font-mono text-xs text-muted-foreground">{l.itemCode}</div></div>
             <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">{l.atOutlet === null ? "—" : fmtQty(l.atOutlet)}</span>
             <span className="w-20 text-right text-xs tabular-nums text-muted-foreground">{l.atStore === null ? "—" : fmtQty(l.atStore)}</span>
-            <div className="flex w-[7.5rem] items-center justify-end gap-2">
+            <div className="flex w-30 items-center justify-end gap-2">
               <input inputMode="decimal" aria-label={`Quantity of ${l.itemName}`} value={q(l)} onChange={(e) => setQty({ ...qty, [l.id]: e.target.value.replace(/[^\d.]/g, "") })}
                 className="h-10 w-20 rounded-lg border border-input bg-card px-2 text-right text-sm tabular-nums" />
               <span className="w-8 text-xs text-muted-foreground">{l.unit?.toLowerCase()}</span>

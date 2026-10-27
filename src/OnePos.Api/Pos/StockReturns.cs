@@ -63,6 +63,7 @@ public static class StockReturns
         public string BranchCode { get; set; } = "";
         public string BranchName { get; set; } = "";
         public Guid? ApproverId { get; set; }
+        public DateTime? RemindedAt { get; set; }
     }
 
     private const string RowSql = """
@@ -207,7 +208,7 @@ public static class StockReturns
                     returns = rows.Select(r => new
                     {
                         r.Id, r.Source, r.DeliveryDocType, r.DeliveryDocNo, r.ToLocation, r.ItemCode, r.ItemName, r.Qty, r.RequestedQty, r.Unit, r.Reason, r.Note,
-                        r.RecordedByName, r.RecordedAt, r.Approval, r.DecidedByName, r.DecisionNote, r.ErpStatus, r.ErpDoc,
+                        r.RecordedByName, r.RecordedAt, r.Approval, r.DecidedByName, r.DecisionNote, r.ErpStatus, r.ErpDoc, r.RemindedAt,
                     }),
                 };
             });
