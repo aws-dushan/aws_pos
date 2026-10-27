@@ -57,6 +57,13 @@ public static class Dashboard
                     select coalesce(sum(total - refunded), 0) from pos_order
                     where branch_id = @branchId and business_date = @prev and status in ('paid','refunded') and (@reg is null or register_id = @reg)
                     """, args, tx);
+                // While the day is open, today so far is compared with yesterday by the same time of day (a full day only once it's closed).
+                var dayOpen = await c.ExecuteScalarAsync<bool>("select exists (select 1 from business_day where branch_id = @branchId and date = @day and status = 'open')", args, tx);
+                var yesterdaySoFar = dayOpen ? await c.ExecuteScalarAsync<decimal>("""
+                    select coalesce(sum(total - refunded), 0) from pos_order
+                    where branch_id = @branchId and business_date = @prev and status in ('paid','refunded') and (@reg is null or register_id = @reg)
+                      and closed_at <= now() - interval '1 day'
+                    """, args, tx) : yesterday;
                 var names = (await c.QueryAsync<(Guid Id, string Name)>("""
                     select id, name from register where branch_id = @branchId
                     union all select u.id, u.display_name from app_user u join user_branch ub on ub.user_id = u.id where ub.branch_id = @branchId
@@ -71,6 +78,9 @@ public static class Dashboard
                     registerName = reg is { } r && names.TryGetValue(r, out var rn) ? rn : null,
                     sales,
                     yesterday,
+                    yesterdaySoFar,
+                    // The time of day compared at (branch time), while the day is open; null once it's closed (full day against full day).
+                    compareAt = dayOpen ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(tz)).ToString("HH:mm") : null,
                     orders = paid.Count,
                     averageTicket = paid.Count == 0 ? 0 : Money.Round(sales / paid.Count),
                     discounts = paid.Sum(p => p.Discount),
