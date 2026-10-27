@@ -7,6 +7,7 @@ import { ExportMenu } from "@/components/export-menu";
 import { ReceiptDialog } from "@/components/pos-payment";
 import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
 import { ComparisonView, comparisonSections, type Comparison } from "@/components/branch-comparison";
+import { cellNumber, FilterBar, FilterHeading, useTableView } from "@/components/table-filters";
 import { dayReportLines, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
 import type { ReceiptLine } from "@/lib/device";
 import { toast } from "sonner";
@@ -225,12 +226,24 @@ export default function ReportsPage() {
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
   const listTab = tab === "exceptions" || invTab || tab === "closed";
   const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
+  // Search, sort and column filters over the table (they start again with another tab, kind or dates).
+  const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${where}|${from}|${to}`);
+  const shownRows = table ? tv.shown.map((i) => table.rows[i]) : [];
+  // A total under the table for the rows shown: amount and count columns only (not averages, shares, prices or stock).
+  const totalRow = table && shownRows.length > 1 && table.head.length > 1
+    ? table.head.map((h, i) => {
+        if (i === 0) return "Total";
+        if (!tv.numeric[i] || /average|share|%|rate|busiest|price|stock|variance %|day$/i.test(h) || shownRows.some((r) => String(r[i]).endsWith("%"))) return "";
+        const sum = shownRows.reduce((t, r) => t + (cellNumber(r[i]) ?? 0), 0);
+        return shownRows.every((r) => typeof r[i] === "number" || /^-?[\d,]+$/.test(String(r[i]))) ? sum.toLocaleString("en-US") : money(sum);
+      })
+    : null;
   const exportTable = table ? {
     title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
     subtitle: tab === "stock"
       ? `${company?.name ?? ""} · ${branch?.name ?? ""} · stock now, ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
       : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}`,
-    head: table.head, rows: table.rows,
+    head: table.head, rows: shownRows,
   } : null;
 
   return (
@@ -346,15 +359,21 @@ export default function ReportsPage() {
                 )}
               </div>
             )}
+            {tab !== "compare" && tab !== "summary" && table && table.rows.length > 0 && <FilterBar view={tv} head={table.head} total={table.rows.length} search={!invTab} />}
             {tab === "compare" ? (cmp.data && cmpSections ? <ComparisonView data={cmp.data} sections={cmpSections} /> : !cmp.error && <LoadingRows />) : tab === "summary" ? (sections ? <SummaryView sections={sections} /> : !summary.error && <LoadingRows />) : table?.rows.length ? (
               // Scrolls inside its own box (both ways), so the sideways scrollbar is always on screen; headings and the first column stay put.
               <TablePanel className="max-h-[70vh] overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_tbody_td:first-child]:sticky [&_tbody_td:first-child]:left-0 [&_tbody_td:first-child]:bg-card [&_thead_th:first-child]:left-0 [&_thead_th:first-child]:z-20">
                 <Table bare>
                   <TableHeader><TableRow>
-                    {table.head.map((h, i) => <TableHead key={h} className={i === 0 ? "pl-5" : i === table.head.length - 1 ? cn("pr-5", (!listTab || numCol(i)) && "text-right") : numCol(i) ? "text-right" : ""}>{h}</TableHead>)}
+                    {table.head.map((h, i) => {
+                      const right = i === table.head.length - 1 ? !listTab || numCol(i) : i > 0 && numCol(i);
+                      return <TableHead key={h} className={cn(i === 0 && "pl-5", i === table.head.length - 1 && "pr-5", right && "text-right")}>
+                        <FilterHeading label={h} col={i} view={tv} rows={table.rows} align={right ? "right" : undefined} />
+                      </TableHead>;
+                    })}
                   </TableRow></TableHeader>
                   <TableBody>
-                    {table.rows.slice(0, 200).map((row, ri) => (
+                    {tv.shown.slice(0, 200).map((ri) => { const row = table.rows[ri]; return (
                       <TableRow key={ri} className={table.ids || tab === "closed" ? "cursor-pointer" : undefined}
                         onClick={tab === "closed" ? () => { const z = zOf(ri); if (z) setZLines(z); else toast.error("No Z report was kept for this."); } : table.ids ? () => setReceipt(table.ids![ri]) : undefined}>
                         {row.map((v, i) => (
@@ -365,12 +384,17 @@ export default function ReportsPage() {
                           </TableCell>
                         ))}
                       </TableRow>
-                    ))}
+                    ); })}
+                    {totalRow && (
+                      <TableRow className="bg-muted/50 font-semibold">
+                        {totalRow.map((v, i) => <TableCell key={i} className={cn(i === 0 && "pl-5", i === totalRow.length - 1 && "pr-5", v !== "" && i > 0 && "text-right tabular-nums")}>{v}</TableCell>)}
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </TablePanel>
             ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
-            {tab !== "summary" && tab !== "compare" && table && table.rows.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {table.rows.length}; the export has them all.</p>}
+            {tab !== "summary" && tab !== "compare" && table && tv.shown.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {tv.shown.length}; the export has them all.</p>}
           </StaggerItem>
 
           <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
