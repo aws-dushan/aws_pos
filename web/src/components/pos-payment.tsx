@@ -94,6 +94,8 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const pointsWorth = customer.data && rewards.data ? roundTo(customer.data.customer.points * rewards.data.pointValue, 2) : null;
 
   const entryOk = !!value && !over && !(needsRef && !reference.trim()) && !(needsCard && !cardType);
+  // Nothing to pay (e.g. a 100% discount): the bill is completed without a payment, and its receipt prints as usual.
+  const free = due <= 0.004 && parts.length === 0;
   const current = (): Part => ({ method, amount: roundTo(applied, 2), tendered: method === "cash" ? value : null, reference: reference || null, cardType: needsCard ? cardType : null });
 
   /** The amount on screen becomes one part of the split; the screen is ready for the next part (what's left). */
@@ -106,9 +108,9 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   }
 
   async function pay() {
-    if (!entryOk && parts.length === 0) return;
-    const payments = [...parts, ...(entryOk ? [current()] : [])];
-    if (payments.length === 0) return;
+    if (!free && !entryOk && parts.length === 0) return;
+    const payments = free ? [] : [...parts, ...(entryOk ? [current()] : [])];
+    if (!free && payments.length === 0) return;
     setBusy(true);
     try {
       const d = await api<OrderDetail>(`/orders/${detail.order.id}/pay`, "POST", { payments }, { key: newKey() });
@@ -224,7 +226,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
         </div>
         <DialogFooter>
           <Button variant="outline" className="mr-auto h-12 px-5" onClick={() => onOpenChange(false)}>Back to order</Button>
-          {!splitting && parts.length === 0 && method !== "platform" && (
+          {!free && !splitting && parts.length === 0 && method !== "platform" && (
             <Button variant="outline" className="h-12 px-5" onClick={() => { setSplitting(true); setAmount(""); setPristine(true); }}><SplitIcon /> Split payment</Button>
           )}
           {(splitting || parts.length > 0) && part && (
@@ -233,8 +235,8 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
           {(splitting || parts.length > 0) && part ? (
             <Button className="h-12 min-w-48 text-base" disabled={busy || !entryOk} onClick={addPart}><PlusIcon /> Add {currency} {money(applied)}</Button>
           ) : (
-            <Button ref={payRef} className="h-12 min-w-48 text-base" disabled={busy || (!entryOk && !(parts.length > 0 && left <= 0.004))} onClick={pay}>
-              {busy ? <><Loader2Icon className="animate-spin" /> Taking payment…</> : part ? `Take ${currency} ${money(applied)}` : `Pay ${currency} ${money(due)}`}
+            <Button ref={payRef} className="h-12 min-w-48 text-base" disabled={busy || (!free && !entryOk && !(parts.length > 0 && left <= 0.004))} onClick={pay}>
+              {busy ? <><Loader2Icon className="animate-spin" /> {free ? "Completing…" : "Taking payment…"}</> : free ? "Complete · nothing to pay" : part ? `Take ${currency} ${money(applied)}` : `Pay ${currency} ${money(due)}`}
             </Button>
           )}
         </DialogFooter>
