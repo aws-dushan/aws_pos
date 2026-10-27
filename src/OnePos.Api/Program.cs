@@ -111,6 +111,7 @@ Customers.Map(api);
 Reports.Map(api);
 BranchComparison.Map(api);
 StockReport.Map(api);
+GrossProfit.Map(api);
 Reservations.Map(api);
 Stock.Map(api);
 WastageApproval.Map(api);

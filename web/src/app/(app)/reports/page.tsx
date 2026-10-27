@@ -35,7 +35,18 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "gp" | "discounts" | "branches" | "exceptions" | "stock";
+type GpTotal = { sales: number; cost: number; profit: number };
+type Gp = {
+  summary: GpTotal & { pct: number | null };
+  byItem: { name: string; category: string; qty: number; total: GpTotal }[];
+  byCategory: { category: string; qty: number; total: GpTotal }[];
+  byDay: { day: string; total: GpTotal }[];
+  byBranch: { code: string; name: string; total: GpTotal }[];
+  pending: { bills: number; sales: number }; noCost: { lines: number; sales: number }; refunds: { count: number; amount: number };
+};
+type GpKind = "items" | "categories" | "days" | "branches";
+const gpCells = (x: GpTotal) => [money(x.sales), money(x.cost), money(x.profit), x.sales ? `${(x.profit / x.sales * 100).toFixed(1)}%` : "—"];
 type Inv = {
   id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
   status: "paid" | "refunded" | "void"; cashier: string | null; till: string | null; items: number;
@@ -100,6 +111,10 @@ export default function ReportsPage() {
   // Closed days (admin and finance): the days or their shifts, each with its kept Z report.
   const [dayKind, setDayKind] = useState<"days" | "shifts">("days");
   const cd = useApi<ClosedDays>(tab === "closed" ? `/reports/days?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  // Gross profit (admin and finance): sales before VAT against FACTS' cost (each line's batch landed cost), read from FACTS as it opens.
+  const [gpKind, setGpKind] = useState<GpKind>("items");
+  if (gpKind === "branches" && where !== "all") setGpKind("items");
+  const gp = useApi<Gp>(tab === "gp" ? `/reports/gross-profit?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const [zLines, setZLines] = useState<ReceiptLine[] | null>(null);
   const zTitle = (code: string) => `${company?.name ?? ""} · ${code}`;
   const zOf = (i: number): ReceiptLine[] | null => {
@@ -184,8 +199,20 @@ export default function ReportsPage() {
             fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), p ? money(p.amount) : "—", p?.type ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
         };
       }
+      case "gp": {
+        const g = gp.data;
+        if (!g) return { head: [], rows: [], share: null };
+        const money4 = ["Net sales", "Cost", "Gross profit", "GP %"];
+        const views: Record<GpKind, { head: string[]; rows: (string | number)[][] }> = {
+          items: { head: ["Item", "Category", "Qty", ...money4], rows: g.byItem.map((x) => [x.name, x.category, fmtQty(x.qty), ...gpCells(x.total)]) },
+          categories: { head: ["Category", "Qty", ...money4], rows: g.byCategory.map((x) => [x.category, fmtQty(x.qty), ...gpCells(x.total)]) },
+          days: { head: ["Day", ...money4], rows: g.byDay.map((x) => [shortDay(x.day), ...gpCells(x.total)]) },
+          branches: { head: ["Branch", ...money4], rows: g.byBranch.map((x) => [`${x.code} · ${x.name}`, ...gpCells(x.total)]) },
+        };
+        return { ...views[gpKind], share: null };
+      }
       case "discounts": {
-        const all = d.byDiscount.reduce((t, x) => t + x.amount, 0) || 1;
+        const all =d.byDiscount.reduce((t, x) => t + x.amount, 0) || 1;
         const kind = { promotion: "Promotion", cashier: "Cashier discount", typed: "Typed", platform: "Platform offer" };
         return { head: ["Discount", "Kind", "Given by", "Bills", "Amount"], rows: d.byDiscount.map((x) => [x.name, kind[x.kind] ?? x.kind, x.by, x.bills, money(x.amount)]), share: d.byDiscount.map((x) => x.amount / all) };
       }
@@ -218,16 +245,23 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind, gp.data, gpKind]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", gp: "Gross profit", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
+  const gpTitles: Record<GpKind, string> = { items: "Items", categories: "Categories", days: "Days", branches: "Branches" };
+  // What the gross profit leaves out (no cost from FACTS yet) and the refunds it doesn't take off, said under the tabs and in the export.
+  const gpNote = gp.data ? [
+    gp.data.pending.bills ? `Cost pending: ${gp.data.pending.bills} bills · ${cur} ${money(gp.data.pending.sales)} not in FACTS yet` : "",
+    gp.data.noCost.lines ? `No cost yet: ${gp.data.noCost.lines} lines · ${cur} ${money(gp.data.noCost.sales)} without a FACTS batch` : "",
+    gp.data.refunds.count ? `Refunds ${cur} ${money(gp.data.refunds.amount)} (${gp.data.refunds.count}) not taken off` : "",
+  ].filter(Boolean).join(" · ") : "";
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
   const listTab = tab === "exceptions" || invTab || tab === "closed";
-  const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" ? 2 : tab === "stock" ? 3 : 1);
+  const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" || (tab === "gp" && gpKind === "items") ? 2 : tab === "stock" ? 3 : 1);
   // Search, sort and column filters over the table (they start again with another tab, kind or dates).
-  const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${where}|${from}|${to}`);
+  const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${gpKind}|${where}|${from}|${to}`);
   const shownRows = table ? tv.shown.map((i) => table.rows[i]) : [];
   // A total under the table for the rows shown: amount and count columns only (not averages, shares, prices or stock).
   const totalRow = table && shownRows.length > 1 && table.head.length > 1
@@ -239,10 +273,10 @@ export default function ReportsPage() {
       })
     : null;
   const exportTable = table ? {
-    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
+    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "gp" ? ` · ${gpTitles[gpKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
     subtitle: tab === "stock"
       ? `${company?.name ?? ""} · ${branch?.name ?? ""} · stock now, ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
-      : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}`,
+      : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}${tab === "gp" ? ` · sales before VAT, cost from FACTS${gpNote ? ` · ${gpNote}` : ""}` : ""}`,
     head: table.head, rows: shownRows,
   } : null;
 
@@ -306,7 +340,7 @@ export default function ReportsPage() {
               <Segmented id="rep-tab" value={tab} onChange={setTab} className="min-w-0 max-w-full flex-wrap" options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
                 { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" },
-                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, ...(where === "all" ? [{ value: "compare" as const, label: "Branch comparison" }] : []), { value: "closed" as const, label: "Closed days" }] : []),
+                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, ...(where === "all" ? [{ value: "compare" as const, label: "Branch comparison" }] : []), { value: "closed" as const, label: "Closed days" }, { value: "gp" as const, label: "Gross profit" }] : []),
                 { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
@@ -316,7 +350,7 @@ export default function ReportsPage() {
                 ? <ExportMenu name={`branch-comparison-${company?.code}-${from}-to-${to}`} tables={cmpSections?.filter((s) => s.rows.length)} heading={{ title: "Branch comparison", subtitle: `${company?.name ?? ""} · ${from} to ${to}` }} />
                 : tab === "summary"
                 ? <ExportMenu name={`summary-${label}`} tables={sections} heading={{ title: "Summary", subtitle: `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}` }} />
-                : <ExportMenu name={`${tab === "exceptions" ? exKind : tab}-${label}`} table={exportTable} />}
+                : <ExportMenu name={`${tab === "exceptions" ? exKind : tab === "gp" ? `gross-profit-${gpKind}` : tab}-${label}`} table={exportTable} />}
             </div>
             {tab === "stock" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -347,7 +381,16 @@ export default function ReportsPage() {
                 })()}
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : undefined} />
+            {tab === "gp" && (
+              <div className="mb-3 grid gap-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Segmented id="gp-kind" size="sm" value={gpKind} onChange={setGpKind} options={(Object.keys(gpTitles) as GpKind[]).filter((k) => k !== "branches" || where === "all").map((k) => ({ value: k, label: gpTitles[k] }))} />
+                  {gp.data && <span className="text-sm text-muted-foreground">Net sales {cur} {money(gp.data.summary.sales)} · cost {money(gp.data.summary.cost)} · gross profit <span className="font-medium text-foreground">{money(gp.data.summary.profit)}{gp.data.summary.pct !== null ? ` (${gp.data.summary.pct}%)` : ""}</span></span>}
+                </div>
+                <p className="text-xs text-muted-foreground">Sales before VAT, after discounts. Cost is each line&apos;s FACTS batch at its landed cost, read from FACTS now.{gpNote ? ` Left out: ${gpNote}.` : ""}</p>
+              </div>
+            )}
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : tab === "gp" ? gp.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -393,7 +436,7 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </TablePanel>
-            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
+            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) || (tab === "gp" && !gp.data && !gp.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
             {tab !== "summary" && tab !== "compare" && table && tv.shown.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {tv.shown.length}; the export has them all.</p>}
           </StaggerItem>
 
