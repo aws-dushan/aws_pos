@@ -18,7 +18,7 @@ import { CountUp, Stagger, StaggerItem } from "@/components/motion";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Dash = {
-  view: "register" | "branch"; date: string; registerName: string | null; sales: number; yesterday: number; orders: number; averageTicket: number;
+  view: "register" | "branch"; date: string; registerName: string | null; sales: number; yesterday: number; yesterdaySoFar: number; compareAt: string | null; orders: number; averageTicket: number;
   discounts: number; refunds: number; openOrders: { count: number; value: number }; voids: { count: number; value: number };
   byMethod: { method: PayMethod; amount: number }[]; byType: { type: OrderType; amount: number; orders: number }[];
   byPlatform?: { name: string; amount: number; orders: number }[];
@@ -55,7 +55,8 @@ export function SalesDashboard() {
   }
   const d = dash.data;
   const hours = d ? d.byHour.filter((h) => h.hour >= 6) : [];
-  const delta = d && d.yesterday > 0 ? ((d.sales - d.yesterday) / d.yesterday) * 100 : null;
+  // While the day is open: against yesterday by the same time of day; once closed, full day against full day.
+  const delta = d && d.yesterdaySoFar > 0 ? ((d.sales - d.yesterdaySoFar) / d.yesterdaySoFar) * 100 : null;
   const maxMethod = d ? Math.max(1, ...d.byMethod.map((m) => m.amount)) : 1;
 
   return (
@@ -79,9 +80,11 @@ export function SalesDashboard() {
                 </div>
                 <div className="mt-3 font-heading text-[2.6rem] leading-none font-semibold tracking-tight"><MoneyFigure value={d.sales} currency={cur} format={money} /></div>
                 <div className="mt-3 text-xs text-white/75">
-                  {delta === null ? "No sales yesterday to compare" : (
-                    <><span className={cn("font-semibold", delta >= 0 ? "text-emerald-300" : "text-rose-300")}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%</span> vs yesterday ({cur} {money(d.yesterday)})</>
+                  {delta === null ? (d.compareAt && d.yesterday > 0 ? `No sales by ${d.compareAt} yesterday to compare` : "No sales yesterday to compare") : (
+                    <><span className={cn("font-semibold", delta >= 0 ? "text-emerald-300" : "text-rose-300")}>{delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(1)}%</span>{" "}
+                      {d.compareAt ? `vs same time yesterday (${cur} ${money(d.yesterdaySoFar)} by ${d.compareAt})` : `vs yesterday (${cur} ${money(d.yesterday)})`}</>
                   )}
+                  {d.compareAt && d.yesterday > 0 && <div className="mt-0.5 text-white/60">Yesterday all day: {cur} {money(d.yesterday)}</div>}
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 border-t border-white/12 pt-4 text-sm">
