@@ -17,7 +17,7 @@ type Line = { id: string; itemCode: string; itemName: string; unit: string | nul
 type Request = {
   id: string; number: string; storeCode: string; storeName: string; neededBy: string | null; note: string | null; requestedByName: string; requestedAt: string;
   approval: "waiting" | "approved" | "rejected" | "cancelled"; decidedByName: string | null; decisionNote: string | null;
-  erpStatus: "none" | "pending" | "posted" | "failed"; erpDoc: string | null; delivery: "delivered" | "part" | "waiting" | null; lines: Line[];
+  erpStatus: "none" | "pending" | "posted" | "failed"; erpDoc: string | null; remindedAt: string | null; delivery: "delivered" | "part" | "waiting" | null; lines: Line[];
 };
 type Item = { code: string; name: string; type: string; unit: string };
 type Draft = { code: string; name: string; unit: string | null; qty: string };
@@ -143,7 +143,7 @@ export function StockRequests() {
 
 /** One request: where it stands, and per line what was asked, approved and (once posted) sent. */
 function RequestCard({ r, onAgain, onCancel }: { r: Request; onAgain?: () => void; onCancel?: () => void }) {
-  const status = r.approval === "waiting" ? <ObjectStatus className={TONE.warn}>Waiting for approval</ObjectStatus>
+  const status = r.approval === "waiting" ? <ObjectStatus className={TONE.warn}>{r.remindedAt ? "Waiting · reminder sent" : "Waiting for approval"}</ObjectStatus>
     : r.approval === "rejected" ? <ObjectStatus className={TONE.danger}>Rejected</ObjectStatus>
     : r.approval === "cancelled" ? <ObjectStatus className={TONE.muted}>Cancelled</ObjectStatus>
     : r.erpStatus === "pending" ? <ObjectStatus className={TONE.open}>Approved · posting to FACTS</ObjectStatus>

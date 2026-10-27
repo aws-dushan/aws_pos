@@ -8,6 +8,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { useLiveEvent } from "@/components/live";
 import { promptReason } from "@/components/confirm";
 import { ErrorNote, FieldGroup } from "@/components/kit";
+import { Overdue } from "@/components/requests-approvals";
 import { Button } from "@/components/ui/button";
 
 type Waiting = {
@@ -75,7 +76,7 @@ export function WastageApprovals() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{w.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {w.branchName} · {w.kind === "marketing" ? "Marketing: " : ""}{REASON[w.reason] ?? w.reason}{w.note ? ` · ${w.note}` : ""} · {w.recordedByName}, {timeAgo(w.recordedAt)}
+                    {w.branchName} · {w.kind === "marketing" ? "Marketing: " : ""}{REASON[w.reason] ?? w.reason}{w.note ? ` · ${w.note}` : ""} · {w.recordedByName}, {timeAgo(w.recordedAt)}<Overdue at={w.recordedAt} />
                   </div>
                 </div>
                 <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>

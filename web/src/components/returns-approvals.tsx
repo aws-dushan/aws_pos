@@ -8,6 +8,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { useLiveEvent } from "@/components/live";
 import { promptReason } from "@/components/confirm";
 import { ErrorNote, FieldGroup } from "@/components/kit";
+import { Overdue } from "@/components/requests-approvals";
 import { Button } from "@/components/ui/button";
 
 type Waiting = {
@@ -70,7 +71,7 @@ export function ReturnsApprovals() {
             <div className="min-w-0 flex-1">
               <div className="font-medium">{r.itemName} <span className="font-normal text-muted-foreground">back to {r.toLocation}</span></div>
               <div className="text-xs text-muted-foreground">
-                {r.branchName} · {r.deliveryDocType} {r.deliveryDocNo} · {REASON[r.reason] ?? r.reason}{r.note ? ` · ${r.note}` : ""} · {r.recordedByName}, {timeAgo(r.recordedAt)}
+                {r.branchName} · {r.deliveryDocType} {r.deliveryDocNo} · {REASON[r.reason] ?? r.reason}{r.note ? ` · ${r.note}` : ""} · {r.recordedByName}, {timeAgo(r.recordedAt)}<Overdue at={r.recordedAt} />
               </div>
             </div>
             <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>

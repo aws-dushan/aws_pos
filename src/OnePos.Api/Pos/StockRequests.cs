@@ -55,6 +55,7 @@ public static class StockRequests
         public string? Loc { get; set; }
         public Guid? ApproverId { get; set; }
         public string? FactsUser { get; set; }
+        public DateTime? RemindedAt { get; set; }
     }
 
     public sealed class LineRow
@@ -117,7 +118,7 @@ public static class StockRequests
         return new
         {
             r.Id, number = $"REQ-{r.Number}", r.BusinessDate, r.StoreCode, r.StoreName, r.NeededBy, r.Note, r.RequestedByName, r.RequestedAt,
-            r.Approval, r.DecidedByName, r.DecisionNote, r.ErpStatus, r.ErpDoc, r.BranchName, delivery,
+            r.Approval, r.DecidedByName, r.DecisionNote, r.ErpStatus, r.ErpDoc, r.BranchName, delivery, r.RemindedAt,
             lines = mine.Select(l => new { l.Id, l.ItemCode, l.ItemName, l.Unit, l.Qty, l.RequestedQty, delivered = Got(l) }),
         };
     }

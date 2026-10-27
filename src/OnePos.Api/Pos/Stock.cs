@@ -48,6 +48,8 @@ public static class Stock
         public decimal? RequestedQty { get; set; }
         public string? DecisionNote { get; set; }
         public string? DecidedByName { get; set; }
+        /// <summary>The last approval reminder that listed it (waiting too long).</summary>
+        public DateTime? RemindedAt { get; set; }
     }
 
     private const string WasteSql = """

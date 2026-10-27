@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 type Settings = {
   emailEnabled: boolean; emails: string[]; voidsOver: number | null; refundsOver: number | null; noSalesOver: number | null;
   discountPctOver: number | null; varianceAlerts: boolean; notCountedAlerts: boolean;
+  approvalReminders: boolean; reminderHours: number; reminderFrom: string; reminderUntil: string;
 };
 type Smtp = { host: string; port: number; ssl: boolean; user: string | null; from: string; fromName: string | null; hasPassword: boolean } | null;
 
@@ -37,6 +38,7 @@ export default function AlertsPage() {
     setF({
       emailEnabled: s.emailEnabled, emails: s.emails.join("\n"), voidsOver: s.voidsOver?.toString() ?? "", refundsOver: s.refundsOver?.toString() ?? "",
       noSalesOver: s.noSalesOver?.toString() ?? "", discountPctOver: s.discountPctOver?.toString() ?? "", varianceAlerts: s.varianceAlerts, notCountedAlerts: s.notCountedAlerts,
+      approvalReminders: s.approvalReminders, reminderHours: String(s.reminderHours), reminderFrom: s.reminderFrom, reminderUntil: s.reminderUntil,
     });
     setMail({ host: m?.host ?? "", port: String(m?.port ?? 587), ssl: m?.ssl ?? true, user: m?.user ?? "", password: "", from: m?.from ?? "", fromName: m?.fromName ?? "" });
   }
@@ -50,6 +52,7 @@ export default function AlertsPage() {
     emailEnabled: f!.emailEnabled, emails: String(f!.emails).split(/[\s,;]+/).filter(Boolean),
     voidsOver: num(String(f!.voidsOver)), refundsOver: num(String(f!.refundsOver)), noSalesOver: num(String(f!.noSalesOver)), discountPctOver: num(String(f!.discountPctOver)),
     varianceAlerts: f!.varianceAlerts, notCountedAlerts: f!.notCountedAlerts,
+    approvalReminders: f!.approvalReminders, reminderHours: Number(f!.reminderHours) || 12, reminderFrom: String(f!.reminderFrom), reminderUntil: String(f!.reminderUntil),
   }), "Saved.");
 
   return (
@@ -82,6 +85,25 @@ export default function AlertsPage() {
               {f.emailEnabled && !data.data?.smtp && <p className="text-xs text-warning">No email server yet: summaries show in One POS only until one is set up.</p>}
             </div>
           </>
+          <div className="flex justify-end"><Button className="h-11" disabled={busy === "save"} onClick={() => void save()}>Save</Button></div>
+        </FieldGroup>
+
+        <FieldGroup title="Approval reminders" className="space-y-4 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Wastage, marketing give-aways, returns and stock requests still waiting for their approver after these hours are emailed to the approver, all in one
+              email, again every so many hours until decided. Only within the sending hours (branch time): one due at night goes in the morning.
+            </p>
+            <Switch on={!!f.approvalReminders} onChange={(v) => set("approvalReminders", v)} label="Approval reminders" />
+          </div>
+          {f.approvalReminders && (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Remind after (hours)"><Input value={String(f.reminderHours)} inputMode="numeric" onChange={(e) => set("reminderHours", e.target.value.replace(/\D/g, ""))} /></Field>
+              <Field label="Send from"><Input type="time" value={String(f.reminderFrom)} onChange={(e) => set("reminderFrom", e.target.value)} /></Field>
+              <Field label="Until"><Input type="time" value={String(f.reminderUntil)} onChange={(e) => set("reminderUntil", e.target.value)} /></Field>
+            </div>
+          )}
+          {f.approvalReminders && !data.data?.smtp && <p className="text-xs text-warning">No email server yet: reminders show under the bell only until one is set up.</p>}
           <div className="flex justify-end"><Button className="h-11" disabled={busy === "save"} onClick={() => void save()}>Save</Button></div>
         </FieldGroup>
 

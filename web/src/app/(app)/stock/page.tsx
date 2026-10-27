@@ -19,7 +19,7 @@ import { StockRequests } from "@/components/stock-requests";
 
 type Waste = {
   id: string; itemId: string; name: string; qty: number; unit: string | null; reason: Reason; kind: Kind; note: string | null; costValue: number | null;
-  erpStatus: "none" | "pending" | "draft" | "posted" | "failed"; erpDoc: string | null; recordedByName: string; recordedAt: string; voidedAt: string | null;
+  erpStatus: "none" | "pending" | "draft" | "posted" | "failed"; erpDoc: string | null; recordedByName: string; recordedAt: string; voidedAt: string | null; remindedAt?: string | null;
   approval: "none" | "waiting" | "approved" | "rejected"; requestedQty: number | null; decisionNote: string | null; decidedByName: string | null;
 };
 /** Transfers to the branch's wastage location in FACTS (read-only): finance's, or One POS' drafts once posted. */
@@ -40,7 +40,7 @@ type Delivery = {
 };
 type Return = {
   id: string; source: "variance" | "manual"; line?: number; itemName: string; qty: number; requestedQty: number | null; unit: string | null; reason: ReturnReason; note: string | null; toLocation: string;
-  recordedByName: string; recordedAt: string; approval: "waiting" | "approved" | "rejected" | "cancelled"; decidedByName: string | null; decisionNote: string | null;
+  recordedByName: string; recordedAt: string; approval: "waiting" | "approved" | "rejected" | "cancelled"; decidedByName: string | null; decisionNote: string | null; remindedAt?: string | null;
   erpStatus: "none" | "pending" | "posted" | "failed"; erpDoc: string | null;
 };
 type ReturnReason = "short" | "excess" | "damaged" | "wrong" | "quality" | "expiry" | "other";
@@ -166,7 +166,7 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
                   {w.approval === "rejected" && <div className="truncate text-xs text-danger">Rejected by {w.decidedByName}: {w.decisionNote}</div>}
                   {w.approval === "approved" && w.requestedQty !== null && <div className="truncate text-xs text-muted-foreground">Approved {fmtQty(w.qty)} of {fmtQty(w.requestedQty)} by {w.decidedByName}</div>}
                 </div>
-                {w.approval === "waiting" && !w.voidedAt && <ObjectStatus className={TONE.warn}>Waiting for approval</ObjectStatus>}
+                {w.approval === "waiting" && !w.voidedAt && <ObjectStatus className={TONE.warn}>{w.remindedAt ? "Waiting · reminder sent" : "Waiting for approval"}</ObjectStatus>}
                 {w.approval === "approved" && w.erpStatus === "pending" && <ObjectStatus className={TONE.open}>Approved · posting to FACTS</ObjectStatus>}
                 {w.approval === "approved" && w.erpStatus === "failed" && <ObjectStatus className={TONE.danger}>Approved · FACTS posting failed</ObjectStatus>}
                 {w.approval === "rejected" && <ObjectStatus className={TONE.danger}>Rejected</ObjectStatus>}
@@ -336,7 +336,7 @@ function ReturnLine({ r, onCancel }: { r: Return; onCancel?: () => void }) {
         {r.approval === "rejected" && <div className="truncate text-xs text-danger">Rejected by {r.decidedByName}: {r.decisionNote}</div>}
         {r.approval === "approved" && r.requestedQty !== null && <div className="truncate text-xs text-muted-foreground">Approved {fmtQty(r.qty)} of {fmtQty(r.requestedQty)} by {r.decidedByName}</div>}
       </div>
-      {r.approval === "waiting" && <ObjectStatus className={TONE.warn}>Waiting for approval</ObjectStatus>}
+      {r.approval === "waiting" && <ObjectStatus className={TONE.warn}>{r.remindedAt ? "Waiting · reminder sent" : "Waiting for approval"}</ObjectStatus>}
       {r.approval === "approved" && r.erpStatus === "pending" && <ObjectStatus className={TONE.open}>Approved · posting to FACTS</ObjectStatus>}
       {r.approval === "approved" && r.erpStatus === "failed" && <ObjectStatus className={TONE.danger}>Approved · FACTS posting failed</ObjectStatus>}
       {r.erpStatus === "posted" && <ObjectStatus className={TONE.done}>{r.erpDoc ?? "Posted"}</ObjectStatus>}

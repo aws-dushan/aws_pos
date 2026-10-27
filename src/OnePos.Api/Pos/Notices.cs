@@ -18,7 +18,9 @@ namespace OnePos.Api.Pos;
 public static class Notices
 {
     public sealed record AlertSettings(bool EmailEnabled, string[] Emails, decimal? VoidsOver, decimal? RefundsOver, int? NoSalesOver,
-        decimal? DiscountPctOver, bool VarianceAlerts, bool NotCountedAlerts);
+        decimal? DiscountPctOver, bool VarianceAlerts, bool NotCountedAlerts,
+        // Approval reminders (see ApprovalReminders): waiting longer than ReminderHours, emailed to the approver within the sending hours.
+        bool ApprovalReminders = true, int ReminderHours = 12, string ReminderFrom = "08:00", string ReminderUntil = "22:00");
     public sealed record SmtpBody(string Host, int Port, bool Ssl, string? User, string? Password, string From, string? FromName = null);
     public sealed record TestBody(string To);
     public sealed record ReadBody(Guid[]? Ids);
@@ -219,6 +221,9 @@ public static class Notices
             foreach (var e in emails) if (!MailAddress.TryCreate(e, out _)) throw new DomainException($"\"{e}\" isn't an email address.");
             if (body.VoidsOver is < 0 || body.RefundsOver is < 0 || body.NoSalesOver is < 0 || body.DiscountPctOver is < 0 or > 100)
                 throw new DomainException("Limits can't be negative (discounts: 0 to 100 %).");
+            if (body.ReminderHours is < 1 or > 72) throw new DomainException("Remind after 1 to 72 hours.");
+            if (!TimeOnly.TryParseExact(body.ReminderFrom, "HH:mm", out var rf) || !TimeOnly.TryParseExact(body.ReminderUntil, "HH:mm", out var ru) || rf >= ru)
+                throw new DomainException("Sending hours: a start before the end, e.g. 08:00 to 22:00.");
             var s = body with { Emails = emails };
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
@@ -227,7 +232,8 @@ public static class Notices
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "company", scope.CompanyId.ToString(), "alerts", "Daily summary and alerts changed",
                     [new("Email", old.EmailEnabled, s.EmailEnabled), new("Emails", string.Join(", ", old.Emails), string.Join(", ", s.Emails)),
                      new("Voids over", old.VoidsOver, s.VoidsOver), new("Refunds over", old.RefundsOver, s.RefundsOver), new("No-sales over", old.NoSalesOver, s.NoSalesOver),
-                     new("Discounts over %", old.DiscountPctOver, s.DiscountPctOver)]);
+                     new("Discounts over %", old.DiscountPctOver, s.DiscountPctOver), new("Approval reminders", old.ApprovalReminders, s.ApprovalReminders),
+                     new("Remind after hours", old.ReminderHours, s.ReminderHours), new("Sending hours", $"{old.ReminderFrom}-{old.ReminderUntil}", $"{s.ReminderFrom}-{s.ReminderUntil}")]);
                 return 0;
             });
             return Results.Ok(s);
