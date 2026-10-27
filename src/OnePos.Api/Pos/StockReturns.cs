@@ -13,7 +13,7 @@ namespace OnePos.Api.Pos;
 /// <summary>
 /// Returns to the location of origin (the factory's good location). Two kinds:
 /// - variance: a delivery checked in with less than was sent (Stock: deliveries/check); the difference goes back by itself to where
-///   the delivery came from.
+///   the delivery came from, posted in FACTS straight away (no approval: the count at check-in is the decision).
 /// - manual: the Returns tab; an item delivered here goes back to where its latest delivery came from.
 /// Each return waits for the branch's wastage approver (company administrators can stand in); approved, it goes to FACTS at once as
 /// a POSTED STV50 from the outlet to that location (usp_ONEPOS_PostWastageTransfer: batches FIFO, FACTS' own approval, as the
@@ -120,17 +120,34 @@ public static class StockReturns
 
     public sealed record NewLine(string DocType, string DocNo, int Line, string To, string Type, string Code, string Name, string? Unit, decimal Qty);
 
-    /// <summary>Records returns (same transaction) waiting for the branch's approver, who gets them under the bell and by email.</summary>
-    public static async Task<int> CreateAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, WastageApproval.Setup s, string source, string reason, string? note, List<NewLine> lines)
+    /// <summary>
+    /// Records returns (same transaction). Waiting for the branch's approver, who gets them under the bell and by email; or, `auto` (a
+    /// short delivery), approved at once and queued to FACTS as a posted STV50, with no request to the approver.
+    /// </summary>
+    public static async Task<int> CreateAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, WastageApproval.Setup s, string source, string reason, string? note, List<NewLine> lines,
+        bool auto = false)
     {
         if (lines.Count == 0) return 0;
         var day = await Days.DateAsync(c, tx, scope.Branch);
+        var ids = new List<Guid>();
         foreach (var l in lines)
-            await c.ExecuteAsync("""
+            ids.Add(await c.ExecuteScalarAsync<Guid>("""
                 insert into stock_return (company_id, branch_id, business_date, source, delivery_doc_type, delivery_doc_no, delivery_line, to_location,
-                                          item_type, item_code, item_name, unit, qty, reason, note, recorded_by)
-                values (@co, @b, @day, @source, @DocType, @DocNo, @Line, @To, @Type, @Code, @Name, @Unit, @Qty, @reason, @note, @u)
-                """, new { co = scope.CompanyId, b = scope.Branch, day, source, l.DocType, l.DocNo, l.Line, l.To, l.Type, l.Code, l.Name, l.Unit, l.Qty, reason, note, u = scope.UserId }, tx);
+                                          item_type, item_code, item_name, unit, qty, reason, note, recorded_by, approval, decided_by, decided_at, decision_note)
+                values (@co, @b, @day, @source, @DocType, @DocNo, @Line, @To, @Type, @Code, @Name, @Unit, @Qty, @reason, @note, @u,
+                        case when @auto then 'approved' else 'waiting' end, case when @auto then @u end, case when @auto then now() end,
+                        case when @auto then 'Short delivery: posted automatically' end)
+                returning id
+                """, new { co = scope.CompanyId, b = scope.Branch, day, source, l.DocType, l.DocNo, l.Line, l.To, l.Type, l.Code, l.Name, l.Unit, l.Qty, reason, note, u = scope.UserId, auto }, tx));
+        if (auto)
+        {
+            var rows = (await c.QueryAsync<ReturnRow>($"{RowSql} where r.id = any(@ids)", new { ids = ids.ToArray() }, tx)).ToList();
+            await QueueAsync(c, tx, scope.CompanyId, rows, _ => s, r => r.Qty);
+            await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "return", string.Join(", ", lines.Select(l => $"{l.DocType} {l.DocNo}").Distinct()), "posted",
+                $"Short delivery back to {string.Join(", ", lines.Select(l => l.To).Distinct())}, posted in FACTS automatically: " +
+                string.Join(", ", lines.Select(l => $"{l.Qty.ToString("0.###", Inv)} {l.Unit} {l.Name}".Replace("  ", " "))));
+            return lines.Count;
+        }
         var what = lines.Select(l => $"{l.Qty.ToString("0.###", Inv)} {l.Unit} {l.Name}".Replace("  ", " ")).ToList();
         var to = string.Join(", ", lines.Select(l => l.To).Distinct());
         var against = string.Join(", ", lines.Select(l => $"{l.DocType} {l.DocNo}").Distinct());
@@ -163,7 +180,7 @@ public static class StockReturns
         if (await c.ExecuteScalarAsync<bool>("""
                 select exists (select 1 from stock_return where branch_id = @b and delivery_doc_type = @docType and delivery_doc_no = @docNo and source = 'variance' and approval = 'approved')
                 """, new { b = scope.Branch, docType, docNo }, tx))
-            throw new DomainException($"The difference on {docType} {docNo} was approved and went back in FACTS; its check-in can't change any more.");
+            throw new DomainException($"The shortage on {docType} {docNo} was already sent back in FACTS; its check-in can't change any more.");
         await c.ExecuteAsync("""
             update stock_return set approval = 'cancelled', decided_by = @u, decided_at = now(), decision_note = 'Checked in again'
             where branch_id = @b and delivery_doc_type = @docType and delivery_doc_no = @docNo and source = 'variance' and approval = 'waiting'
@@ -171,7 +188,7 @@ public static class StockReturns
         if (!d.Posted || !CanReturn(s)) return 0;
         var lines = d.Lines.Where(l => received.TryGetValue(l.Line, out var got) && got < l.Qty)
             .Select(l => new NewLine(docType, docNo, l.Line, d.From, (l.Type ?? master ?? "SMBK").ToUpperInvariant(), l.Code, l.Name, l.Unit, l.Qty - received[l.Line])).ToList();
-        return await CreateAsync(c, tx, scope, s, "variance", "short", null, lines);
+        return await CreateAsync(c, tx, scope, s, "variance", "short", null, lines, auto: true);
     }
 
     /// <summary>Undo check-in: its waiting variance returns go too; refused once one was approved (posted in FACTS).</summary>
@@ -180,7 +197,7 @@ public static class StockReturns
         if (await c.ExecuteScalarAsync<bool>("""
                 select exists (select 1 from stock_return where branch_id = @b and delivery_doc_type = @docType and delivery_doc_no = @docNo and source = 'variance' and approval = 'approved')
                 """, new { b = scope.Branch, docType, docNo }, tx))
-            throw new DomainException("The difference on this delivery was approved and went back in FACTS; the check-in can't be undone.");
+            throw new DomainException("The shortage on this delivery was already sent back in FACTS; the check-in can't be undone (correct it in FACTS).");
         await c.ExecuteAsync("""
             update stock_return set approval = 'cancelled', decided_by = @u, decided_at = now(), decision_note = 'Check-in undone'
             where branch_id = @b and delivery_doc_type = @docType and delivery_doc_no = @docNo and source = 'variance' and approval = 'waiting'
@@ -188,6 +205,36 @@ public static class StockReturns
     }
 
     private static bool MayDecide(Scope scope, Guid? approverId) => scope.IsAdmin || approverId == scope.UserId;
+
+    /// <summary>
+    /// Approved returns to FACTS: one posted STV50 per branch, destination and day, from the outlet back to the location of origin, as the
+    /// branch's wastage approver's FACTS username. Answers how many transfers were queued.
+    /// </summary>
+    private static async Task<int> QueueAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, IEnumerable<ReturnRow> list,
+        Func<Guid, WastageApproval.Setup> setupOf, Func<ReturnRow, decimal> qty)
+    {
+        var n = 0;
+        foreach (var g in list.GroupBy(r => (r.BranchId, r.ToLocation, r.BusinessDate)))
+        {
+            var s = setupOf(g.Key.BranchId);
+            var postId = Guid.NewGuid();
+            var against = string.Join(", ", g.Select(r => $"{r.DeliveryDocType} {r.DeliveryDocNo}").Distinct());
+            var reference = $"One POS return {s.Code} R-{postId.ToString("N")[..8].ToUpperInvariant()} ({against})";
+            if (reference.Length > 200) reference = reference[..197] + "...";
+            var xml = new XElement("data", new XElement("Transfer",
+                new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", s.Loc), new XElement("ToLocation", g.Key.ToLocation),
+                new XElement("Reference", reference),
+                g.Select(r => new XElement("Line", new XElement("ItemType", r.ItemType), new XElement("ItemCode", r.ItemCode), new XElement("ItemName", r.ItemName),
+                    new XElement("Qty", qty(r).ToString("0.###", Inv)), new XElement("Unit", r.Unit ?? "PCS")))));
+            await c.ExecuteAsync("""
+                insert into erp_post (id, company_id, branch_id, kind, doc_no, business_date, amount, xml, status, facts_user)
+                values (@postId, @co, @b, 'return', @reference, @day, 0, @xml, 'pending', @user)
+                """, new { postId, co = companyId, b = g.Key.BranchId, reference, day = g.Key.BusinessDate, xml = xml.ToString(SaveOptions.DisableFormatting), user = s.FactsUser!.Trim() }, tx);
+            await c.ExecuteAsync("update stock_return set erp_post_id = @postId, erp_status = 'pending' where id = any(@ids)", new { postId, ids = g.Select(r => r.Id).ToArray() }, tx);
+            n++;
+        }
+        return n;
+    }
 
     public static void Map(RouteGroupBuilder api)
     {
@@ -337,28 +384,7 @@ public static class StockReturns
                     await Audit.RecordAsync(c, tx, scope.CompanyId, r.BranchId, scope.UserId, "return", r.Id.ToString(), "approved",
                         $"Return approved: {q.ToString("0.###", Inv)} × {r.ItemName} back to {r.ToLocation}{(q != r.Qty ? $" (asked {r.Qty.ToString("0.###", Inv)})" : "")}", note: note);
                 }
-                // One posted STV50 per branch, destination and day, from the outlet back to the location of origin.
-                var n = 0;
-                foreach (var g in list.GroupBy(r => (r.BranchId, r.ToLocation, r.BusinessDate)))
-                {
-                    var s = setups[g.Key.BranchId];
-                    var postId = Guid.NewGuid();
-                    var against = string.Join(", ", g.Select(r => $"{r.DeliveryDocType} {r.DeliveryDocNo}").Distinct());
-                    var reference = $"One POS return {s.Code} R-{postId.ToString("N")[..8].ToUpperInvariant()} ({against})";
-                    if (reference.Length > 200) reference = reference[..197] + "...";
-                    var xml = new XElement("data", new XElement("Transfer",
-                        new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", s.Loc), new XElement("ToLocation", g.Key.ToLocation),
-                        new XElement("Reference", reference),
-                        g.Select(r => new XElement("Line", new XElement("ItemType", r.ItemType), new XElement("ItemCode", r.ItemCode), new XElement("ItemName", r.ItemName),
-                            new XElement("Qty", Qty(r).ToString("0.###", Inv)), new XElement("Unit", r.Unit ?? "PCS")))));
-                    await c.ExecuteAsync("""
-                        insert into erp_post (id, company_id, branch_id, kind, doc_no, business_date, amount, xml, status, facts_user)
-                        values (@postId, @co, @b, 'return', @reference, @day, 0, @xml, 'pending', @user)
-                        """, new { postId, co = scope.CompanyId, b = g.Key.BranchId, reference, day = g.Key.BusinessDate, xml = xml.ToString(SaveOptions.DisableFormatting), user = s.FactsUser!.Trim() }, tx);
-                    await c.ExecuteAsync("update stock_return set erp_post_id = @postId, erp_status = 'pending' where id = any(@ids)", new { postId, ids = g.Select(r => r.Id).ToArray() }, tx);
-                    n++;
-                }
-                return n;
+                return await QueueAsync(c, tx, scope.CompanyId, list, b => setups[b], Qty);
             });
             FactsPosting.Sender.Wake();
             foreach (var b in list.Select(r => r.BranchId).Distinct()) await live.ToBranch(b, "stock.changed");

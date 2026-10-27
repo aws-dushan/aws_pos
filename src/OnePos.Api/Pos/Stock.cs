@@ -381,6 +381,8 @@ public static class Stock
                     diffs.Length == 0 ? $"Delivery {docType} {docNo} received as sent" : $"Delivery {docType} {docNo} received with {diffs.Length} difference(s)", note: body.Note);
                 return await StockReturns.VarianceAsync(c, tx, scope, s, master, docType, docNo, delivery, received);
             });
+            // A shortage goes back in FACTS straight away (posted STV50, no approval).
+            if (back > 0) FactsPosting.Sender.Wake();
             await live.ToBranch(scope.Branch, "stock.changed");
             // Whether the difference went back, and why not when it didn't.
             return Results.Ok(new

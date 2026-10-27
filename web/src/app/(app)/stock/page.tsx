@@ -9,7 +9,7 @@ import { fmtIn } from "@/lib/num";
 import { fmtQty, type Menu, type MenuItem } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
-import { confirmDialog } from "@/components/confirm";
+import { confirmDialog, promptReason } from "@/components/confirm";
 import { EmptyState, ErrorNote, LoadingRows, ObjectStatus, PageHeader, SearchField, Segmented, TONE } from "@/components/kit";
 import { Numpad } from "@/components/numpad";
 import { Button } from "@/components/ui/button";
@@ -96,8 +96,8 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
 
   // Finance posted it in FACTS: the document number is kept with it.
   async function posted(w: Waste) {
-    const doc = window.prompt(`FACTS document for ${fmtQty(w.qty)} × ${w.name} (e.g. STV50 8114):`);
-    if (!doc?.trim()) return;
+    const doc = await promptReason({ title: `Posted in FACTS: ${fmtQty(w.qty)} × ${w.name}`, confirmLabel: "Save", reason: { label: "FACTS document", placeholder: "e.g. STV50 8114" } });
+    if (!doc) return;
     try { await api(`/stock/wastage/${w.id}/posted`, "POST", { doc: doc.trim() }); toast.success("Noted as posted in FACTS."); list.reload(); }
     catch (e) { toast.error((e as Error).message); }
   }
@@ -384,7 +384,8 @@ function CheckDialog({ delivery: x, approver, onClose, onDone }: { delivery: Del
   }
   // Checked in by mistake: a manager undoes it (One POS's record only; FACTS is untouched) and it can be checked in again.
   async function undo() {
-    const reason = window.prompt(`Undo the check-in of ${x!.docType} ${x!.docNo}? Say why (e.g. checked in by mistake):`)?.trim();
+    const reason = await promptReason({ title: `Undo the check-in of ${x!.docType} ${x!.docNo}?`, confirmLabel: "Undo check-in", tone: "danger",
+      reason: { label: "Why", placeholder: "e.g. checked in by mistake" } });
     if (!reason) return;
     try {
       await api("/stock/deliveries/uncheck", "POST", { docType: x!.docType, docNo: x!.docNo, reason });
