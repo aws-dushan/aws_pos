@@ -153,6 +153,9 @@ public static class Menu
             var b = Clean(body);
             var id = await db.Company(scope.CompanyId, async (c, tx) =>
             {
+                // A FACTS company's items come from FACTS (the item sync); only combos are made here.
+                if (b.IsCombo != true && await c.ExecuteScalarAsync<bool>("select erp_connector = 'facts' from company", transaction: tx))
+                    throw new DomainException("Items come from FACTS (the item sync). Here you can add combos.");
                 await CheckRefsAsync(c, tx, b);
                 var sort = b.Sort ?? await c.ExecuteScalarAsync<int>("select coalesce(max(sort), 0) + 1 from menu_item where category_id = @CategoryId", new { b.CategoryId }, tx);
                 var id = await c.ExecuteScalarAsync<Guid>("""
@@ -177,6 +180,12 @@ public static class Menu
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var old = await c.QuerySingleOrDefaultAsync<Item>("select * from menu_item where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Item not found.");
+                // A FACTS company: the item's FACTS code and whether it's a combo stay as they are.
+                if (await c.ExecuteScalarAsync<bool>("select erp_connector = 'facts' from company", transaction: tx))
+                {
+                    if ((b.IsCombo ?? old.IsCombo) != old.IsCombo) throw new DomainException(old.IsCombo ? "A combo stays a combo." : "An item from FACTS can't become a combo: add a new combo instead.");
+                    if (!old.IsCombo && b.ErpItemCode != old.ErpItemCode) throw new DomainException("The FACTS item code can't change here: it links the item to FACTS.");
+                }
                 await CheckRefsAsync(c, tx, b);
                 await c.ExecuteAsync("""
                     update menu_item set category_id = @CategoryId, name = @Name, name_ar = @NameAr, description = @Description, price = @Price,

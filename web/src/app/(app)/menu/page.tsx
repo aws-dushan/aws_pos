@@ -57,8 +57,9 @@ export default function MenuPage() {
           <Segmented id="menu-tab" value={tab} onChange={setTab} options={[{ value: "items", label: "Items" }, { value: "groups", label: "Option groups" }]} />
           {tab === "items"
             ? <>
-                <Button size="lg" variant="outline" onClick={() => setEditItem("combo")} disabled={!m?.categories.length}><PlusIcon /> New combo</Button>
-                <Button size="lg" onClick={() => setEditItem("new")} disabled={!m?.categories.length}><PlusIcon /> New item</Button>
+                <Button size="lg" variant={fromFacts ? "default" : "outline"} onClick={() => setEditItem("combo")} disabled={!m?.categories.length}><PlusIcon /> New combo</Button>
+                {/* A FACTS company's items come from FACTS (the item sync); only combos are made here. */}
+                {!fromFacts && <Button size="lg" onClick={() => setEditItem("new")} disabled={!m?.categories.length}><PlusIcon /> New item</Button>}
               </>
             : <Button size="lg" onClick={() => setEditGroup("new")}><PlusIcon /> New group</Button>}
         </>} />
@@ -149,10 +150,12 @@ export default function MenuPage() {
                           {i.erpItemCode && <Pill>FACTS {i.erpItemCode}{i.erpUnit ? ` · ${i.erpUnit}` : ""}</Pill>}
                           {i.erpNew && i.isActive && <Pill className={TONE.info} dot>New from FACTS</Pill>}
                           {i.erpRemoved && <Pill className={TONE.danger}>Gone from FACTS</Pill>}
+                          {fromFacts && !i.isCombo && !i.erpItemCode && <Pill className={TONE.danger}>Not in FACTS</Pill>}
+                          {i.erpPriced && noPrice(i) && <span className="text-xs text-muted-foreground">Add its price in FACTS</span>}
                           {i.erpStock !== null && <Pill className={i.erpStock > 0 ? TONE.done : TONE.danger}>Stock {fmtIn(i.erpStock, i.erpStock % 1 ? 2 : 0)}</Pill>}
                         </div>
                         <div className="mt-auto flex flex-wrap gap-2 pt-3">
-                          <Button variant={noPrice(i) && i.isSold ? "default" : "outline"} className="h-10" onClick={() => setEditItem(i)}><PencilIcon /> {noPrice(i) ? "Set price" : "Edit"}</Button>
+                          <Button variant={noPrice(i) && i.isSold && !i.erpPriced ? "default" : "outline"} className="h-10" onClick={() => setEditItem(i)}><PencilIcon /> {noPrice(i) && !i.erpPriced ? "Set price" : "Edit"}</Button>
                           <Button variant="outline" className="h-10" onClick={() => branchSet(i, { soldOutToday: !i.soldOut }, i.soldOut ? `${i.name} is back on.` : `${i.name} is sold out for today.`)}>
                             {i.soldOut ? <><CheckIcon /> Back on</> : <><BanIcon /> Sold out</>}
                           </Button>
@@ -168,7 +171,7 @@ export default function MenuPage() {
             ) : (
               term || view !== "all" ? <EmptyState icon={UtensilsCrossedIcon} title="Nothing here" module="inv">{term ? `No item matches “${q.trim()}”.` : view === "here" ? "No items are switched on at this branch yet." : view === "new" ? "Every item from FACTS has been reviewed." : "Every item sold here has a price."}</EmptyState> :
               <EmptyState icon={UtensilsCrossedIcon} title={m.categories.length ? "No items in this category" : "Start with a category"} module="inv"
-                action={m.categories.length ? <Button size="lg" onClick={() => setEditItem("new")}><PlusIcon /> New item</Button> : <Button size="lg" onClick={() => setEditCat("new")}><PlusIcon /> New category</Button>}>
+                action={m.categories.length ? <Button size="lg" onClick={() => setEditItem(fromFacts ? "combo" : "new")}><PlusIcon /> {fromFacts ? "New combo" : "New item"}</Button> : <Button size="lg" onClick={() => setEditCat("new")}><PlusIcon /> New category</Button>}>
                 {m.categories.length ? "Add dishes and drinks with their price and options." : "Categories group the menu on the register, e.g. Starters, Mains, Drinks."}
               </EmptyState>
             )}
@@ -176,7 +179,7 @@ export default function MenuPage() {
         </div>
       )}
       {m && <CategoryDialog value={editCat} onClose={() => setEditCat(null)} onSaved={(id) => { menu.reload(); if (id) setCat(id); }} />}
-      {m && <ItemDialog value={editItem} menu={m} companyId={company?.id} defaultCategory={current} currency={cur} branchName={branch?.name} onClose={() => setEditItem(null)} onSaved={() => menu.reload()} />}
+      {m && <ItemDialog value={editItem} menu={m} companyId={company?.id} fromFacts={fromFacts} defaultCategory={current} currency={cur} branchName={branch?.name} onClose={() => setEditItem(null)} onSaved={() => menu.reload()} />}
       {m && <GroupDialog value={editGroup} items={m.items} currency={cur} onClose={() => setEditGroup(null)} onSaved={() => menu.reload()} />}
     </div>
   );
@@ -228,8 +231,8 @@ function Thumb({ src, name, size = "size-14" }: { src: string | null; name: stri
     : <span className={cn(size, "flex shrink-0 items-center justify-center rounded-xl bg-mod-grad font-heading text-xs font-semibold text-white shadow-[0_6px_14px_-6px_var(--mod)]")}>{initials(name)}</span>;
 }
 
-function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchName, onClose, onSaved }: {
-  value: MenuItem | "new" | "combo" | null; menu: Menu; companyId?: string; defaultCategory: string | null; currency: string; branchName?: string; onClose: () => void; onSaved: () => void;
+function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, currency, branchName, onClose, onSaved }: {
+  value: MenuItem | "new" | "combo" | null; menu: Menu; companyId?: string; fromFacts?: boolean; defaultCategory: string | null; currency: string; branchName?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | "remove" | null>(null);
   const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false };
@@ -243,6 +246,8 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
       : value === "combo" ? { ...blank, isCombo: true, station: "none" } : blank);
   }
   const existing = value && value !== "new" && value !== "combo" ? value : null;
+  // This branch takes the item's price from FACTS (its price type): no price is typed here, the item shows FACTS' price.
+  const factsPriced = !!existing?.erpPriced && !f.isCombo;
   const recipe = useApi<Recipe>(existing ? `/recipes/item/${existing.id}` : null);
   const [recipeFor, setRecipeFor] = useState<RecipeTarget | null>(null);
   async function save(e: React.FormEvent) {
@@ -275,6 +280,8 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
             <Field label="Arabic name"><Input dir="rtl" value={f.nameAr} onChange={(e) => setF({ ...f, nameAr: e.target.value })} /></Field>
             {f.isCombo
               ? <Field label="Price" hint="The prices on its choices (each a menu item)."><Input value="Priced by its choices" readOnly disabled /></Field>
+              : factsPriced
+              ? <Field label={`Price at ${branchName ?? "this branch"}`} hint="From this branch's FACTS price type; change it in FACTS."><Input value={f.branchPrice ? `${currency} ${f.branchPrice}` : "No price in FACTS"} readOnly disabled /></Field>
               : <Field label={`Price (${currency})`} required><Input inputMode="decimal" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} /></Field>}
             <Field label="Category">
               <select className="h-8 w-full rounded-lg border border-input bg-card px-2.5 text-sm dark:bg-input/30" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value })}>
@@ -287,10 +294,10 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
             <Segmented id="station" value={f.station} onChange={(v) => setF({ ...f, station: v })} className="w-full"
               options={[{ value: "kitchen", label: "Kitchen" }, { value: "bar", label: "Bar" }, { value: "none", label: "Nowhere (ready to sell)" }]} />
           </Field>
-          <div data-module="appr" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+          {!fromFacts && <div data-module="appr" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
             <span className="text-sm"><span className="font-medium">This is a combo</span> <span className="text-muted-foreground">· one price for a set of items the customer chooses, e.g. a main + a drink</span></span>
             <Switch on={f.isCombo} onChange={(v) => setF({ ...f, isCombo: v, station: v ? "none" : f.station })} label="Combo" />
-          </div>
+          </div>}
           <Field label={f.isCombo ? "Combo choices" : "Option groups"} hint={f.isCombo ? "Tap the choice groups this combo offers, e.g. Choose a main, Choose a drink. Make them in the Option groups tab, linking each option to a menu item. Every choice must be a menu item; FACTS gets each chosen item with its own code, at the price set on the choice." : "Tap to attach. Required groups must be chosen at the register."}>
             <div className="flex flex-wrap gap-2">
               {menu.groups.map((g) => {
@@ -321,10 +328,12 @@ function ItemDialog({ value, menu, companyId, defaultCategory, currency, branchN
             </button>
           )}
           <div className="grid gap-4 sm:grid-cols-2">
-            {!f.isCombo && <Field label="ERP item code" hint="Links to the AWS One / FACTS item (phase 3)."><Input value={f.erpItemCode} onChange={(e) => setF({ ...f, erpItemCode: e.target.value })} /></Field>}
-            {existing && !f.isCombo && (existing.erpPriced
-              ? <Field label={`Price at ${branchName ?? "this branch"}`} hint="From this branch's FACTS price type; change it in FACTS."><Input value={f.branchPrice || "No price in FACTS"} readOnly disabled /></Field>
-              : <Field label={`Price at ${branchName ?? "this branch"}`} hint="Empty = the company price."><Input inputMode="decimal" value={f.branchPrice} onChange={(e) => setF({ ...f, branchPrice: e.target.value })} placeholder={String(existing.price)} /></Field>)}
+            {!f.isCombo && (fromFacts
+              ? <Field label="FACTS item" hint="From FACTS; it links the item there."><Input value={f.erpItemCode || "Not in FACTS"} readOnly disabled /></Field>
+              : <Field label="ERP item code" hint="Links to the AWS One / FACTS item (phase 3)."><Input value={f.erpItemCode} onChange={(e) => setF({ ...f, erpItemCode: e.target.value })} /></Field>)}
+            {existing && !f.isCombo && !factsPriced && (
+              <Field label={`Price at ${branchName ?? "this branch"}`} hint="Empty = the company price."><Input inputMode="decimal" value={f.branchPrice} onChange={(e) => setF({ ...f, branchPrice: e.target.value })} placeholder={String(existing.price)} /></Field>
+            )}
           </div>
           {existing && <PriceHistory itemId={existing.id} currency={currency} branchName={branchName} />}
           {existing && <div className="flex items-center justify-between rounded-xl border px-3 py-2.5"><span className="text-sm">On the menu <span className="text-muted-foreground">· off hides it at every branch</span></span><Switch on={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} label="On the menu" /></div>}
