@@ -107,7 +107,7 @@ public static partial class FactsPosting
     private static decimal ModPrice(JsonElement m) => m.TryGetProperty("price", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetDecimal() : 0;
 
     /// <summary>The FACTS code, type and unit of the menu items chosen in these combo lines.</summary>
-    private static async Task<Dictionary<Guid, (string? Code, string? Type, string? Unit)>> ComboItemsAsync(NpgsqlConnection c, NpgsqlTransaction tx, IEnumerable<string> modifiers)
+    public static async Task<Dictionary<Guid, (string? Code, string? Type, string? Unit)>> ComboItemsAsync(NpgsqlConnection c, NpgsqlTransaction tx, IEnumerable<string> modifiers)
     {
         var ids = modifiers.SelectMany(m => JsonDocument.Parse(m).RootElement.EnumerateArray().Select(ComboItemId)).OfType<Guid>().Distinct().ToArray();
         if (ids.Length == 0) return [];
@@ -134,6 +134,10 @@ public static partial class FactsPosting
             return new Part(m.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "", it.Code, it.Type, it.Unit, rate, k == 0 ? extras : []);
         }).ToList();
     }
+
+    /// <summary>The FACTS item codes a bill line goes as, in the order of its FACTS lines (one per part, see <see cref="Parts"/>).</summary>
+    public static List<string?> PartCodes(bool isCombo, string modifiers, string? code, IReadOnlyDictionary<Guid, (string? Code, string? Type, string? Unit)> items) =>
+        Parts("", isCombo, modifiers, 0, code, null, null, items).Select(p => p.Code).ToList();
 
     /// <summary>An amount shared by weight, rounded to fils; the last share takes what rounding leaves.</summary>
     private static decimal[] Share(decimal amount, decimal[] weights)
