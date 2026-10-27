@@ -63,6 +63,7 @@ type Exc = {
   noSales: { at: string; businessDate: string; branch: string; register: string | null; reason: string; by: string | null }[];
   totals: { discounts: { count: number; value: number }; voids: { count: number; value: number }; lineVoids: { count: number }; refunds: { count: number; value: number }; noSales: { count: number } };
 };
+const billDay = (s: string) => new Date(`${s.slice(0, 10)}T00:00`).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 const time = (s: string) => new Date(s).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 const money = (n: number) => fmtIn(n, 2);
@@ -174,9 +175,10 @@ export default function ReportsPage() {
         if (!inv.data) return { head: [], rows: [], share: null };
         const many = where === "all";
         return {
-          head: ["Invoice no", ...(many ? ["Branch"] : []), "Date & time", "Type", "Platform order", "Customer", "Cashier", "Till", "Items", "Gross", "Discount", "VAT", "Net", "Refunded", "Paid amount", "Payment type", "Status", "FACTS"],
+          head: ["Invoice no", ...(many ? ["Branch"] : []), "Date", "Time", "Type", "Platform order", "Customer", "Cashier", "Till", "Items", "Gross", "Discount", "VAT", "Net", "Refunded", "Paid amount", "Payment type", "Status", "FACTS"],
           share: null, ids: finRows.map((r) => r.x.id),
-          rows: finRows.map(({ x, p }) => [x.invoiceNo, ...(many ? [x.branch] : []), time(x.at), x.platform ?? TYPE_LABEL[x.orderType], x.platformRef ?? "—", x.customer ?? "—", x.cashier ?? "—", x.till ?? "—",
+          // Date and time apart (the branch's own time, as the bill has it), so Excel can filter on the day.
+          rows: finRows.map(({ x, p }) => [x.invoiceNo, ...(many ? [x.branch] : []), billDay(x.at), x.at.slice(11, 16), x.platform ?? TYPE_LABEL[x.orderType], x.platformRef ?? "—", x.customer ?? "—", x.cashier ?? "—", x.till ?? "—",
             fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), p ? money(p.amount) : "—", p?.type ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
         };
       }
