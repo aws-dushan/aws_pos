@@ -63,13 +63,13 @@ export function summarySections(s: Summary, many: boolean): ExportTable[] {
     { title: "Voided items", head: ["Code", "Name", "Qty", "Amount"], rows: [
       ...s.voided.map((x) => [x.code ?? "—", x.name, fmtQty(x.qty), money(x.amount)]),
       ["Total", "", fmtQty(sum(s.voided, (x) => x.qty)), money(sum(s.voided, (x) => x.amount))]] },
+    { title: "Discounts", head: ["Bill no", ...br(["Branch"]), "Reference", "Amount"], rows: [
+      ...s.discounts.map((x) => [x.bill, ...br([x.branch]), x.reference, money(x.amount)]),
+      ["Total", ...br([""]), `${s.discounts.length} bills`, money(sum(s.discounts, (x) => x.amount))]] },
     { title: "Category sales", head: ["Category", "Qty", "Amount"], rows: [
       ...s.categories.map((x) => [x.category, fmtQty(x.qty), money(x.amount)]),
       ["Total", fmtQty(sum(s.categories, (x) => x.qty)), money(sum(s.categories, (x) => x.amount))]] },
     { title: "Transactions", head: ["Cashier", "Bill no", ...br(["Branch"]), "Amount"], rows: bills },
-    { title: "Discounts", head: ["Bill no", ...br(["Branch"]), "Reference", "Amount"], rows: [
-      ...s.discounts.map((x) => [x.bill, ...br([x.branch]), x.reference, money(x.amount)]),
-      ["Total", ...br([""]), `${s.discounts.length} bills`, money(sum(s.discounts, (x) => x.amount))]] },
     { title: "Expenses", head: ["Type", "Day", ...br(["Branch"]), "Account", "Person / item", "Memo", "Amount"], rows: [
       ...s.expenses.map((x) => [x.type, day(x.day), ...br([x.branch]), x.account ?? "—", x.who, x.memo ?? "—", money(x.amount)]),
       ["Total", "", ...br([""]), "", "", "", money(sum(s.expenses, (x) => x.amount))]] },
