@@ -175,7 +175,12 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             <Field label="Username" required hint={isNew ? "Lower case, e.g. sara.ahmed" : "Can't change."}>
               <Input value={f.username} disabled={!isNew} onChange={(e) => set("username", e.target.value.toLowerCase())} autoCapitalize="none" />
             </Field>
-            <Field label="Role" span>
+            {/* An administrator has every permission and no limits: the role is kept only for if that's switched off. */}
+            {f.isAdmin ? (
+              <div data-module="admin" className="rounded-xl border bg-muted/40 px-3 py-2.5 text-sm sm:col-span-2">
+                <span className="font-medium">Administrator</span> <span className="text-muted-foreground">· every permission in every company, no limits.</span>
+              </div>
+            ) : <Field label="Role" span>
               <div className="flex flex-wrap gap-1.5">
                 {roles.map((r) => (
                   <button key={r.id} type="button" onClick={() => set("roleId", r.id)} aria-pressed={f.roleId === r.id}
@@ -183,7 +188,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
                       f.roleId === r.id ? "border-primary bg-primary text-primary-foreground shadow-soft" : "bg-card hover:bg-muted")}>{r.name}</button>
                 ))}
               </div>
-            </Field>
+            </Field>}
             <Field label="Branches" span hint="They can sign in and work only at these.">
               <div className="flex flex-wrap gap-1.5">
                 {company?.branches.map((b) => (
@@ -216,7 +221,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             {pinPad && <PinEntry value={f.pin} onChange={(v) => { set("pin", v); set("clearPin", false); }} />}
           </div>
 
-          <div className="rounded-2xl border p-4">
+          {!f.isAdmin && <div className="rounded-2xl border p-4">
             <div className="text-sm font-medium">Limits for this user</div>
             <p className="mb-3 text-xs text-muted-foreground">What they can give without a manager. &ldquo;As role&rdquo; follows the role ({roles.find((r) => r.id === f.roleId)?.name ?? "role"}); set an own limit or no limit for this person only.</p>
             <div className="grid gap-2">
@@ -240,7 +245,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
                 );
               })}
             </div>
-          </div>
+          </div>}
 
           <Field label={existing?.hasPassword ? "New back-office password" : "Back-office password"} hint="Only for people who use the back office. At least 8 characters, letters and digits.">
             <Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder={existing?.hasPassword ? "Leave empty to keep it" : "Optional"} />
