@@ -88,7 +88,8 @@ export default function ReportsPage() {
   const invTab = tab === "invoices" || tab === "finance";
   const summary = useApi<Summary>(tab === "summary" ? `/reports/summary?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const sections = useMemo(() => summary.data ? summarySections(summary.data, where === "all") : null, [summary.data, where]);
-  // Branch comparison: always every branch of mine, whatever "This branch / All my branches" says.
+  // Branch comparison: only with "All my branches" (it compares every branch of mine); back to This branch, it goes back to Items.
+  if (tab === "compare" && where !== "all") setTab("items");
   const cmp = useApi<Comparison>(tab === "compare" ? `/reports/branch-comparison?from=${from}&to=${to}` : null);
   const cmpSections = useMemo(() => cmp.data ? comparisonSections(cmp.data) : null, [cmp.data]);
   const inv = useApi<{ invoices: Inv[]; payments: InvPay[] | null }>(invTab ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}${tab === "finance" ? "&finance=true" : ""}` : null);
@@ -289,10 +290,10 @@ export default function ReportsPage() {
 
           <StaggerItem>
             <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-              <Segmented id="rep-tab" value={tab} onChange={setTab} options={[
+              <Segmented id="rep-tab" value={tab} onChange={setTab} className="min-w-0 max-w-full flex-wrap" options={[
                 { value: "items", label: "Items" }, { value: "categories", label: "Categories" }, { value: "days", label: "Days" },
                 { value: "methods", label: "Payment methods" }, { value: "cashiers", label: "Cashiers" }, { value: "invoices", label: "Invoices" },
-                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, { value: "compare" as const, label: "Branch comparison" }, { value: "closed" as const, label: "Closed days" }] : []),
+                ...(finance ? [{ value: "finance" as const, label: "Finance invoices" }, { value: "summary" as const, label: "Summary" }, ...(where === "all" ? [{ value: "compare" as const, label: "Branch comparison" }] : []), { value: "closed" as const, label: "Closed days" }] : []),
                 { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
