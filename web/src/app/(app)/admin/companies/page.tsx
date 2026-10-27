@@ -398,7 +398,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                   <div className="font-medium">Items to take from FACTS</div>
                   <p className="mb-3 text-xs text-muted-foreground">For all of {value?.company.name}&apos;s branches (one catalogue; each branch switches on what it sells). Saving syncs the items; ones that no longer match are switched off.</p>
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Item type" hint="e.g. FG"><Input value={it.v.itemType} onChange={(e) => setIt({ ...it, v: { ...it.v, itemType: e.target.value.toUpperCase() } })} placeholder="FG" /></Field>
+                    <Field label="Item types" hint="FACTS stock types, comma-separated, e.g. FG, NF (non food)."><Input value={it.v.itemType} onChange={(e) => setIt({ ...it, v: { ...it.v, itemType: e.target.value.toUpperCase() } })} placeholder="FG, NF" /></Field>
                     <Field label="Item master" hint="e.g. SMBK. Empty = any."><Input value={it.v.itemMaster} onChange={(e) => setIt({ ...it, v: { ...it.v, itemMaster: e.target.value.toUpperCase() } })} placeholder="SMBK" /></Field>
                     <Field label="Division" hint="Empty = any."><Input value={it.v.division} onChange={(e) => setIt({ ...it, v: { ...it.v, division: e.target.value } })} placeholder="e.g. 50" /></Field>
                   </div>

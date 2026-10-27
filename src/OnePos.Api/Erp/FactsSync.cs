@@ -74,7 +74,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                          cast(case when isnull(u.UNIT_DECIMAL, 0) > 3 then 3 when isnull(u.UNIT_DECIMAL, 0) < 0 then 0 else isnull(u.UNIT_DECIMAL, 0) end as int) as Decimals,
                          row_number() over (partition by m.STKMST_DOCNO order by m.STKMST_DOCTYPE) as rn
                   from STOCK_MASTER m left join STK_GRP2 g on g.STK_GRP2_DOCNO = m.STKMST_GRP2 left join UNIT_MASTER u on u.UNIT_DOCNO = m.STKMST_UNIT_DOCNO
-                  where m.STKMST_STTYPE = @type and m.STKMST_ACTIVE_STATUS = 0 and (@div is null or m.STKMST_GRP11 = @div)
+                  where ltrim(rtrim(m.STKMST_STTYPE)) in (select value from string_split(@type, ',')) and m.STKMST_ACTIVE_STATUS = 0 and (@div is null or m.STKMST_GRP11 = @div)
                     and (@master is null or m.STKMST_DOCTYPE = @master)
                 ) x where rn = 1
                 """, new { type = settings.ItemType, div = settings.Division, master = settings.Master }, commandTimeout: 120)).ToList();
@@ -405,7 +405,10 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     private static async Task<object> SaveSettingsAsync(Db db, Scope scope, SettingsBody body)
     {
         if (!scope.IsAdmin) throw new ForbiddenException("Only administrators change what is synced from FACTS.");
-        var type = string.IsNullOrWhiteSpace(body.ItemType) ? "FG" : body.ItemType.Trim().ToUpperInvariant();
+        // One or more FACTS stock types (STKMST_STTYPE), e.g. "FG" or "FG,NF" (finished goods and non food), kept comma-separated.
+        var types = (body.ItemType ?? "").ToUpperInvariant().Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries).Distinct().ToArray();
+        if (types.Any(t => !System.Text.RegularExpressions.Regex.IsMatch(t, "^[A-Z0-9_]{1,20}$"))) throw new DomainException("Item types are FACTS stock type codes, e.g. FG, NF.");
+        var type = types.Length == 0 ? "FG" : string.Join(",", types);
         var div = string.IsNullOrWhiteSpace(body.Division) ? null : body.Division.Trim();
         var master = string.IsNullOrWhiteSpace(body.ItemMaster) ? null : body.ItemMaster.Trim().ToUpperInvariant();
         await db.Company(scope.CompanyId, async (c, tx) =>
