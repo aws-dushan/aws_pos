@@ -378,10 +378,18 @@ public static class Orders
                 select g.id, g.name, g.min_select, g.max_select from menu_item_modifier m join modifier_group g on g.id = m.group_id where m.item_id = @itemId order by m.sort
                 """, new { body.ItemId }, tx)).ToList();
             var optionIds = (body.OptionIds ?? []).Distinct().ToArray();
-            var opts = (await c.QueryAsync<(Guid Id, Guid GroupId, string Name, decimal Price, Guid? ItemId, string? Station)>("""
-                select o.id, o.group_id, o.name, o.price, o.item_id, i.station from modifier_option o left join menu_item i on i.id = o.item_id
+            var opts = (await c.QueryAsync<(Guid Id, Guid GroupId, string Name, decimal Price, Guid? ItemId, string? Station, bool FactsPrice)>("""
+                select o.id, o.group_id, o.name, o.price, o.item_id, i.station, o.facts_price from modifier_option o left join menu_item i on i.id = o.item_id
                 where o.id = any(@optionIds) and o.is_active
                 """, new { optionIds }, tx)).ToList();
+            // A FACTS-priced option costs what its item costs here now (on a platform's bill, the platform's FACTS price).
+            for (var k = 0; k < opts.Count; k++)
+            {
+                if (!opts[k].FactsPrice || opts[k].ItemId is not { } optionItem) continue;
+                var (p, where) = await PlatformPrices.OptionPriceAsync(c, tx, o.BranchId, o.PlatformId, optionItem);
+                if (p is null) throw new DomainException($"{opts[k].Name} has no FACTS price for {where}.");
+                opts[k] = opts[k] with { Price = p.Value };
+            }
             if (opts.Count != optionIds.Length || opts.Any(x => groups.All(g => g.Id != x.GroupId))) throw new DomainException("A chosen option isn't available for this item.");
             foreach (var g in groups)
             {

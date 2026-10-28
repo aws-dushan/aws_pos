@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Dapper;
 using Npgsql;
 using OnePos.Api.Platform;
@@ -29,28 +30,54 @@ public static class PlatformPrices
     }
 
     /// <summary>
+    /// A FACTS-priced option's price: its item's price on the platform's bill (the platform's FACTS price), else at the branch.
+    /// Null = no price there (named in Where).
+    /// </summary>
+    public static async Task<(decimal? Price, string Where)> OptionPriceAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid branchId, Guid? platformId, Guid itemId)
+    {
+        var (applies, price, platform) = await ForAsync(c, tx, branchId, platformId, itemId);
+        if (applies) return (price, platform);
+        var here = await c.QuerySingleOrDefaultAsync<decimal?>("""
+            select case when bi.erp_priced then bi.price else coalesce(bi.price, i.price) end
+            from menu_item i left join branch_item bi on bi.item_id = i.id and bi.branch_id = @branchId where i.id = @itemId
+            """, new { branchId, itemId }, tx);
+        return (here, "this outlet");
+    }
+
+    /// <summary>
     /// The bill's platform changed (or it stopped being a platform order): its open lines take the new prices (item plus options),
     /// the platform's or the outlet's. Refused, naming them, when an item has no price there.
     /// </summary>
     public static async Task RepriceAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid orderId, Guid branchId, Guid? platformId)
     {
-        var lines = (await c.QueryAsync<(Guid Id, Guid ItemId, string Name, decimal Unit, decimal Mods, decimal? BranchPrice, decimal Price, bool ErpPriced)>("""
-            select l.id, l.item_id, l.name, l.unit_price,
-                   coalesce((select sum((m->>'price')::numeric) from jsonb_array_elements(l.modifiers) m), 0),
-                   bi.price, i.price, coalesce(bi.erp_priced, false)
+        var lines = (await c.QueryAsync<(Guid Id, Guid ItemId, string Name, decimal Unit, string Modifiers, decimal? BranchPrice, decimal Price, bool ErpPriced, bool IsCombo)>("""
+            select l.id, l.item_id, l.name, l.unit_price, l.modifiers::text, bi.price, i.price, coalesce(bi.erp_priced, false), i.is_combo
             from order_line l join menu_item i on i.id = l.item_id left join branch_item bi on bi.item_id = i.id and bi.branch_id = @branchId
             where l.order_id = @orderId and not l.is_void
             """, new { orderId, branchId }, tx)).ToList();
+        var factsOptions = (await c.QueryAsync<Guid>("select id from modifier_option where facts_price", transaction: tx)).ToHashSet();
         var missing = new List<string>();
         var platformName = "";
         foreach (var l in lines)
         {
             var (applies, price, name) = await ForAsync(c, tx, branchId, platformId, l.ItemId);
             if (name.Length > 0) platformName = name;
-            decimal? baseprice = applies ? price : l.ErpPriced ? l.BranchPrice : l.BranchPrice ?? l.Price;
+            decimal? baseprice = l.IsCombo ? 0 : applies ? price : l.ErpPriced ? l.BranchPrice : l.BranchPrice ?? l.Price;
             if (baseprice is null) { missing.Add(l.Name); continue; }
-            var unit = Money.Round(baseprice.Value + l.Mods);
-            if (unit != l.Unit) await c.ExecuteAsync("update order_line set unit_price = @unit where id = @Id", new { unit, l.Id }, tx);
+            // FACTS-priced options take their item's price on the new bill too; others keep what was charged.
+            var mods = JsonNode.Parse(l.Modifiers)!.AsArray();
+            var changed = false;
+            foreach (var m in mods)
+            {
+                if (m is null || !Guid.TryParse((string?)m["optionId"], out var optionId) || !factsOptions.Contains(optionId)
+                    || !Guid.TryParse((string?)m["itemId"], out var optionItem)) continue;
+                var (p, _) = await OptionPriceAsync(c, tx, branchId, platformId, optionItem);
+                if (p is null) { missing.Add($"{l.Name} ({(string?)m["name"]})"); continue; }
+                if ((decimal?)m["price"] != p) { m["price"] = p; changed = true; }
+            }
+            var unit = Money.Round(baseprice.Value + mods.Sum(m => (decimal?)m?["price"] ?? 0));
+            if (unit != l.Unit || changed)
+                await c.ExecuteAsync("update order_line set unit_price = @unit, modifiers = cast(@mods as jsonb) where id = @Id", new { unit, mods = mods.ToJsonString(), l.Id }, tx);
         }
         if (missing.Count > 0)
             throw new DomainException(platformId is not null && platformName.Length > 0
