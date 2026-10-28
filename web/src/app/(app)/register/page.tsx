@@ -157,6 +157,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
   const [q, setQ] = useState("");
   const [picking, setPicking] = useState<MenuItem | null>(null);
   const [weighing, setWeighing] = useState<MenuItem | null>(null);
+  const [filling, setFilling] = useState<MenuItem | null>(null);
   const [paying, setPaying] = useState(false);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
@@ -280,7 +281,8 @@ function OrderScreen({ orderId }: { orderId: string }) {
       if (rule === "block") return toast.error(msg);
       toast.warning(msg);
     }
-    if (groupsOf(i).length) setPicking(i);
+    if (i.bomContents) setFilling(i);   // contents chosen here (a box of chocolates)
+    else if (groupsOf(i).length) setPicking(i);
     else if (byWeight(i)) setWeighing(i);   // sold by weight: the amount first (numpad; a scale later)
     else void run(`/orders/${o.id}/lines`, "POST", { itemId: i.id });
   }
@@ -478,6 +480,10 @@ function OrderScreen({ orderId }: { orderId: string }) {
       {picking && menu.data && (
         <ModifierDialog item={picking} groups={groupsOf(picking)} currency={cur} onClose={() => setPicking(null)}
           onAdd={(optionIds, qty, note) => { const it = picking; setPicking(null); void run(`/orders/${o.id}/lines`, "POST", { itemId: it.id, optionIds, qty, note }); }} />
+      )}
+      {filling && (
+        <ContentsDialog item={filling} currency={cur} onClose={() => setFilling(null)}
+          onAdd={(contents, qty, note) => { const it = filling; setFilling(null); void run(`/orders/${o.id}/lines`, "POST", { itemId: it.id, contents, qty, note }); }} />
       )}
       {weighing && <QtyDialog title={weighing.name} unit={weighing.erpUnit} decimals={weighing.qtyDecimals} initial="" onClose={() => setWeighing(null)}
         onDone={(qty) => { const it = weighing; setWeighing(null); void run(`/orders/${o.id}/lines`, "POST", { itemId: it.id, qty }); }} />}
@@ -693,6 +699,82 @@ function LineRow({ line: l, closed, canVoid, decimals, unit, selected, onSelect,
       )}
       {typing && <QtyDialog title={l.name} unit={unit} decimals={decimals} initial={fmtQty(l.qty)} min={l.sentQty} onClose={() => setTyping(false)} onDone={(q) => { setTyping(false); onQty(q); }} />}
     </motion.li>
+  );
+}
+
+/**
+ * Filling an item whose contents are chosen at the till (a box of chocolates): each material of its FACTS BOM with how many go in,
+ * pieces where FACTS counts it so; type or scan a code and Enter adds one. The box holds at most its set amount in all.
+ */
+function ContentsDialog({ item, currency, onClose, onAdd }: {
+  item: MenuItem; currency: string; onClose: () => void; onAdd: (contents: { code: string; qty: number }[], qty: number, note: string) => void;
+}) {
+  const [counts, setCounts] = useState<Record<string, string>>({});
+  const [q, setQ] = useState("");
+  const [qty, setQty] = useState(1);
+  const [note, setNote] = useState("");
+  const all = item.contents ?? [];
+  const term = q.trim().toLowerCase();
+  const shown = term ? all.filter((m) => m.code.toLowerCase().includes(term) || m.name.toLowerCase().includes(term)) : all;
+  const num = (code: string) => Number(counts[code] || 0) || 0;
+  const total = all.reduce((t, m) => t + num(m.code), 0);
+  const most = item.contentsMax ?? null;
+  const over = most !== null && total > most + 1e-9;
+  const set = (code: string, v: string) => setCounts((c) => ({ ...c, [code]: v }));
+  const step = (code: string, d: number) => set(code, String(Math.max(0, Number((num(code) + d).toFixed(3)))));
+  function addByCode() {
+    const exact = all.find((m) => m.code.toLowerCase() === term) ?? (shown.length === 1 ? shown[0] : undefined);
+    if (!exact) return toast.error(term ? `No ${term} in ${item.name}.` : "Type a code or name.");
+    if (most !== null && total + 1 > most + 1e-9) return toast.error(`${item.name} holds at most ${fmtQty(most)}.`);
+    step(exact.code, 1); setQ("");
+  }
+  const picked = all.filter((m) => num(m.code) > 0).map((m) => ({ code: m.code, qty: num(m.code) }));
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-h-[calc(100dvh-1rem)] sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{item.name}</DialogTitle>
+          <DialogDescription>
+            {most !== null ? `Holds at most ${fmtQty(most)} · ` : ""}<span className={cn("font-medium", over ? "text-danger" : "text-foreground")}>{fmtQty(total)}{most !== null ? ` of ${fmtQty(most)}` : ""} chosen</span>
+          </DialogDescription>
+        </DialogHeader>
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addByCode(); } }} autoFocus
+          placeholder="Type or scan a code (or name), Enter adds one"
+          className="h-12 w-full rounded-xl border bg-card px-3.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40" />
+        <div className="max-h-[45vh] divide-y overflow-y-auto rounded-xl border">
+          {shown.map((m) => {
+            const pcs = m.unit.toUpperCase() === "PCS";
+            return (
+              <div key={m.code} className={cn("flex items-center gap-3 px-3 py-2", num(m.code) > 0 && "bg-primary/5")}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{m.name}</div>
+                  <div className="text-xs text-muted-foreground tabular-nums">{m.code} · {m.unit}{m.perUnit ? ` (1 = ${fmtQty(m.perUnit)} ${m.bomUnit})` : ""}</div>
+                </div>
+                <button type="button" aria-label={`One less ${m.name}`} className="flex size-10 items-center justify-center rounded-lg border text-muted-foreground" onClick={() => step(m.code, pcs ? -1 : -0.1)}><MinusIcon className="size-4" /></button>
+                <input inputMode={pcs ? "numeric" : "decimal"} aria-label={`${m.name} quantity`} value={counts[m.code] ?? ""} placeholder="0"
+                  onChange={(e) => set(m.code, pcs ? e.target.value.replace(/\D/g, "") : e.target.value.replace(/[^\d.]/g, ""))}
+                  className="h-10 w-16 rounded-lg border bg-card text-center font-medium tabular-nums outline-none focus-visible:border-ring" />
+                <button type="button" aria-label={`One more ${m.name}`} className="flex size-10 items-center justify-center rounded-lg border text-muted-foreground" onClick={() => step(m.code, pcs ? 1 : 0.1)}><PlusIcon className="size-4" /></button>
+              </div>
+            );
+          })}
+          {!shown.length && <div className="px-3 py-6 text-center text-sm text-muted-foreground">{all.length ? "Nothing matches." : "Its BOM has no materials yet (FACTS BOM sync)."}</div>}
+        </div>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)"
+          className="h-12 w-full rounded-xl border bg-card px-3.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40" />
+        <DialogFooter className="items-center">
+          <div className="mr-auto flex h-12 items-center rounded-xl border bg-card">
+            <button type="button" aria-label="One less" className="flex size-12 items-center justify-center text-muted-foreground" onClick={() => setQty((x) => Math.max(1, x - 1))}><MinusIcon className="size-4" /></button>
+            <span className="w-8 text-center font-heading text-lg font-semibold tabular-nums">{qty}</span>
+            <button type="button" aria-label="One more" className="flex size-12 items-center justify-center text-muted-foreground" onClick={() => setQty((x) => Math.min(99, x + 1))}><PlusIcon className="size-4" /></button>
+          </div>
+          <Button variant="outline" className="h-12" onClick={onClose}>Cancel</Button>
+          <Button className="h-12 min-w-44" disabled={!picked.length || over} onClick={() => onAdd(picked, qty, note)}>
+            {over ? `At most ${fmtQty(most ?? 0)}` : !picked.length ? "Choose what goes in" : <>Add · {currency} {fmtIn(priceOf(item) * qty, 2)}</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
