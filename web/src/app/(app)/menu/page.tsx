@@ -333,12 +333,15 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
               </div>
             </Field>
           )}
-          {existing && !f.isCombo && existing.erpItemCode && (existing.madeToOrder || existing.bomContents) && (
+          {existing && !f.isCombo && existing.erpItemCode && (
             <div data-module="inv" className="grid gap-3 rounded-xl border px-4 py-3">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm"><span className="font-medium">Contents chosen at the till</span> <span className="text-muted-foreground">· from its FACTS BOM, e.g. the chocolates in a box; the bill&apos;s repacking takes out what was chosen</span></span>
-                <Switch on={f.bomContents} onChange={(v) => setF({ ...f, bomContents: v })} label="Contents chosen at the till" />
+                <Switch on={f.bomContents} disabled={!existing.madeToOrder && !existing.bomContents} onChange={(v) => setF({ ...f, bomContents: v })} label="Contents chosen at the till" />
               </div>
+              {!existing.madeToOrder && !existing.bomContents && (
+                <p className="text-xs text-warning">No FACTS BOM for this item yet (FACTS {existing.erpItemCode}). Its outlet BOM (BOMO50) comes in with the BOM sync (BOMs page); then this can be switched on.</p>
+              )}
               {f.bomContents && (
                 <label className="flex items-center gap-3 text-sm">
                   <span className="flex-1">Holds at most <span className="text-muted-foreground">· pieces in all (KG chocolates count in pieces where FACTS has a PCS unit). Blank = any.</span></span>
