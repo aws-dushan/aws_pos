@@ -95,7 +95,7 @@ public static class StockRequests
         ids.Length == 0 ? [] : (await c.QueryAsync<LineRow>("select * from stock_request_line where request_id = any(@ids) order by request_id, line", new { ids }, tx)).ToList();
 
     /// <summary>What arrived against posted requests: each STR50 line's "after document" quantity (FACTS adds every STV50 sent against it).</summary>
-    private static async Task<Dictionary<(string Doc, int Line), decimal>> DeliveredAsync(FactsSync facts, Guid companyId, IEnumerable<string?> docs)
+    internal static async Task<Dictionary<(string Doc, int Line), decimal>> DeliveredAsync(FactsSync facts, Guid companyId, IEnumerable<string?> docs)
     {
         var nos = docs.Where(d => d is not null && d.StartsWith("STR50 ")).Select(d => d![6..]).Distinct().ToArray();
         if (nos.Length == 0) return [];
