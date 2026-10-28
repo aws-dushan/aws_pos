@@ -35,7 +35,7 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "gp" | "discounts" | "branches" | "exceptions" | "stock";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "gp" | "discounts" | "branches" | "exceptions" | "stock" | "activity";
 type GpTotal = { sales: number; cost: number; profit: number };
 type Gp = {
   summary: GpTotal & { pct: number | null };
@@ -46,6 +46,21 @@ type Gp = {
   pending: { bills: number; sales: number }; noCost: { lines: number; sales: number }; refunds: { count: number; amount: number };
 };
 type GpKind = "items" | "categories" | "days" | "branches";
+// Stock activity: what the branch threw away, gave away, asked the stores for, received and sent back; by item or line by line.
+type ActKind = "wastage" | "marketing" | "requests" | "deliveries" | "returns";
+type ActView = "items" | "lines";
+type ActLine = {
+  date: string; branch: string; doc: string | null; code: string | null; item: string; unit: string | null; qty: number; requested: number | null; received: number | null;
+  place: string | null; reason: string | null; note: string | null; by: string | null; approvedBy: string | null; status: string; factsDoc: string | null; value: number | null;
+};
+type Activity = { showValue: boolean; lines: ActLine[] };
+const ACT_TITLES: Record<ActKind, string> = { wastage: "Wastage", marketing: "Marketing", requests: "Requests", deliveries: "Deliveries", returns: "Returns" };
+const REASON_LABEL: Record<string, string> = {
+  expired: "Expired", damaged: "Damaged", quality: "Quality", returned: "Returned", staff: "Staff meal", calibration: "Machine calibration", other: "Other",
+  tasting: "Tasting", promotion: "Promotion", influencer: "Influencer", gift: "Gift",
+};
+// Lines that didn't happen (voided, refused, cancelled) are listed but not counted in the item totals.
+const actCounts = (x: ActLine) => !["Voided", "Rejected", "Cancelled"].includes(x.status);
 const gpCells = (x: GpTotal) => [money(x.sales), money(x.cost), money(x.profit), x.sales ? `${(x.profit / x.sales * 100).toFixed(1)}%` : "—"];
 type Inv = {
   id: string; invoiceNo: string; businessDate: string; branch: string; at: string; orderType: OrderType; platform: string | null; platformRef: string | null;
@@ -115,6 +130,9 @@ export default function ReportsPage() {
   const [gpKind, setGpKind] = useState<GpKind>("items");
   if (gpKind === "branches" && where !== "all") setGpKind("items");
   const gp = useApi<Gp>(tab === "gp" ? `/reports/gross-profit?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
+  const [actKind, setActKind] = useState<ActKind>("wastage");
+  const [actView, setActView] = useState<ActView>("items");
+  const act = useApi<Activity>(tab === "activity" ? `/reports/stock-activity?kind=${actKind}&from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const [zLines, setZLines] = useState<ReceiptLine[] | null>(null);
   const zTitle = (code: string) => `${company?.name ?? ""} · ${code}`;
   const zOf = (i: number): ReceiptLine[] | null => {
@@ -227,6 +245,61 @@ export default function ReportsPage() {
             x.madeToOrder ? "Made to order" : x.stock == null ? "—" : fmtQty(x.stock), price(x.price), ...s.platforms.map((p) => price(x.platforms[p.id]))]),
         };
       }
+      case "activity": {
+        const a = act.data;
+        if (!a) return { head: [], rows: [], share: null };
+        const many = where === "all";
+        const val = a.showValue;
+        const q = (n: number | null) => n == null ? "—" : fmtQty(n);
+        const m = (n: number | null) => n == null ? "—" : money(n);
+        const reason = (x: ActLine) => x.reason ? REASON_LABEL[x.reason] ?? x.reason : "—";
+        const short = (x: ActLine) => x.received == null ? null : Math.max(0, x.qty - x.received);
+        if (actView === "lines") {
+          const day = (x: ActLine) => [billDay(x.date), ...(many ? [x.branch] : [])];
+          const item = (x: ActLine) => [x.item, x.code ?? "—"];
+          switch (actKind) {
+            case "wastage": case "marketing": return { share: null,
+              head: ["Day", ...(many ? ["Branch"] : []), "Item", "Code", "Qty", "Unit", actKind === "wastage" ? "Reason" : "Given for", "Note", "Recorded by", "Approved by", "Status", "FACTS doc", ...(val ? ["Value"] : [])],
+              rows: a.lines.map((x) => [...day(x), ...item(x), `${fmtQty(x.qty)}${x.requested != null && x.requested !== x.qty ? ` (asked ${fmtQty(x.requested)})` : ""}`, x.unit ?? "—", reason(x), x.note ?? "—", x.by ?? "—", x.approvedBy ?? "—", x.status, x.factsDoc ?? "—", ...(val ? [m(x.value)] : [])]) };
+            case "requests": return { share: null,
+              head: ["Day", ...(many ? ["Branch"] : []), "Request", "Store", "Item", "Code", "Requested", "Approved", "Delivered", "Short", "Unit", "Requested by", "Approved by", "Status", "STR50"],
+              rows: a.lines.map((x) => [...day(x), x.doc ?? "—", x.place ?? "—", ...item(x), q(x.requested), x.status === "Rejected" || x.status === "Cancelled" ? "0" : fmtQty(x.qty), q(x.received), q(short(x)), x.unit ?? "—", x.by ?? "—", x.approvedBy ?? "—", x.status, x.factsDoc ?? "—"]) };
+            case "deliveries": return { share: null,
+              head: ["Day", ...(many ? ["Branch"] : []), "Document", "From", "Item", "Code", "Sent", "Received", "Short", "Unit", "Checked in by", "Note", "Status"],
+              rows: a.lines.map((x) => [...day(x), x.doc ?? "—", x.place ?? "—", ...item(x), fmtQty(x.qty), q(x.received), q(short(x)), x.unit ?? "—", x.by ?? "—", x.note ?? "—", x.status]) };
+            case "returns": return { share: null,
+              head: ["Day", ...(many ? ["Branch"] : []), "Against", "Back to", "Item", "Code", "Qty", "Unit", "Why", "Note", "Recorded by", "Approved by", "Status", "FACTS doc", ...(val ? ["Value"] : [])],
+              rows: a.lines.map((x) => [...day(x), x.doc ?? "—", x.place ?? "—", ...item(x), fmtQty(x.qty), x.unit ?? "—", reason(x), x.note ?? "—", x.by ?? "—", x.approvedBy ?? "—", x.status, x.factsDoc ?? "—", ...(val ? [m(x.value)] : [])]) };
+          }
+        }
+        // By item: one row per item, biggest first (by value where shown, else quantity).
+        const groups = new Map<string, ActLine[]>();
+        for (const x of a.lines) { const k = `${x.code ?? ""}|${x.item}`; groups.set(k, [...(groups.get(k) ?? []), x]); }
+        const sum = (xs: ActLine[], f: (x: ActLine) => number | null) => xs.reduce((t, x) => t + (f(x) ?? 0), 0);
+        const items = [...groups.values()].map((xs) => ({ x: xs[0], xs, on: xs.filter(actCounts) }));
+        switch (actKind) {
+          case "wastage": case "marketing": case "returns": {
+            const rows = items.filter((g) => g.on.length).map((g) => ({ g, qty: sum(g.on, (x) => x.qty), value: sum(g.on, (x) => x.value) }))
+              .sort((p, r) => (val ? r.value - p.value : 0) || r.qty - p.qty);
+            const why = (xs: ActLine[]) => [...new Set(xs.map(reason))].map((r) => `${r} ${fmtQty(sum(xs.filter((x) => reason(x) === r), (x) => x.qty))}`).join(", ");
+            return { share: null,
+              head: ["Item", "Code", "Times", "Qty", "Unit", actKind === "marketing" ? "Given for" : actKind === "returns" ? "Why" : "Reasons", ...(val ? ["Value"] : [])],
+              rows: rows.map(({ g, qty, value }) => [g.x.item, g.x.code ?? "—", g.on.length, fmtQty(qty), g.x.unit ?? "—", why(g.on), ...(val ? [money(value)] : [])]) };
+          }
+          case "requests": return { share: null,
+            head: ["Item", "Code", "Requests", "Requested", "Approved", "Delivered", "Short", "Unit"],
+            rows: items.map((g) => {
+              const ok = g.xs.filter((x) => !["Rejected", "Cancelled", "Waiting approval"].includes(x.status));
+              const got = sum(ok, (x) => x.received);
+              return { g, req: sum(g.xs.filter((x) => x.status !== "Cancelled"), (x) => x.requested), appr: sum(ok, (x) => x.qty), got, short: sum(ok.filter((x) => x.received != null), short) };
+            }).sort((p, r) => r.req - p.req).map(({ g, req, appr, got, short: sh }) => [g.x.item, g.x.code ?? "—", g.xs.length, fmtQty(req), fmtQty(appr), fmtQty(got), fmtQty(sh), g.x.unit ?? "—"]) };
+          case "deliveries": return { share: null,
+            head: ["Item", "Code", "Deliveries", "Sent", "Received", "Short", "Not checked in", "Unit"],
+            rows: items.map((g) => ({ g, sent: sum(g.xs, (x) => x.qty), got: sum(g.xs, (x) => x.received), sh: sum(g.xs, short), open: sum(g.xs.filter((x) => x.received == null), (x) => x.qty) }))
+              .sort((p, r) => r.sh - p.sh || r.sent - p.sent).map(({ g, sent, got, sh, open }) => [g.x.item, g.x.code ?? "—", g.xs.length, fmtQty(sent), fmtQty(got), fmtQty(sh), fmtQty(open), g.x.unit ?? "—"]) };
+        }
+        return { head: [], rows: [], share: null };
+      }
       case "exceptions": {
         const e = ex.data;
         if (!e) return { head: [], rows: [], share: null };
@@ -245,8 +318,8 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind, gp.data, gpKind]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", gp: "Gross profit", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind, gp.data, gpKind, act.data, actKind, actView]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", gp: "Gross profit", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock", activity: "Stock activity" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   const gpTitles: Record<GpKind, string> = { items: "Items", categories: "Categories", days: "Days", branches: "Branches" };
@@ -258,25 +331,25 @@ export default function ReportsPage() {
   ].filter(Boolean).join(" · ") : "";
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
-  const listTab = tab === "exceptions" || invTab || tab === "closed";
+  const listTab = tab === "exceptions" || invTab || tab === "closed" || tab === "activity";
   const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" || (tab === "gp" && gpKind === "items") ? 2 : tab === "stock" ? 3 : 1);
   // Search, sort and column filters over the table (they start again with another tab, kind or dates).
-  const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${gpKind}|${where}|${from}|${to}`);
+  const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${gpKind}|${actKind}|${actView}|${where}|${from}|${to}`);
   const shownRows = table ? tv.shown.map((i) => table.rows[i]) : [];
   // A total under the table for the rows shown: amount and count columns only (not averages, shares, prices or stock).
   const totalRow = table && shownRows.length > 1 && table.head.length > 1
     ? table.head.map((h, i) => {
         if (i === 0) return "Total";
-        if (!tv.numeric[i] || /average|share|%|rate|busiest|price|stock|variance %|day$/i.test(h) || shownRows.some((r) => String(r[i]).endsWith("%"))) return "";
+        if (!tv.numeric[i] || /average|share|%|rate|busiest|price|stock|variance %|day$|code/i.test(h) || shownRows.some((r) => String(r[i]).endsWith("%"))) return "";
         const sum = shownRows.reduce((t, r) => t + (cellNumber(r[i]) ?? 0), 0);
         return shownRows.every((r) => typeof r[i] === "number" || /^-?[\d,]+$/.test(String(r[i]))) ? sum.toLocaleString("en-US") : money(sum);
       })
     : null;
   const exportTable = table ? {
-    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "gp" ? ` · ${gpTitles[gpKind]}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
+    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "gp" ? ` · ${gpTitles[gpKind]}` : tab === "activity" ? ` · ${ACT_TITLES[actKind]} · ${actView === "items" ? "by item" : "every line"}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
     subtitle: tab === "stock"
       ? `${company?.name ?? ""} · ${branch?.name ?? ""} · stock now, ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
-      : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}${tab === "gp" ? ` · sales before VAT, cost from FACTS${gpNote ? ` · ${gpNote}` : ""}` : ""}`,
+      : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}${tab === "gp" ? ` · sales before VAT, cost from FACTS${gpNote ? ` · ${gpNote}` : ""}` : tab === "activity" && act.data?.showValue ? " · value at the latest FACTS landed cost" : ""}`,
     head: table.head, rows: shownRows,
   } : null;
 
@@ -345,18 +418,36 @@ export default function ReportsPage() {
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
                 { value: "stock", label: "Stock" },
+                { value: "activity", label: "Stock activity" },
               ]} />
               {tab === "compare"
                 ? <ExportMenu name={`branch-comparison-${company?.code}-${from}-to-${to}`} tables={cmpSections?.filter((s) => s.rows.length)} heading={{ title: "Branch comparison", subtitle: `${company?.name ?? ""} · ${from} to ${to}` }} />
                 : tab === "summary"
                 ? <ExportMenu name={`summary-${label}`} tables={sections} heading={{ title: "Summary", subtitle: `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}` }} />
-                : <ExportMenu name={`${tab === "exceptions" ? exKind : tab === "gp" ? `gross-profit-${gpKind}` : tab}-${label}`} table={exportTable} />}
+                : <ExportMenu name={`${tab === "exceptions" ? exKind : tab === "gp" ? `gross-profit-${gpKind}` : tab === "activity" ? `${actKind}-${actView}` : tab}-${label}`} table={exportTable} />}
             </div>
             {tab === "stock" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="stock-kind" size="sm" value={stockKind} onChange={setStockKind} options={(Object.keys(stockTitles) as StockKind[]).map((k) => (
                   { value: k, label: `${stockTitles[k]}${st.data ? ` · ${st.data.items.filter(stockMatch[k]).length}` : ""}` }))} />
                 <span className="text-sm text-muted-foreground">{branch?.name}, now: FACTS stock less what was sold and thrown away since. A blank price means FACTS has none, so it can&apos;t be sold there.</span>
+              </div>
+            )}
+            {tab === "activity" && (
+              <div className="mb-3 grid gap-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <Segmented id="act-kind" size="sm" value={actKind} onChange={setActKind} options={(Object.keys(ACT_TITLES) as ActKind[]).map((k) => ({ value: k, label: ACT_TITLES[k] }))} />
+                  <Segmented id="act-view" size="sm" value={actView} onChange={setActView} options={[{ value: "items", label: "By item" }, { value: "lines", label: "Every line" }]} />
+                  {act.data && (() => {
+                    const on = act.data.lines.filter(actCounts);
+                    const value = on.reduce((t, x) => t + (x.value ?? 0), 0);
+                    return <span className="text-sm text-muted-foreground">{act.data.lines.length} lines{act.data.showValue ? ` · value ${cur} ${money(value)}` : ""}</span>;
+                  })()}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {actKind === "deliveries" ? "Deliveries into the branch's FACTS location, read from FACTS now; received is what was checked in." : actKind === "requests" ? "Delivered is what the store sent against the posted STR50, read from FACTS." : "Voided, rejected and cancelled lines are listed but not counted in the item totals."}
+                  {act.data?.showValue ? " Value is the quantity at the item's latest FACTS landed cost (today's cost)." : ""}
+                </p>
               </div>
             )}
             {tab === "closed" && (
@@ -390,7 +481,7 @@ export default function ReportsPage() {
                 <p className="text-xs text-muted-foreground">Sales before VAT, after discounts. Cost is each line&apos;s FACTS batch at its landed cost, read from FACTS now.{gpNote ? ` Left out: ${gpNote}.` : ""}</p>
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : tab === "gp" ? gp.error : undefined} />
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : tab === "gp" ? gp.error : tab === "activity" ? act.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {
@@ -436,7 +527,7 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </TablePanel>
-            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) || (tab === "gp" && !gp.data && !gp.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
+            ) : (tab === "stock" && !st.data) || (invTab && !inv.data && !inv.error) || (tab === "closed" && !cd.data && !cd.error) || (tab === "gp" && !gp.data && !gp.error) || (tab === "activity" && !act.data && !act.error) ? <LoadingRows /> : <p className="surface px-5 py-8 text-center text-sm text-muted-foreground">{tab === "stock" ? "No items here." : "Nothing in these days."}</p>}
             {tab !== "summary" && tab !== "compare" && table && tv.shown.length > 200 && <p className="mt-2 text-xs text-muted-foreground">Showing 200 of {tv.shown.length}; the export has them all.</p>}
           </StaggerItem>
 
