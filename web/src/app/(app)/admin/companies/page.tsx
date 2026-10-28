@@ -24,7 +24,7 @@ type Branch = {
   id: string; companyId: string; code: string; name: string; address: string | null; phone: string | null; timeZone: string; tableService: boolean; askGuests: boolean;
   serviceChargePct: number; receiptHeader: string | null; receiptFooter: string | null; dayControl: DayControl; isActive: boolean; returnDays: number;
   kitchenEnabled: boolean; autoOpenTime: string; autoCloseTime: string; varianceTolerance: number; defaultFloat: number; openOrdersAtClose: "carry" | "void_unsent";
-  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; returnsEnabled: boolean;
+  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; returnsEnabled: boolean; factsItemTypes: string | null;
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
@@ -260,6 +260,7 @@ function CompanyDialog({ value, onClose, onSaved }: { value: Company | "new" | n
               )}
             </div>
           )}
+          {value && value !== "new" && value.erpConnector === "facts" && <FactsItemsBox company={value} />}
           {value && value !== "new" && value.erpConnector === "facts" && <RequestStoresBox company={value} />}
           {!isNew && (
             <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
@@ -284,7 +285,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
 }) {
   const isNew = !!value && !value.branch;
   const blank = { code: "", name: "", address: "", phone: "", timeZone: "Asia/Dubai", tableService: true, askGuests: true, serviceChargePct: "0", receiptHeader: "", receiptFooter: "", dayControl: "manual" as DayControl, isActive: true, returnDays: "0",
-    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, returnsEnabled: false, nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
+    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, returnsEnabled: false, factsItemTypes: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -294,17 +295,15 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
     setF(b ? { code: b.code, name: b.name, address: b.address ?? "", phone: b.phone ?? "", timeZone: b.timeZone, tableService: b.tableService, askGuests: b.askGuests,
       serviceChargePct: String(b.serviceChargePct), receiptHeader: b.receiptHeader ?? "", receiptFooter: b.receiptFooter ?? "", dayControl: b.dayControl, isActive: b.isActive, returnDays: String(b.returnDays),
       kitchenEnabled: b.kitchenEnabled, autoOpenTime: b.autoOpenTime.slice(0, 5), autoCloseTime: b.autoCloseTime.slice(0, 5), varianceTolerance: String(b.varianceTolerance),
-      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, returnsEnabled: b.returnsEnabled,
+      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, returnsEnabled: b.returnsEnabled, factsItemTypes: (b.factsItemTypes ?? "").replace(/,/g, ", "),
       nameAr: b.nameAr ?? "", addressAr: b.addressAr ?? "", receiptLanguage: b.receiptLanguage, shortStock: b.shortStock, pickupMode: b.pickupMode, pickupMinutes: String(b.pickupMinutes),
       closeDelayMinutes: String(b.closeDelayMinutes ?? 15), closeDelayMaxMinutes: String(b.closeDelayMaxMinutes ?? 120) } : blank);
   }
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   // Items to take from FACTS: the company's (all its branches share one catalogue); administrators change it here.
   const factsCo = value?.company.erpConnector === "facts" ? value.company.id : null;
+  // The company's FACTS item types: what an empty "Item types" here means.
   const items = useApi<FactsItems>(factsCo && isAdmin ? `/companies/${factsCo}/erp/items` : null);
-  const [it, setIt] = useState<{ for: FactsItems | undefined; v: { itemType: string; itemMaster: string; division: string } }>({ for: undefined, v: { itemType: "", itemMaster: "", division: "" } });
-  if (items.data !== it.for) setIt({ for: items.data, v: { itemType: items.data?.itemType ?? "FG", itemMaster: items.data?.itemMaster ?? "", division: items.data?.division ?? "" } });
-  const itemsChanged = !!items.data && (it.v.itemType !== items.data.itemType || it.v.itemMaster !== (items.data.itemMaster ?? "") || it.v.division !== (items.data.division ?? ""));
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -315,10 +314,6 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
         closeDelayMinutes: Number(f.closeDelayMinutes || 15), closeDelayMaxMinutes: Number(f.closeDelayMaxMinutes || 0) };
       if (isNew) await api(`/companies/${value.company.id}/branches`, "POST", body);
       else await api(`/branches/${value.branch!.id}`, "PUT", body);
-      if (itemsChanged) {
-        const r = await api<{ synced: Record<string, number> | null }>(`/companies/${value.company.id}/erp/items`, "PUT", it.v);
-        if (r.synced) toast.success(`FACTS items synced: ${r.synced.added} new, ${r.synced.removed} switched off.`);
-      }
       toast.success(isNew ? `${f.name} added.` : "Branch saved.");
       onSaved();
       onClose();
@@ -383,6 +378,9 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                 <Field label="Location code"><Input value={f.erpLocationCode} onChange={(e) => set("erpLocationCode", e.target.value)} placeholder="e.g. DXB01" /></Field>
                 <Field label="Location name"><Input value={f.erpLocationName} onChange={(e) => set("erpLocationName", e.target.value)} placeholder="As named in FACTS" /></Field>
                 <Field label="Wastage location" hint="Where finance moves the wastage (e.g. WEBQS)."><Input value={f.erpWasteLocation} onChange={(e) => set("erpWasteLocation", e.target.value.toUpperCase())} placeholder="e.g. WEBQS" /></Field>
+                <Field label="Item types on this menu" hint={`FACTS stock types this branch sells, e.g. FG, NF (non food). Empty = the company's${items.data ? ` (${items.data.itemType.replace(/,/g, ", ")})` : ""}.`}>
+                  <Input value={f.factsItemTypes} onChange={(e) => set("factsItemTypes", e.target.value.toUpperCase())} placeholder={items.data?.itemType.replace(/,/g, ", ") ?? "FG"} />
+                </Field>
                 <Field label="Price type" hint={f.factsPriceType.trim() ? "Prices come only from this FACTS price type and can't be changed here." : "Empty = prices are set in One POS."}>
                   <Input value={f.factsPriceType} maxLength={20} onChange={(e) => set("factsPriceType", e.target.value)} placeholder="Code in FACTS Price Type Master" />
                 </Field>
@@ -393,18 +391,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                 )}
               </div>
               <p className="mt-2 text-xs text-muted-foreground">Picking it from the FACTS list arrives with the FACTS link; until then, type the code as it is in FACTS.</p>
-              {isAdmin && items.data && (
-                <div className="mt-4 border-t pt-4">
-                  <div className="font-medium">Items to take from FACTS</div>
-                  <p className="mb-3 text-xs text-muted-foreground">For all of {value?.company.name}&apos;s branches (one catalogue; each branch switches on what it sells). Saving syncs the items; ones that no longer match are switched off.</p>
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    <Field label="Item types" hint="FACTS stock types, comma-separated, e.g. FG, NF (non food)."><Input value={it.v.itemType} onChange={(e) => setIt({ ...it, v: { ...it.v, itemType: e.target.value.toUpperCase() } })} placeholder="FG, NF" /></Field>
-                    <Field label="Item master" hint="e.g. SMBK. Empty = any."><Input value={it.v.itemMaster} onChange={(e) => setIt({ ...it, v: { ...it.v, itemMaster: e.target.value.toUpperCase() } })} placeholder="SMBK" /></Field>
-                    <Field label="Division" hint="Empty = any."><Input value={it.v.division} onChange={(e) => setIt({ ...it, v: { ...it.v, division: e.target.value } })} placeholder="e.g. 50" /></Field>
-                  </div>
-                </div>
-              )}
-              {items.error && <ErrorNote message={items.error} />}
+
             </div>
           )}
           {value?.branch && <DiscountApprovalBox branch={value.branch} onSaved={onSaved} />}
@@ -779,6 +766,45 @@ function RequestStoresBox({ company }: { company: Company }) {
           <PlusIcon /> Add store
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the company takes from FACTS (one catalogue for all its branches): the item master, the division, and the default item types (a
+ * branch with its own "Item types" uses those instead; every type any branch uses comes in). Saving syncs the items.
+ */
+function FactsItemsBox({ company }: { company: Company }) {
+  const { me } = useSession();
+  const items = useApi<FactsItems>(me.user.isAdmin ? `/companies/${company.id}/erp/items` : null);
+  const [v, setV] = useState<{ for: FactsItems | undefined; itemType: string; itemMaster: string; division: string }>({ for: undefined, itemType: "", itemMaster: "", division: "" });
+  if (items.data !== v.for) setV({ for: items.data, itemType: (items.data?.itemType ?? "FG").replace(/,/g, ", "), itemMaster: items.data?.itemMaster ?? "", division: items.data?.division ?? "" });
+  const [busy, setBusy] = useState(false);
+  if (!me.user.isAdmin) return null;
+  async function save() {
+    setBusy(true);
+    try {
+      const r = await api<{ synced: Record<string, number> | null }>(`/companies/${company.id}/erp/items`, "PUT", { itemType: v.itemType, itemMaster: v.itemMaster, division: v.division });
+      toast.success(r.synced ? `Saved. FACTS items synced: ${r.synced.added} new, ${r.synced.removed} switched off.` : "Saved.");
+      items.reload();
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <div data-module="inv" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><DatabaseIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Items from FACTS</div>
+          <p className="text-xs text-muted-foreground">One catalogue for all of {company.name}&apos;s branches. Each branch can choose its own item types (branch &rarr; FACTS); these are the default. Saving syncs the items; ones that no longer match are switched off.</p>
+        </div>
+      </div>
+      <ErrorNote message={items.error} />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Default item types" hint="FACTS stock types, e.g. FG, NF."><Input value={v.itemType} onChange={(e) => setV({ ...v, itemType: e.target.value.toUpperCase() })} placeholder="FG" /></Field>
+        <Field label="Item master" hint="e.g. SMBK. Empty = any."><Input value={v.itemMaster} onChange={(e) => setV({ ...v, itemMaster: e.target.value.toUpperCase() })} placeholder="SMBK" /></Field>
+        <Field label="Division" hint="Empty = any."><Input value={v.division} onChange={(e) => setV({ ...v, division: e.target.value })} placeholder="e.g. 50" /></Field>
+      </div>
+      <div className="mt-3 flex justify-end"><Button type="button" className="h-10" disabled={busy || !items.data} onClick={() => void save()}>Save FACTS items</Button></div>
     </div>
   );
 }

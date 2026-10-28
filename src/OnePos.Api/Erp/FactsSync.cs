@@ -20,7 +20,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     public sealed record EnableBody(int? Days);
     public sealed record SettingsBody(string? Division, string? ItemType, string? ItemMaster = null);
 
-    private sealed record FactsItem(string Code, string Name, string? NameAr, string? Unit, string? Group, string? GroupName, bool Blocked, int Decimals, string? DocType);
+    private sealed record FactsItem(string Code, string Name, string? NameAr, string? Unit, string? Group, string? GroupName, bool Blocked, int Decimals, string? DocType, string? StockType);
 
     private static readonly string[] Tones = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -60,14 +60,20 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
 
     public Task<object> SyncItemsAsync(Guid companyId, Guid? userId) => RunAsync(companyId, null, "items", userId, async () =>
     {
-        var settings = await db.Company(companyId, (c, tx) => c.QuerySingleAsync<(string? Division, string ItemType, string? Master)>(
-            "select facts_division, facts_item_type, facts_item_master from company where id = @companyId", new { companyId }, tx));
+        // Every stock type a branch uses (its own, else the company's) comes in once: one catalogue, each branch shows its own types.
+        var settings = await db.Company(companyId, (c, tx) => c.QuerySingleAsync<(string? Division, string ItemType, string? Master)>("""
+            select facts_division,
+                   (select string_agg(distinct t, ',') from (select unnest(string_to_array(co.facts_item_type, ',')) as t
+                      union select unnest(string_to_array(b.facts_item_types, ',')) from branch b where b.company_id = co.id and b.facts_item_types is not null) x),
+                   facts_item_master
+            from company co where id = @companyId
+            """, new { companyId }, tx));
         List<FactsItem> facts;
         await using (var f = await OpenAsync(companyId))
         {
             facts = (await f.QueryAsync<FactsItem>("""
-                select Code, Name, NameAr, Unit, Grp as [Group], GroupName, Blocked, Decimals, DocType from (
-                  select ltrim(rtrim(m.STKMST_DOCNO)) as Code, m.STKMST_DESC as Name, ltrim(rtrim(m.STKMST_DOCTYPE)) as DocType,
+                select Code, Name, NameAr, Unit, Grp as [Group], GroupName, Blocked, Decimals, DocType, StockType from (
+                  select ltrim(rtrim(m.STKMST_DOCNO)) as Code, m.STKMST_DESC as Name, ltrim(rtrim(m.STKMST_DOCTYPE)) as DocType, ltrim(rtrim(m.STKMST_STTYPE)) as StockType,
                          nullif(ltrim(rtrim(coalesce(nullif(ltrim(rtrim(m.STKMST_AR_DESC)), ''), m.STKMST_ARABIC_DESC))), '') as NameAr,
                          ltrim(rtrim(m.STKMST_UNIT_DOCNO)) as Unit, ltrim(rtrim(m.STKMST_GRP2)) as Grp, g.STK_GRP2_DESC as GroupName,
                          cast(case when isnull(m.STKMST_SALE_BLOCKED, 0) = 1 then 1 else 0 end as bit) as Blocked,
@@ -149,10 +155,11 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                 renamed += n;
             }
             await c.ExecuteAsync("update menu_item set erp_synced_at = now() where erp_item_code = any(@codes)", new { codes = known.Select(x => x.Code).ToArray() }, tx);
-            // FACTS' item document type (e.g. SMBK): posted sales name the item by type and code.
+            // FACTS' item document type (e.g. SMBK): posted sales name the item by type and code. Its stock type (FG, NF…): which branches show it.
             await c.ExecuteAsync("""
-                update menu_item i set erp_item_type = t.dt from unnest(@codes, @types) as t(code, dt) where i.erp_item_code = t.code and i.erp_item_type is distinct from t.dt
-                """, new { codes = facts.Select(x => x.Code).ToArray(), types = facts.Select(x => x.DocType).ToArray() }, tx);
+                update menu_item i set erp_item_type = t.dt, erp_stock_type = t.st from unnest(@codes, @types, @stocks) as t(code, dt, st)
+                where i.erp_item_code = t.code and (i.erp_item_type is distinct from t.dt or i.erp_stock_type is distinct from t.st)
+                """, new { codes = facts.Select(x => x.Code).ToArray(), types = facts.Select(x => x.DocType).ToArray(), stocks = facts.Select(x => x.StockType).ToArray() }, tx);
 
             // Gone from FACTS (inactive, another type or division): switched off, kept for history.
             var codes = facts.Select(x => x.Code).ToHashSet();
@@ -388,7 +395,11 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         }
         var summary = await db.Company(companyId, async (c, tx) =>
         {
-            var ids = (await c.QueryAsync<Guid>("select id from menu_item where erp_item_code = any(@sold) and is_active", new { sold = sold.ToArray() }, tx)).ToArray();
+            // Only items of this branch's FACTS types (an item sold there under another type stays off).
+            var ids = (await c.QueryAsync<Guid>($"""
+                select i.id from menu_item i join branch br on br.id = @branchId
+                where i.erp_item_code = any(@sold) and i.is_active and (i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, (select co.facts_item_type from company co where co.id = br.company_id)), ',')))
+                """, new { sold = sold.ToArray(), branchId }, tx)).ToArray();
             await c.ExecuteAsync("""
                 insert into branch_item (company_id, branch_id, item_id, is_sold) select @companyId, @branchId, id, true from unnest(@ids) as t(id)
                 on conflict (branch_id, item_id) do update set is_sold = true
