@@ -228,11 +228,33 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             var rows = (await f.QueryAsync<(string Code, decimal Qty)>("""
                 select ltrim(rtrim(STKLOC_DOCNO)), isnull(STKLOC_CLSQTY, 0) from STOCK_LOCATION_MASTER where STKLOC_LOC_DOCNO = @loc
                 """, new { loc = b.Location }, commandTimeout: 120)).Where(r => byCode.ContainsKey(r.Code)).ToList();
+            // Wastage still waiting holds back only the stock that was there when it was recorded: what arrived since (posted
+            // deliveries to this location, FACTS' local time) can be sold (wastage_held, migration 0083).
+            var waiting = (await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, DateTime Since)>("""
+                select i.erp_item_code, min(w.recorded_at at time zone b.time_zone)
+                from wastage w join menu_item i on i.id = w.item_id join branch b on b.id = w.branch_id
+                where w.branch_id = @branchId and w.voided_at is null and w.erp_status not in ('none', 'posted') and i.erp_item_code is not null
+                group by i.erp_item_code
+                """, new { branchId = b.Id }, tx))).ToDictionary(x => x.Code, x => x.Since);
+            var arrived = new Dictionary<string, decimal>();
+            if (waiting.Count > 0)
+            {
+                var lines = await f.QueryAsync<(string Code, DateTime PostedAt, decimal Qty)>("""
+                    select ltrim(rtrim(d.TSFDET_STOCK_DOCNO)), h.TSF_POSTED_TS, isnull(d.TSFDET_QTY, 0)
+                    from TRANSFER_DETAILS d join TRANSFER_HEADER h on h.TSF_FYCODE = d.TSFDET_FYCODE and h.TSF_DOCTYPE = d.TSFDET_DOCTYPE and h.TSF_DOCNO = d.TSFDET_DOCNO
+                    join DOCUMENT_MASTER dm on dm.DM_DOCNO = h.TSF_DOCTYPE
+                    where h.TSF_LOCATION_TO_DOCNO = @loc and isnull(dm.DM_UPDATE_STOCK, 0) = 1 and h.TSF_POSTED_TS > @since
+                      and ltrim(rtrim(d.TSFDET_STOCK_DOCNO)) in @codes
+                    """, new { loc = b.Location, since = waiting.Values.Min(), codes = waiting.Keys.ToArray() }, commandTimeout: 120);
+                foreach (var l in lines.Where(l => l.PostedAt > waiting[l.Code]))
+                    arrived[l.Code] = arrived.GetValueOrDefault(l.Code) + l.Qty;
+            }
             updated += await db.Company(companyId, (c, tx) => c.ExecuteAsync("""
-                insert into branch_item (company_id, branch_id, item_id, is_sold, erp_stock, erp_stock_at)
-                select @companyId, @branchId, item, false, qty, now() from unnest(@itemIds, @qtys) as t(item, qty)
-                on conflict (branch_id, item_id) do update set erp_stock = excluded.erp_stock, erp_stock_at = excluded.erp_stock_at
-                """, new { companyId, branchId = b.Id, itemIds = rows.Select(r => byCode[r.Code]).ToArray(), qtys = rows.Select(r => r.Qty).ToArray() }, tx));
+                insert into branch_item (company_id, branch_id, item_id, is_sold, erp_stock, erp_stock_at, erp_in_since_waste)
+                select @companyId, @branchId, item, false, qty, now(), arrived from unnest(@itemIds, @qtys, @arrived) as t(item, qty, arrived)
+                on conflict (branch_id, item_id) do update set erp_stock = excluded.erp_stock, erp_stock_at = excluded.erp_stock_at, erp_in_since_waste = excluded.erp_in_since_waste
+                """, new { companyId, branchId = b.Id, itemIds = rows.Select(r => byCode[r.Code]).ToArray(), qtys = rows.Select(r => r.Qty).ToArray(),
+                           arrived = rows.Select(r => waiting.ContainsKey(r.Code) ? arrived.GetValueOrDefault(r.Code) : (decimal?)null).ToArray() }, tx));
             await live.ToBranch(b.Id, "menu.changed");
         }
         return new { branches = branches.Count, items = updated };
