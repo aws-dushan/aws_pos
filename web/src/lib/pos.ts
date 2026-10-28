@@ -34,7 +34,9 @@ export const byWeight = (i: MenuItem) => i.qtyDecimals > 0 && WEIGHT_UNITS.inclu
 
 /** No price yet (a FACTS item before a manager sets one): it can't be sold. */
 export const noPrice = (i: MenuItem) => (i.needsPrice || i.erpPriced) && i.branchPrice === null;
-export type ModifierOption = { id: string; groupId: string; name: string; price: number; sort: number; isActive: boolean; itemId: string | null };
+export type ModifierOption = { id: string; groupId: string; name: string; price: number; sort: number; isActive: boolean; itemId: string | null;
+  /** Charged at its item's live price here (FACTS), not a typed price; noPrice = its item has none here, so it can't be chosen. */
+  factsPrice: boolean; noPrice: boolean };
 export type ModifierGroup = { id: string; name: string; minSelect: number; maxSelect: number; options: ModifierOption[] };
 export type ShortStock = "allow" | "warn" | "block";
 export type Menu = { categories: MenuCategory[]; items: MenuItem[]; groups: ModifierGroup[]; shortStock?: ShortStock;
@@ -45,7 +47,11 @@ export type Menu = { categories: MenuCategory[]; items: MenuItem[]; groups: Modi
 export function withPlatformPrices(menu: Menu | undefined, platformId: string | null): Menu | undefined {
   const p = menu && platformId ? menu.platformPrices?.find((x) => x.platformId === platformId) : undefined;
   if (!menu || !p) return menu;
-  return { ...menu, items: menu.items.map((i) => (i.erpItemCode ? { ...i, branchPrice: p.prices[i.id] ?? null, erpPriced: true } : i)) };
+  const facts = new Set(menu.items.filter((i) => i.erpItemCode).map((i) => i.id));
+  // FACTS-priced options linked to a FACTS item take that item's platform price too.
+  const groups = menu.groups.map((g) => ({ ...g, options: g.options.map((o) => (o.factsPrice && o.itemId && facts.has(o.itemId)
+    ? { ...o, price: p.prices[o.itemId] ?? 0, noPrice: p.prices[o.itemId] === undefined } : o)) }));
+  return { ...menu, groups, items: menu.items.map((i) => (i.erpItemCode ? { ...i, branchPrice: p.prices[i.id] ?? null, erpPriced: true } : i)) };
 }
 
 export type Order = {
@@ -103,7 +109,7 @@ export const priceOf = (i: MenuItem) => (i.isCombo ? 0 : i.branchPrice ?? i.pric
 
 /** The least an item costs with its required choices: a combo's "from" price. */
 export const leastPrice = (i: MenuItem, groups: ModifierGroup[]) => priceOf(i) + groups.reduce((t, g) =>
-  t + g.options.filter((o) => o.isActive).map((o) => o.price).sort((a, b) => a - b).slice(0, g.minSelect).reduce((s, p) => s + p, 0), 0);
+  t + g.options.filter((o) => o.isActive && !o.noPrice).map((o) => o.price).sort((a, b) => a - b).slice(0, g.minSelect).reduce((s, p) => s + p, 0), 0);
 
 /** How an order is named on screen: its table, its customer, or its type. */
 export function orderLabel(o: Order) {

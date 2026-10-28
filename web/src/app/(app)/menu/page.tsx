@@ -90,7 +90,7 @@ export default function MenuPage() {
                     <span className="hover-hop flex size-10 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><LayersIcon className="size-[1.1rem]" /></span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    {g.options.filter((o) => o.isActive).map((o) => <Pill key={o.id}>{o.name}{o.price ? ` +${fmtIn(o.price, 2)}` : ""}</Pill>)}
+                    {g.options.filter((o) => o.isActive).map((o) => <Pill key={o.id}>{o.name}{o.noPrice ? " · no FACTS price" : o.price ? ` +${fmtIn(o.price, 2)}` : ""}{o.factsPrice && !o.noPrice ? " (FACTS)" : ""}</Pill>)}
                   </div>
                   <div className="mt-3 text-xs text-muted-foreground">Used by {m.items.filter((i) => i.groupIds.includes(g.id)).length} items</div>
                 </button>
@@ -413,21 +413,24 @@ function ItemPicker({ items, value, onChange }: { items: MenuItem[]; value: stri
 
 function GroupDialog({ value, items, currency, onClose, onSaved }: { value: ModifierGroup | "new" | null; items: MenuItem[]; currency: string; onClose: () => void; onSaved: () => void }) {
   const [recipeFor, setRecipeFor] = useState<RecipeTarget | null>(null);
-  type Opt = { id?: string; name: string; price: string; itemId: string };
+  type Opt = { id?: string; name: string; price: string; itemId: string; factsPrice: boolean };
   const [name, setName] = useState("");
   const [min, setMin] = useState(0);
   const [max, setMax] = useState(1);
   const [opts, setOpts] = useState<Opt[]>([]);
+  const blankOpt: Opt = { name: "", price: "0", itemId: "", factsPrice: false };
+  // A FACTS-priced option shows its item's price at this branch now (what the register charges).
+  const livePrice = (itemId: string) => { const it = items.find((x) => x.id === itemId); return !it ? null : it.erpPriced ? it.branchPrice : it.branchPrice ?? it.price; };
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     const g = value && value !== "new" ? value : null;
     setName(g?.name ?? ""); setMin(g?.minSelect ?? 0); setMax(g?.maxSelect ?? 1);
-    setOpts(g ? g.options.filter((o) => o.isActive).map((o) => ({ id: o.id, name: o.name, price: String(o.price), itemId: o.itemId ?? "" })) : [{ name: "", price: "0", itemId: "" }, { name: "", price: "0", itemId: "" }]);
+    setOpts(g ? g.options.filter((o) => o.isActive).map((o) => ({ id: o.id, name: o.name, price: o.factsPrice ? "0" : String(o.price), itemId: o.itemId ?? "", factsPrice: o.factsPrice })) : [blankOpt, blankOpt]);
   }
   async function save(e: React.FormEvent) {
     e.preventDefault();
-    const body = { name, minSelect: min, maxSelect: max, options: opts.filter((o) => o.name.trim()).map((o) => ({ id: o.id ?? null, name: o.name, price: Number(o.price || 0), itemId: o.itemId || null })) };
+    const body = { name, minSelect: min, maxSelect: max, options: opts.filter((o) => o.name.trim()).map((o) => ({ id: o.id ?? null, name: o.name, price: o.factsPrice ? 0 : Number(o.price || 0), itemId: o.itemId || null, factsPrice: o.factsPrice })) };
     try {
       if (value === "new") await api("/menu/modifier-groups", "POST", body); else await api(`/menu/modifier-groups/${(value as ModifierGroup).id}`, "PUT", body);
       toast.success("Option group saved."); onSaved(); onClose();
@@ -458,20 +461,25 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
           </div>
           <div className="space-y-2">
             <div className="text-[0.8rem] font-medium text-foreground/80">Options</div>
-            <p className="text-xs text-muted-foreground">For a combo, every option must be a menu item: the kitchen gets that item, and FACTS gets it with its item code at the price here (its price in the combo; it starts at the item&apos;s menu price). Otherwise the price is the upcharge.</p>
+            <p className="text-xs text-muted-foreground">For a combo, every option must be a menu item: the kitchen gets that item, and FACTS gets it with its item code at the price here (its price in the combo; it starts at the item&apos;s menu price). Otherwise the price is the upcharge. Switch on FACTS to charge the linked item&apos;s live price at the branch (from FACTS) instead of a typed one.</p>
             {opts.map((o, i) => (
-              <div key={o.id ?? `new-${i}`} className="grid grid-cols-[1fr_9rem_6rem_auto_auto] gap-2">
+              <div key={o.id ?? `new-${i}`} className="grid grid-cols-[1fr_9rem_6rem_auto_auto_auto] items-center gap-2">
                 <Input value={o.name} placeholder={`Option ${i + 1}`} onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
                 <ItemPicker items={items} value={o.itemId}
                   onChange={(it) => setOpts(opts.map((x, j) => (j === i ? { ...x, itemId: it?.id ?? "", name: x.name.trim() || !it ? x.name : it.name,
                     price: it && !Number(x.price) ? String(it.branchPrice ?? it.price) : x.price } : x)))} />
-                <Input value={o.price} inputMode="decimal" aria-label="Extra price" onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} />
+                {o.factsPrice
+                  ? <Input readOnly disabled aria-label="FACTS price" value={!o.itemId ? "Link item" : livePrice(o.itemId) === null ? "No price" : fmtIn(livePrice(o.itemId)!, 2)} />
+                  : <Input value={o.price} inputMode="decimal" aria-label="Extra price" onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} />}
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="Price from FACTS: the linked item's live price at the branch">
+                  <Switch on={o.factsPrice} label={`${o.name || `Option ${i + 1}`}: price from FACTS`} onChange={(v) => setOpts(opts.map((x, j) => (j === i ? { ...x, factsPrice: v } : x)))} />FACTS
+                </label>
                 <Button type="button" variant="ghost" size="icon" disabled={!o.id} title={o.id ? "Recipe: what this option adds (e.g. extra cheese)" : "Save the group first"}
                   aria-label="Option recipe" onClick={() => o.id && setRecipeFor({ kind: "option", id: o.id, name: o.name })}><CookingPotIcon /></Button>
                 <Button type="button" variant="ghost" size="icon" aria-label="Remove option" onClick={() => setOpts(opts.filter((_, j) => j !== i))}><Trash2Icon /></Button>
               </div>
             ))}
-            <Button type="button" variant="outline" onClick={() => setOpts([...opts, { name: "", price: "0", itemId: "" }])}><PlusIcon /> Add option</Button>
+            <Button type="button" variant="outline" onClick={() => setOpts([...opts, blankOpt])}><PlusIcon /> Add option</Button>
             <p className="text-xs text-muted-foreground">An option linked to a menu item uses that item&apos;s recipe unless it has its own.</p>
           </div>
           <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !opts.some((o) => o.name.trim())}>Save</Button></DialogFooter>
