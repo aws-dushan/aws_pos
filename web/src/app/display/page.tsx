@@ -26,7 +26,9 @@ export default function CustomerDisplayPage() {
   const [slide, setSlide] = useState(0);
   // The display is its own window: it works for the company and branch chosen in this browser (a till's PIN sign-in has its own).
   const stored = useStored("onepos.scope");
-  const companyId = (() => { try { return (JSON.parse(stored ?? "{}") as { companyId?: string }).companyId ?? null; } catch { return null; } })();
+  const tillBranch = useStored("onepos.till.branch");
+  // The branch's logo on the welcome screen (each branch has its own).
+  const branchId = tillBranch ?? (() => { try { return (JSON.parse(stored ?? "{}") as { branchId?: string }).branchId ?? null; } catch { return null; } })();
   const [logoOk, setLogoOk] = useState(true);
   useEffect(() => {
     try {
@@ -73,9 +75,9 @@ export default function CustomerDisplayPage() {
         ) : (
           <motion.section key="idle" className="flex flex-1 flex-col items-center justify-center gap-8 text-white" style={{ background: "var(--hero)" }}
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.4 }}>
-            {companyId && logoOk
-              // eslint-disable-next-line @next/next/no-img-element -- the company's own logo, same origin
-              ? <img src={withBase(`/api/companies/${companyId}/logo?v=display`)} alt="" onError={() => setLogoOk(false)} className="max-h-48 max-w-[50vw] rounded-3xl bg-white/95 object-contain p-6" />
+            {branchId && logoOk
+              // eslint-disable-next-line @next/next/no-img-element -- the branch's own logo, same origin
+              ? <img src={withBase(`/api/branches/${branchId}/logo`)} alt="" onError={() => setLogoOk(false)} className="max-h-48 max-w-[50vw] rounded-3xl bg-white/95 object-contain p-6" />
               : <Logo variant="full" tone="dark" className="h-28" />}
             <div className="font-heading text-5xl font-light tracking-tight">Welcome · أهلاً وسهلاً</div>
           </motion.section>

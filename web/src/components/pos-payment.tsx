@@ -250,7 +250,7 @@ export type Receipt = {
   receiptHeader: string | null; receiptFooter: string | null; detail: OrderDetail;
   /** Arabic (REQ UX-05): the company's and branch's Arabic names; "bilingual" receipts carry Arabic labels and item names. */
   legalNameAr: string | null; branchAr: string | null; addressAr: string | null; language: "en" | "bilingual";
-  email: string | null; website: string | null; settings: ReceiptSettings; logoAt: string | null; companyId: string; tradingName: string;
+  email: string | null; website: string | null; settings: ReceiptSettings; logoAt: string | null; companyId: string; branchId: string; tradingName: string;
   /** The digital receipt's link (REQ PAY-05) where the branch prints its QR code and the order is paid. */
   qrToken?: string | null;
   /** On the public digital receipt page: the logo comes through the receipt's link (no sign-in). */
@@ -289,7 +289,7 @@ export function receiptHead(r: Receipt, titleEn: string, titleAr: string): Recei
   const out: ReceiptLine[] = [];
   for (const k of s.order) {
     switch (k) {
-      case "logo": if (on("logo") && r.logoAt) out.push({ image: withBase(r.publicToken ? `/api/public/receipts/${r.publicToken}/logo` : `/api/companies/${r.companyId}/logo?v=${encodeURIComponent(r.logoAt)}`) }); break;
+      case "logo": if (on("logo") && r.logoAt) out.push({ image: withBase(r.publicToken ? `/api/public/receipts/${r.publicToken}/logo` : `/api/branches/${r.branchId}/logo?v=${encodeURIComponent(r.logoAt)}`) }); break;
       case "name": if (on("name") && name) out.push({ text: name.en, align: "center", bold: true, size: "name" }); break;
       case "nameAr": if (bi && on("nameAr") && name?.ar) out.push({ text: name.ar, align: "center", bold: true, size: "name" }); break;
       case "branch": if (on("branch")) out.push({ text: r.branch, align: "center", size: "small" }); break;
