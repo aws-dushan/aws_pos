@@ -16,7 +16,7 @@ public static class CompanyEndpoints
         string? OpenOrdersAtClose = null, string? ErpLocationCode = null, string? ErpLocationName = null,
         string? NameAr = null, string? AddressAr = null, string? ReceiptLanguage = null, string? ShortStock = null,
         string? PickupMode = null, int? PickupMinutes = null, int? CloseDelayMinutes = null, int? CloseDelayMaxMinutes = null, string? FactsDocPrefix = null, string? ErpWasteLocation = null,
-        string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null);
+        string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null);
 
     public sealed class CompanyRow
     {
@@ -89,6 +89,8 @@ public static class CompanyEndpoints
         public string? MarketingAccount { get; set; }
         /// <summary>Stock requests (STR50): who approves, where requests are emailed, the FACTS username the STR50 is posted as.</summary>
         public Guid? RequestApproverId { get; set; }
+        /// <summary>FACTS stock types this branch's menu shows, e.g. "FG,NF"; null = the company's.</summary>
+        public string? FactsItemTypes { get; set; }
         public string? RequestApprovalEmail { get; set; }
         public string? RequestFactsUser { get; set; }
         /// <summary>Where discount requests sent to a manager are emailed (null: no email).</summary>
@@ -336,8 +338,8 @@ public static class CompanyEndpoints
                       name_ar = @nameAr, address_ar = @addressAr, receipt_language = @receiptLang, short_stock = @shortStock,
                       pickup_mode = @pickupMode, pickup_minutes = @pickupMinutes,
                       close_delay_minutes = @delayStep, close_delay_max_minutes = @delayMax, facts_doc_prefix = @docPrefix, erp_waste_location = @wasteLoc,
-                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn where id = @id
-                    """, new { priceType = body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType),
+                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn, facts_item_types = @itemTypes where id = @id
+                    """, new { itemTypes = body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes), priceType = body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType),
                                priceInclVat = body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat, returnsOn = body.ReturnsEnabled ?? old.ReturnsEnabled,
                                wasteLoc = body.ErpWasteLocation is null ? old.ErpWasteLocation : Opt(body.ErpWasteLocation)?.ToUpperInvariant(),
                                docPrefix = !string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix)
@@ -373,15 +375,19 @@ public static class CompanyEndpoints
                     new("FACTS price type", old.FactsPriceType, body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType)),
                     new("FACTS prices include VAT", old.FactsPricesIncludeVat, body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat),
                     new("Returns", old.ReturnsEnabled, body.ReturnsEnabled ?? old.ReturnsEnabled),
+                    new("FACTS item types", old.FactsItemTypes, body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes)),
                 ]);
                 var prices = (body.FactsPriceType is not null && Opt(body.FactsPriceType) != old.FactsPriceType)
                              || (body.FactsPricesIncludeVat is { } v && v != old.FactsPricesIncludeVat);
-                return (Location: body.ErpLocationCode is not null && Opt(body.ErpLocationCode) is not null && Opt(body.ErpLocationCode) != old.ErpLocationCode, Prices: prices);
+                return (Location: body.ErpLocationCode is not null && Opt(body.ErpLocationCode) is not null && Opt(body.ErpLocationCode) != old.ErpLocationCode, Prices: prices,
+                        Items: body.FactsItemTypes is not null && ItemTypes(body.FactsItemTypes) != old.FactsItemTypes);
             });
             // A new FACTS location: its card types and payment methods are read from FACTS straight away (and every hour after).
             if (locationChanged.Location) ReadPaymentModesSoon(facts, logs, companyId);
             // A new price type (or VAT treatment): the outlet's prices are read straight away (and every 5 minutes after).
             if (locationChanged.Prices) ReadPricesSoon(facts, logs, companyId);
+            // Other FACTS item types for the branch: any type new to the company comes in from FACTS now (switched off), then its prices.
+            if (locationChanged.Items) ReadItemsSoon(facts, logs, companyId);
             await live.ToBranch(id, "branch.changed", new { id });
             await live.ToCompany(companyId, "branches.changed");
             return Results.Ok(new { id });
@@ -400,6 +406,21 @@ public static class CompanyEndpoints
             try { await facts.SyncPricesAsync(companyId, null); }
             catch (Exception e) { logs.CreateLogger("OnePos.Erp").LogWarning("Reading FACTS prices for {Company} failed: {Message}", companyId, e.Message); }
         });
+
+    private static void ReadItemsSoon(Erp.FactsSync facts, ILoggerFactory logs, Guid companyId) =>
+        _ = Task.Run(async () =>
+        {
+            try { await facts.SyncItemsAsync(companyId, null); await facts.SyncPricesAsync(companyId, null); }
+            catch (Exception e) { logs.CreateLogger("OnePos.Erp").LogWarning("Reading FACTS items for {Company} failed: {Message}", companyId, e.Message); }
+        });
+
+    /// <summary>FACTS stock types typed as "FG, NF": "FG,NF"; empty: null (the company's).</summary>
+    private static string? ItemTypes(string s)
+    {
+        var types = s.ToUpperInvariant().Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries).Distinct().ToArray();
+        if (types.Any(t => !System.Text.RegularExpressions.Regex.IsMatch(t, "^[A-Z0-9_]{1,20}$"))) throw new DomainException("Item types are FACTS stock type codes, e.g. FG, NF.");
+        return types.Length == 0 ? null : string.Join(",", types);
+    }
 
     private static void ReadPaymentModesSoon(Erp.FactsSync facts, ILoggerFactory logs, Guid companyId) =>
         _ = Task.Run(async () =>
