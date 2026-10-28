@@ -146,8 +146,7 @@ public static class Orders
                    bi.erp_stock - coalesce((select sum(l.qty) from order_line l join pos_order po on po.id = l.order_id
                                             where l.item_id = i.id and po.branch_id = b.id and not l.is_void
                                               and po.status in ('paid','refunded') and po.closed_at > bi.erp_stock_at), 0)
-                              - coalesce((select sum(w.qty) from wastage w where w.item_id = i.id and w.branch_id = b.id and w.voided_at is null
-                                            and w.erp_status <> 'none' and (w.erp_status <> 'posted' or w.erp_matched_at > bi.erp_stock_at)), 0)
+                              - wastage_held(b.id, i.id, bi.erp_stock, bi.erp_stock_at, bi.erp_in_since_waste)
                               - coalesce((select sum(r.qty) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = b.id and r.approval in ('waiting','approved')
                                             and (r.erp_status <> 'posted' or r.erp_posted_at > bi.erp_stock_at)), 0),
                    bi.erp_stock_at,

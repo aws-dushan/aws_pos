@@ -45,8 +45,7 @@ public static class StockReport
                            -- The same stock left as the register shows (Menu.LoadAsync).
                            case when bi.erp_stock is null or mto.yes then null else
                              bi.erp_stock - coalesce((select sum(s.qty) from sold s where s.item_id = i.id and s.closed_at > bi.erp_stock_at), 0)
-                                          - coalesce((select sum(w.qty) from wastage w where w.item_id = i.id and w.branch_id = @branchId and w.voided_at is null
-                                                        and w.erp_status <> 'none' and (w.erp_status <> 'posted' or w.erp_matched_at > bi.erp_stock_at)), 0)
+                                          - wastage_held(@branchId, i.id, bi.erp_stock, bi.erp_stock_at, bi.erp_in_since_waste)
                                           - coalesce((select sum(r.qty) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = @branchId and r.approval in ('waiting','approved')
                                                         and (r.erp_status <> 'posted' or r.erp_posted_at > bi.erp_stock_at)), 0) end as stock,
                            bi.erp_stock_at as stock_at,
