@@ -16,7 +16,8 @@ public static class CompanyEndpoints
         string? OpenOrdersAtClose = null, string? ErpLocationCode = null, string? ErpLocationName = null,
         string? NameAr = null, string? AddressAr = null, string? ReceiptLanguage = null, string? ShortStock = null,
         string? PickupMode = null, int? PickupMinutes = null, int? CloseDelayMinutes = null, int? CloseDelayMaxMinutes = null, string? FactsDocPrefix = null, string? ErpWasteLocation = null,
-        string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null);
+        string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null, string? FactsItemMaster = null,
+        string? FactsDivision = null);
 
     public sealed class CompanyRow
     {
@@ -89,8 +90,10 @@ public static class CompanyEndpoints
         public string? MarketingAccount { get; set; }
         /// <summary>Stock requests (STR50): who approves, where requests are emailed, the FACTS username the STR50 is posted as.</summary>
         public Guid? RequestApproverId { get; set; }
-        /// <summary>FACTS stock types this branch's menu shows, e.g. "FG,NF"; null = the company's.</summary>
+        /// <summary>What this branch's menu takes from FACTS: stock types ("FG,NF"; null = FG), item master (e.g. SMBK) and division (null = any).</summary>
         public string? FactsItemTypes { get; set; }
+        public string? FactsItemMaster { get; set; }
+        public string? FactsDivision { get; set; }
         public string? RequestApprovalEmail { get; set; }
         public string? RequestFactsUser { get; set; }
         /// <summary>Where discount requests sent to a manager are emailed (null: no email).</summary>
@@ -203,8 +206,10 @@ public static class CompanyEndpoints
                       name_ar = @nameAr, address_ar = @addressAr, receipt_language = @receiptLang, short_stock = @shortStock,
                       pickup_mode = @pickupMode, pickup_minutes = @pickupMinutes,
                       close_delay_minutes = @delayStep, close_delay_max_minutes = @delayMax, facts_doc_prefix = @docPrefix, erp_waste_location = @wasteLoc,
-                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn where id = @id
-                    """, new { priceType = Opt(body.FactsPriceType), priceInclVat = body.FactsPricesIncludeVat ?? true, returnsOn = body.ReturnsEnabled ?? false, wasteLoc = Opt(body.ErpWasteLocation)?.ToUpperInvariant(), docPrefix = string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await AutoPrefixAsync(c, tx, companyId, id, b.Code) : await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix), delayStep = Math.Clamp(body.CloseDelayMinutes ?? 15, 5, 60), delayMax = Math.Clamp(body.CloseDelayMaxMinutes ?? 120, 0, 480), pickupMode = Pickup(body.PickupMode, "off"), pickupMinutes = Minutes(body.PickupMinutes, 10), nameAr = Opt(body.NameAr), addressAr = Opt(body.AddressAr), receiptLang = Lang(body.ReceiptLanguage, "bilingual"), shortStock = Short(body.ShortStock, "allow"), id, locCode = Opt(body.ErpLocationCode), locName = Opt(body.ErpLocationCode) is null ? null : Opt(body.ErpLocationName), days = Math.Clamp(body.ReturnDays ?? 0, 0, 365), kitchen = body.KitchenEnabled ?? true, autoOpen = Time(body.AutoOpenTime, d.AutoOpenTime),
+                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn,
+                      facts_item_types = @itemTypes, facts_item_master = @itemMaster, facts_division = @division where id = @id
+                    """, new { itemTypes = ItemTypes(body.FactsItemTypes ?? "") ?? "FG", itemMaster = Opt(body.FactsItemMaster)?.ToUpperInvariant(), division = Opt(body.FactsDivision),
+                               priceType = Opt(body.FactsPriceType), priceInclVat = body.FactsPricesIncludeVat ?? true, returnsOn = body.ReturnsEnabled ?? false, wasteLoc = Opt(body.ErpWasteLocation)?.ToUpperInvariant(), docPrefix = string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await AutoPrefixAsync(c, tx, companyId, id, b.Code) : await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix), delayStep = Math.Clamp(body.CloseDelayMinutes ?? 15, 5, 60), delayMax = Math.Clamp(body.CloseDelayMaxMinutes ?? 120, 0, 480), pickupMode = Pickup(body.PickupMode, "off"), pickupMinutes = Minutes(body.PickupMinutes, 10), nameAr = Opt(body.NameAr), addressAr = Opt(body.AddressAr), receiptLang = Lang(body.ReceiptLanguage, "bilingual"), shortStock = Short(body.ShortStock, "allow"), id, locCode = Opt(body.ErpLocationCode), locName = Opt(body.ErpLocationCode) is null ? null : Opt(body.ErpLocationName), days = Math.Clamp(body.ReturnDays ?? 0, 0, 365), kitchen = body.KitchenEnabled ?? true, autoOpen = Time(body.AutoOpenTime, d.AutoOpenTime),
                                autoClose = Time(body.AutoCloseTime, d.AutoCloseTime), tolerance = NonNegative(body.VarianceTolerance, d.VarianceTolerance, "variance tolerance"),
                                @float = NonNegative(body.DefaultFloat, d.DefaultFloat, "float"), atClose = AtClose(body.OpenOrdersAtClose, d.OpenOrdersAtClose) }, tx);
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "created", $"Branch {b.Code} created",
@@ -338,8 +343,11 @@ public static class CompanyEndpoints
                       name_ar = @nameAr, address_ar = @addressAr, receipt_language = @receiptLang, short_stock = @shortStock,
                       pickup_mode = @pickupMode, pickup_minutes = @pickupMinutes,
                       close_delay_minutes = @delayStep, close_delay_max_minutes = @delayMax, facts_doc_prefix = @docPrefix, erp_waste_location = @wasteLoc,
-                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn, facts_item_types = @itemTypes where id = @id
-                    """, new { itemTypes = body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes), priceType = body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType),
+                      facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn, facts_item_types = @itemTypes,
+                      facts_item_master = @itemMaster, facts_division = @division where id = @id
+                    """, new { itemTypes = body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes),
+                               itemMaster = body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant(),
+                               division = body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision), priceType = body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType),
                                priceInclVat = body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat, returnsOn = body.ReturnsEnabled ?? old.ReturnsEnabled,
                                wasteLoc = body.ErpWasteLocation is null ? old.ErpWasteLocation : Opt(body.ErpWasteLocation)?.ToUpperInvariant(),
                                docPrefix = !string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix)
@@ -376,11 +384,15 @@ public static class CompanyEndpoints
                     new("FACTS prices include VAT", old.FactsPricesIncludeVat, body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat),
                     new("Returns", old.ReturnsEnabled, body.ReturnsEnabled ?? old.ReturnsEnabled),
                     new("FACTS item types", old.FactsItemTypes, body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes)),
+                    new("FACTS item master", old.FactsItemMaster, body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant()),
+                    new("FACTS division", old.FactsDivision, body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision)),
                 ]);
                 var prices = (body.FactsPriceType is not null && Opt(body.FactsPriceType) != old.FactsPriceType)
                              || (body.FactsPricesIncludeVat is { } v && v != old.FactsPricesIncludeVat);
                 return (Location: body.ErpLocationCode is not null && Opt(body.ErpLocationCode) is not null && Opt(body.ErpLocationCode) != old.ErpLocationCode, Prices: prices,
-                        Items: body.FactsItemTypes is not null && ItemTypes(body.FactsItemTypes) != old.FactsItemTypes);
+                        Items: (body.FactsItemTypes is not null && ItemTypes(body.FactsItemTypes) != old.FactsItemTypes)
+                               || (body.FactsItemMaster is not null && Opt(body.FactsItemMaster)?.ToUpperInvariant() != old.FactsItemMaster)
+                               || (body.FactsDivision is not null && Opt(body.FactsDivision) != old.FactsDivision));
             });
             // A new FACTS location: its card types and payment methods are read from FACTS straight away (and every hour after).
             if (locationChanged.Location) ReadPaymentModesSoon(facts, logs, companyId);

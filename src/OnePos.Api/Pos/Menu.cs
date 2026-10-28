@@ -331,8 +331,8 @@ public static class Menu
                                where b.item_code = i.erp_item_code and b.item_type = i.erp_item_type
                                  and (b.ended_from is null or b.ended_from > coalesce(@today, current_date)) limit 1) mto on true
             where (not @activeOnly or (i.is_active and cat.is_active and coalesce(bi.is_sold, i.erp_item_code is null)))
-              -- A branch shows only FACTS items of its own types (FG, NF…); its own items (no FACTS code) always.
-              and (br.id is null or i.erp_item_code is null or i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, (select co.facts_item_type from company co where co.id = br.company_id)), ',')))
+              -- A branch shows only FACTS items matching its own settings (item types, item master, division); its own items (no FACTS code) always.
+              and (br.id is null or i.erp_item_code is null or ((i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, 'FG'), ','))) and (br.facts_item_master is null or i.erp_item_type is null or i.erp_item_type = br.facts_item_master) and (br.facts_division is null or i.erp_division is null or i.erp_division = br.facts_division)))
             order by i.sort, i.name
             """, new { branchId, today, activeOnly }, tx)).ToList();
         var groups = (await c.QueryAsync<Group>("select * from modifier_group order by name", transaction: tx)).ToList();

@@ -347,7 +347,7 @@ public static class Stock
             var docType = body.DocType.Trim();
             var docNo = body.DocNo.Trim();
             var (s, master) = await db.Company(scope.CompanyId, async (c, tx) => (await WastageApproval.SetupAsync(c, tx, scope.Branch),
-                await c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @co", new { co = scope.CompanyId }, tx)));
+                await c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx)));
             if (s.Loc is null) throw new DomainException("This branch has no ERP stock location.");
             StockReturns.Delivery delivery;
             await using (var f = await facts.OpenAsync(scope.CompanyId))

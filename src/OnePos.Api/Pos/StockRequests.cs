@@ -231,7 +231,7 @@ public static class StockRequests
             if (!scope.Can("kitchen.view")) scope.Require("pos.sell");
             var term = (q ?? "").Trim();
             if (term.Length < 2) return Results.Ok(Array.Empty<object>());
-            var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @id", new { id = scope.CompanyId }, tx));
+            var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx));
             await using var f = await facts.OpenAsync(scope.CompanyId);
             var rows = await f.QueryAsync<(string Code, string Name, string Type, string Unit)>("""
                 select top 30 ltrim(rtrim(m.STKMST_DOCNO)), m.STKMST_DESC, ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO))
@@ -258,7 +258,7 @@ public static class StockRequests
             var (setup, store, master, today) = await db.Company(scope.CompanyId, async (c, tx) => (
                 await SetupAsync(c, tx, scope.Branch),
                 (await c.QueryAsync<(string Code, string Name)>("select code, name from request_store where code = @code and is_active", new { code = (body.StoreCode ?? "").Trim() }, tx)).FirstOrDefault(),
-                await c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @co", new { co = scope.CompanyId }, tx),
+                await c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx),
                 await Days.DateAsync(c, tx, scope.Branch)));
             if (!setup.On) throw new DomainException("Requests need an approver: set this branch's request approver and their FACTS username (Companies & branches).");
             if (store.Code is null) throw new DomainException("Choose the store to ask.");

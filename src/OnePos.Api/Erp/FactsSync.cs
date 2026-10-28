@@ -20,7 +20,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     public sealed record EnableBody(int? Days);
     public sealed record SettingsBody(string? Division, string? ItemType, string? ItemMaster = null);
 
-    private sealed record FactsItem(string Code, string Name, string? NameAr, string? Unit, string? Group, string? GroupName, bool Blocked, int Decimals, string? DocType, string? StockType);
+    private sealed record FactsItem(string Code, string Name, string? NameAr, string? Unit, string? Group, string? GroupName, bool Blocked, int Decimals, string? DocType, string? StockType, string? Division);
 
     private static readonly string[] Tones = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -60,32 +60,34 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
 
     public Task<object> SyncItemsAsync(Guid companyId, Guid? userId) => RunAsync(companyId, null, "items", userId, async () =>
     {
-        // Every stock type a branch uses (its own, else the company's) comes in once: one catalogue, each branch shows its own types.
+        // What any branch takes from FACTS comes in once (one catalogue); each branch then shows only what matches its own settings.
+        // Types: all of them; item masters and divisions: all of them, or any when a branch leaves it open.
         var settings = await db.Company(companyId, (c, tx) => c.QuerySingleAsync<(string? Division, string ItemType, string? Master)>("""
-            select facts_division,
-                   (select string_agg(distinct t, ',') from (select unnest(string_to_array(co.facts_item_type, ',')) as t
-                      union select unnest(string_to_array(b.facts_item_types, ',')) from branch b where b.company_id = co.id and b.facts_item_types is not null) x),
-                   facts_item_master
-            from company co where id = @companyId
+            select case when bool_or(facts_division is null) then null else string_agg(distinct facts_division, ',') end,
+                   coalesce((select string_agg(distinct t, ',') from branch x, unnest(string_to_array(coalesce(x.facts_item_types, 'FG'), ',')) t where x.company_id = @companyId), 'FG'),
+                   case when bool_or(facts_item_master is null) then null else string_agg(distinct facts_item_master, ',') end
+            from branch where company_id = @companyId
             """, new { companyId }, tx));
         List<FactsItem> facts;
         await using (var f = await OpenAsync(companyId))
         {
             facts = (await f.QueryAsync<FactsItem>("""
-                select Code, Name, NameAr, Unit, Grp as [Group], GroupName, Blocked, Decimals, DocType, StockType from (
+                select Code, Name, NameAr, Unit, Grp as [Group], GroupName, Blocked, Decimals, DocType, StockType, Division from (
                   select ltrim(rtrim(m.STKMST_DOCNO)) as Code, m.STKMST_DESC as Name, ltrim(rtrim(m.STKMST_DOCTYPE)) as DocType, ltrim(rtrim(m.STKMST_STTYPE)) as StockType,
+                         nullif(ltrim(rtrim(m.STKMST_GRP11)), '') as Division,
                          nullif(ltrim(rtrim(coalesce(nullif(ltrim(rtrim(m.STKMST_AR_DESC)), ''), m.STKMST_ARABIC_DESC))), '') as NameAr,
                          ltrim(rtrim(m.STKMST_UNIT_DOCNO)) as Unit, ltrim(rtrim(m.STKMST_GRP2)) as Grp, g.STK_GRP2_DESC as GroupName,
                          cast(case when isnull(m.STKMST_SALE_BLOCKED, 0) = 1 then 1 else 0 end as bit) as Blocked,
                          cast(case when isnull(u.UNIT_DECIMAL, 0) > 3 then 3 when isnull(u.UNIT_DECIMAL, 0) < 0 then 0 else isnull(u.UNIT_DECIMAL, 0) end as int) as Decimals,
                          row_number() over (partition by m.STKMST_DOCNO order by m.STKMST_DOCTYPE) as rn
                   from STOCK_MASTER m left join STK_GRP2 g on g.STK_GRP2_DOCNO = m.STKMST_GRP2 left join UNIT_MASTER u on u.UNIT_DOCNO = m.STKMST_UNIT_DOCNO
-                  where ltrim(rtrim(m.STKMST_STTYPE)) in (select value from string_split(@type, ',')) and m.STKMST_ACTIVE_STATUS = 0 and (@div is null or m.STKMST_GRP11 = @div)
-                    and (@master is null or m.STKMST_DOCTYPE = @master)
+                  where ltrim(rtrim(m.STKMST_STTYPE)) in (select value from string_split(@type, ',')) and m.STKMST_ACTIVE_STATUS = 0
+                    and (@div is null or ltrim(rtrim(m.STKMST_GRP11)) in (select value from string_split(@div, ',')))
+                    and (@master is null or ltrim(rtrim(m.STKMST_DOCTYPE)) in (select value from string_split(@master, ',')))
                 ) x where rn = 1
                 """, new { type = settings.ItemType, div = settings.Division, master = settings.Master }, commandTimeout: 120)).ToList();
         }
-        if (facts.Count == 0) throw new DomainException($"FACTS has no active items of type {settings.ItemType}{(settings.Master is null ? "" : $" in item master {settings.Master}")}{(settings.Division is null ? "" : $" in division {settings.Division}")}.");
+        if (facts.Count == 0) throw new DomainException($"FACTS has no active items of type {settings.ItemType}{(settings.Master is null ? "" : $" in item master {settings.Master}")}{(settings.Division is null ? "" : $" in division {settings.Division}")} (the branches' settings, Companies & branches).");
 
         var summary = await db.Company(companyId, async (c, tx) =>
         {
@@ -157,9 +159,10 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             await c.ExecuteAsync("update menu_item set erp_synced_at = now() where erp_item_code = any(@codes)", new { codes = known.Select(x => x.Code).ToArray() }, tx);
             // FACTS' item document type (e.g. SMBK): posted sales name the item by type and code. Its stock type (FG, NF…): which branches show it.
             await c.ExecuteAsync("""
-                update menu_item i set erp_item_type = t.dt, erp_stock_type = t.st from unnest(@codes, @types, @stocks) as t(code, dt, st)
-                where i.erp_item_code = t.code and (i.erp_item_type is distinct from t.dt or i.erp_stock_type is distinct from t.st)
-                """, new { codes = facts.Select(x => x.Code).ToArray(), types = facts.Select(x => x.DocType).ToArray(), stocks = facts.Select(x => x.StockType).ToArray() }, tx);
+                update menu_item i set erp_item_type = t.dt, erp_stock_type = t.st, erp_division = t.dv from unnest(@codes, @types, @stocks, @divs) as t(code, dt, st, dv)
+                where i.erp_item_code = t.code and (i.erp_item_type is distinct from t.dt or i.erp_stock_type is distinct from t.st or i.erp_division is distinct from t.dv)
+                """, new { codes = facts.Select(x => x.Code).ToArray(), types = facts.Select(x => x.DocType).ToArray(), stocks = facts.Select(x => x.StockType).ToArray(),
+                           divs = facts.Select(x => x.Division).ToArray() }, tx);
 
             // Gone from FACTS (inactive, another type or division): switched off, kept for history.
             var codes = facts.Select(x => x.Code).ToHashSet();
@@ -395,10 +398,10 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         }
         var summary = await db.Company(companyId, async (c, tx) =>
         {
-            // Only items of this branch's FACTS types (an item sold there under another type stays off).
+            // Only items matching this branch's FACTS settings (types, item master, division).
             var ids = (await c.QueryAsync<Guid>($"""
                 select i.id from menu_item i join branch br on br.id = @branchId
-                where i.erp_item_code = any(@sold) and i.is_active and (i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, (select co.facts_item_type from company co where co.id = br.company_id)), ',')))
+                where i.erp_item_code = any(@sold) and i.is_active and (i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, 'FG'), ','))) and (br.facts_item_master is null or i.erp_item_type is null or i.erp_item_type = br.facts_item_master) and (br.facts_division is null or i.erp_division is null or i.erp_division = br.facts_division)
                 """, new { sold = sold.ToArray(), branchId }, tx)).ToArray();
             await c.ExecuteAsync("""
                 insert into branch_item (company_id, branch_id, item_id, is_sold) select @companyId, @branchId, id, true from unnest(@ids) as t(id)
@@ -441,8 +444,9 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var co = await c.QuerySingleAsync<(string Connector, string? Division, string ItemType, bool Configured, string? ItemMaster)>("""
-                    select erp_connector, facts_division, facts_item_type, exists (select 1 from company_erp e where e.company_id = company.id), facts_item_master from company where id = @id
-                    """, new { id = scope.CompanyId }, tx);
+                    select co.erp_connector, br.facts_division, coalesce(br.facts_item_types, 'FG'), exists (select 1 from company_erp e where e.company_id = co.id), br.facts_item_master
+                    from company co left join branch br on br.id = @b where co.id = @id
+                    """, new { id = scope.CompanyId, b = scope.BranchId }, tx);
                 var last = (await c.QueryAsync<(string Kind, DateTime StartedAt, DateTime? FinishedAt, bool? Ok, string? Summary, string? Message)>("""
                     select distinct on (kind) kind, started_at, finished_at, ok, summary::text, message from erp_sync order by kind, started_at desc
                     """, transaction: tx)).ToDictionary(x => x.Kind, x => new { x.StartedAt, x.FinishedAt, x.Ok, summary = x.Summary is null ? (JsonElement?)null : JsonDocument.Parse(x.Summary).RootElement, x.Message });
