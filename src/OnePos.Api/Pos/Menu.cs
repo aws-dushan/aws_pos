@@ -15,7 +15,7 @@ public static class Menu
     public sealed record ItemBody(Guid CategoryId, string Name, string? NameAr, string? Description, decimal Price, string? Station, string? ErpItemCode,
         int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo);
     /// <summary>An option; with ItemId it is a menu item offered inside a combo ("Shish tawook" in "Choose a main").</summary>
-    public sealed record OptionBody(Guid? Id, string Name, decimal Price, bool? IsActive, Guid? ItemId);
+    public sealed record OptionBody(Guid? Id, string Name, decimal Price, bool? IsActive, Guid? ItemId, bool? FactsPrice);
     public sealed record GroupBody(string Name, int MinSelect, int MaxSelect, OptionBody[]? Options);
     public sealed record BranchItemBody(bool? IsSold, decimal? Price, bool? ClearPrice, bool? SoldOutToday);
 
@@ -88,6 +88,10 @@ public static class Menu
         public int Sort { get; set; }
         public bool IsActive { get; set; }
         public Guid? ItemId { get; set; }
+        /// <summary>Charged at its item's live price here (FACTS), not the price typed on it.</summary>
+        public bool FactsPrice { get; set; }
+        /// <summary>FACTS-priced and its item has no price at this branch: it can't be chosen.</summary>
+        public bool NoPrice { get; set; }
     }
 
     private static readonly string[] Tones = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
@@ -337,6 +341,22 @@ public static class Menu
             """, new { branchId, today, activeOnly }, tx)).ToList();
         var groups = (await c.QueryAsync<Group>("select * from modifier_group order by name", transaction: tx)).ToList();
         var options = (await c.QueryAsync<Option>("select * from modifier_option where (not @activeOnly or is_active) order by sort, name", new { activeOnly }, tx)).ToList();
+        // A FACTS-priced option costs what its item costs at this branch now (no price there = can't be chosen).
+        if (branchId is { } b1 && options.Any(o => o.FactsPrice))
+        {
+            var live = (await c.QueryAsync<(Guid Id, decimal? Price)>("""
+                select o.id, case when bi.erp_priced then bi.price else coalesce(bi.price, i.price) end
+                from modifier_option o join menu_item i on i.id = o.item_id
+                left join branch_item bi on bi.item_id = i.id and bi.branch_id = @b1
+                where o.facts_price
+                """, new { b1 }, tx)).ToDictionary(x => x.Id, x => x.Price);
+            foreach (var o in options.Where(o => o.FactsPrice))
+            {
+                var p = live.GetValueOrDefault(o.Id);
+                o.Price = p ?? 0;
+                o.NoPrice = p is null;
+            }
+        }
         foreach (var g in groups) g.Options = options.Where(o => o.GroupId == g.Id).ToList();
         var shortStock = branchId is { } b2 ? await c.ExecuteScalarAsync<string>("select short_stock from branch where id = @b2", new { b2 }, tx) : "allow";
         // Delivery platforms with FACTS prices: what each item costs on them here (the register shows these on a platform's bill).
@@ -426,10 +446,13 @@ public static class Menu
         {
             if (o.ItemId is { } itemId && !await c.ExecuteScalarAsync<bool>("select exists (select 1 from menu_item where id = @itemId and not is_combo)", new { itemId }, tx))
                 throw new DomainException("A combo choice must be a menu item that isn't itself a combo.");
-            var args = new { companyId, groupId, id = o.Id, name = o.Name.Trim(), price = Money.Round(o.Price), sort = sort++, active = o.IsActive ?? true, itemId = o.ItemId };
+            // Priced from FACTS: the option is an item, charged at that item's price (none is typed on it).
+            var facts = o.FactsPrice == true;
+            if (facts && o.ItemId is null) throw new DomainException($"{o.Name.Trim()} takes its price from FACTS: link it to a menu item.");
+            var args = new { companyId, groupId, id = o.Id, name = o.Name.Trim(), price = facts ? 0 : Money.Round(o.Price), sort = sort++, active = o.IsActive ?? true, itemId = o.ItemId, facts };
             if (o.Id is null)
-                await c.ExecuteAsync("insert into modifier_option (company_id, group_id, name, price, sort, is_active, item_id) values (@companyId, @groupId, @name, @price, @sort, @active, @itemId)", args, tx);
-            else if (await c.ExecuteAsync("update modifier_option set name = @name, price = @price, sort = @sort, is_active = @active, item_id = @itemId where id = @id and group_id = @groupId", args, tx) == 0)
+                await c.ExecuteAsync("insert into modifier_option (company_id, group_id, name, price, sort, is_active, item_id, facts_price) values (@companyId, @groupId, @name, @price, @sort, @active, @itemId, @facts)", args, tx);
+            else if (await c.ExecuteAsync("update modifier_option set name = @name, price = @price, sort = @sort, is_active = @active, item_id = @itemId, facts_price = @facts where id = @id and group_id = @groupId", args, tx) == 0)
                 throw new DomainException("An option doesn't belong to this group.");
         }
     }

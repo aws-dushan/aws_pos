@@ -700,7 +700,7 @@ function LineRow({ line: l, closed, canVoid, decimals, unit, selected, onSelect,
 function ModifierDialog({ item, groups, currency, onClose, onAdd }: {
   item: MenuItem; groups: ModifierGroup[]; currency: string; onClose: () => void; onAdd: (optionIds: string[], qty: number, note: string) => void;
 }) {
-  const [chosen, setChosen] = useState<string[]>(() => groups.filter((g) => g.minSelect === 1 && g.maxSelect === 1 && g.options.length).map((g) => g.options[0].id));
+  const [chosen, setChosen] = useState<string[]>(() => groups.map((g) => g.minSelect === 1 && g.maxSelect === 1 ? g.options.find((o) => !o.noPrice)?.id : undefined).filter((x): x is string => !!x));
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState("");
   const toggle = (g: ModifierGroup, id: string) => setChosen((c) => {
@@ -732,11 +732,11 @@ function ModifierDialog({ item, groups, currency, onClose, onAdd }: {
                 {g.options.map((o) => {
                   const on = chosen.includes(o.id);
                   return (
-                    <button key={o.id} type="button" onClick={() => toggle(g, o.id)} aria-pressed={on}
-                      className={cn("flex min-h-14 flex-col items-start justify-center rounded-xl border px-3 py-2 text-left transition-[background-color,transform] active:scale-[0.97]",
+                    <button key={o.id} type="button" onClick={() => toggle(g, o.id)} aria-pressed={on} disabled={o.noPrice}
+                      className={cn("flex min-h-14 flex-col items-start justify-center rounded-xl border px-3 py-2 text-left transition-[background-color,transform] active:scale-[0.97] disabled:opacity-50",
                         on ? "border-primary bg-primary/10 ring-1 ring-primary" : "bg-card hover:bg-muted")}>
                       <span className="text-sm font-medium">{o.name}</span>
-                      <span className="text-xs text-muted-foreground tabular-nums">{o.price ? `+${fmtIn(o.price, 2)}` : "Included"}</span>
+                      <span className={cn("text-xs tabular-nums", o.noPrice ? "font-medium text-warning" : "text-muted-foreground")}>{o.noPrice ? "No FACTS price" : o.price ? `+${fmtIn(o.price, 2)}` : "Included"}</span>
                     </button>
                   );
                 })}
