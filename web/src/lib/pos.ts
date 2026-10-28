@@ -20,6 +20,12 @@ export type MenuItem = {
   erpPriced: boolean;
   /** How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); groups not listed use their own. */
   groupCounts?: { groupId: string; min: number | null; max: number | null }[];
+  /** Its FACTS item has a BOM valid today (made to order). */
+  madeToOrder?: boolean;
+  /** Contents chosen at the till from its BOM (a box of chocolates), up to contentsMax in all (null = any). */
+  bomContents?: boolean; contentsMax?: number | null;
+  /** The BOM materials that can go in, each in the unit it's counted in (PCS where FACTS has a piece unit for a KG material). */
+  contents?: BoxContent[];
   /** FACTS stock at its last read less what this branch sold since; null when the item has no FACTS stock. */
   stockLeft: number | null;
 };
@@ -36,6 +42,7 @@ export const byWeight = (i: MenuItem) => i.qtyDecimals > 0 && WEIGHT_UNITS.inclu
 
 /** No price yet (a FACTS item before a manager sets one): it can't be sold. */
 export const noPrice = (i: MenuItem) => (i.needsPrice || i.erpPriced) && i.branchPrice === null;
+export type BoxContent = { type: string; code: string; name: string; unit: string; bomUnit: string; perUnit: number | null };
 export type ModifierOption = { id: string; groupId: string; name: string; price: number; sort: number; isActive: boolean; itemId: string | null;
   /** Charged at its item's live price here (FACTS), not a typed price; noPrice = its item has none here, so it can't be chosen. */
   factsPrice: boolean; noPrice: boolean };

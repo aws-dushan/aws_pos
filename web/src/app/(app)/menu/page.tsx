@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { fmtIn } from "@/lib/num";
 import { imageUrl, initials, noPrice, type Menu, type MenuCategory, type MenuItem, type ModifierGroup, type Tone } from "@/lib/pos";
 import { useSession } from "@/components/session";
+import { confirmDialog } from "@/components/confirm";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ErrorNote, Field, LoadingRows, PageHeader, Pill, SearchField, Segmented, Switch, TONE } from "@/components/kit";
 import { FactsPanel } from "@/components/facts-panel";
@@ -235,7 +236,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
   value: MenuItem | "new" | "combo" | null; menu: Menu; companyId?: string; fromFacts?: boolean; defaultCategory: string | null; currency: string; branchName?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | "remove" | null>(null);
-  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false, counts: {} as Record<string, string> };
+  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false, counts: {} as Record<string, string>, bomContents: false, contentsMax: "" };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
@@ -243,7 +244,8 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
     setPhoto(null);
     setF(value && value !== "new" && value !== "combo" ? { categoryId: value.categoryId, name: value.name, nameAr: value.nameAr ?? "", description: value.description ?? "", price: String(value.price), station: value.station,
       erpItemCode: value.erpItemCode ?? "", isActive: value.isActive, groupIds: value.groupIds, branchPrice: value.branchPrice === null ? "" : String(value.branchPrice), isCombo: value.isCombo,
-      counts: Object.fromEntries((value.groupCounts ?? []).filter((x) => x.max != null).map((x) => [x.groupId, String(x.max)])) }
+      counts: Object.fromEntries((value.groupCounts ?? []).filter((x) => x.max != null).map((x) => [x.groupId, String(x.max)])),
+      bomContents: !!value.bomContents, contentsMax: value.contentsMax == null ? "" : String(value.contentsMax) }
       : value === "combo" ? { ...blank, isCombo: true, station: "none" } : blank);
   }
   const existing = value && value !== "new" && value !== "combo" ? value : null;
@@ -256,7 +258,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
     try {
       // "How many" on an attached group: exactly that many (blank = the group's own rule).
       const groupCounts = f.groupIds.map((groupId) => { const n = Number(f.counts[groupId]); return { groupId, min: n > 0 ? n : null, max: n > 0 ? n : null }; });
-      const body = { ...f, price: Number(f.price), groupCounts };
+      const body = { ...f, price: Number(f.price), groupCounts, contentsMax: Number(f.contentsMax) > 0 ? Number(f.contentsMax) : null };
       const r = existing ? await api<{ id: string }>(`/menu/items/${existing.id}`, "PUT", body) : await api<{ id: string }>("/menu/items", "POST", body);
       const bp = f.branchPrice.trim();
       if (existing && !existing.erpPriced && bp !== (existing.branchPrice === null ? "" : String(existing.branchPrice)))
@@ -330,6 +332,25 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
                 })}
               </div>
             </Field>
+          )}
+          {existing && !f.isCombo && existing.erpItemCode && (existing.madeToOrder || existing.bomContents) && (
+            <div data-module="inv" className="grid gap-3 rounded-xl border px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm"><span className="font-medium">Contents chosen at the till</span> <span className="text-muted-foreground">· from its FACTS BOM, e.g. the chocolates in a box; the bill&apos;s repacking takes out what was chosen</span></span>
+                <Switch on={f.bomContents} onChange={(v) => setF({ ...f, bomContents: v })} label="Contents chosen at the till" />
+              </div>
+              {f.bomContents && (
+                <label className="flex items-center gap-3 text-sm">
+                  <span className="flex-1">Holds at most <span className="text-muted-foreground">· pieces in all (KG chocolates count in pieces where FACTS has a PCS unit). Blank = any.</span></span>
+                  <Input className="h-10 w-24" inputMode="decimal" placeholder="Any" value={f.contentsMax} onChange={(e) => setF({ ...f, contentsMax: e.target.value.replace(/[^\d.]/g, "") })} />
+                </label>
+              )}
+              {f.bomContents && existing.contents && existing.contents.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {existing.contents.length} materials in its BOM{existing.contents.some((m) => m.unit.toUpperCase() !== "PCS") ? ` · by weight (no PCS unit in FACTS): ${existing.contents.filter((m) => m.unit.toUpperCase() !== "PCS").map((m) => m.name).join(", ")}` : " · all counted in pieces"}
+                </p>
+              )}
+            </div>
           )}
           {existing && !f.isCombo && (
             <button type="button" onClick={() => setRecipeFor({ kind: "item", id: existing.id, name: existing.name })}
@@ -455,6 +476,15 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
       toast.success("Option group saved."); onSaved(); onClose();
     } catch (err) { toast.error((err as Error).message); }
   }
+  // Delete: it comes off every item it's on; bills keep what was chosen.
+  async function remove() {
+    const g = value as ModifierGroup;
+    const on = items.filter((i) => i.groupIds.includes(g.id));
+    if (!(await confirmDialog({ title: `Delete ${g.name}?`, tone: "danger", confirmLabel: "Delete",
+      message: on.length ? `It comes off ${on.length === 1 ? on[0].name : `${on.length} items (${on.slice(0, 3).map((i) => i.name).join(", ")}${on.length > 3 ? "…" : ""})`}. Bills already rung up keep their choices.` : "It isn't on any item. Bills already rung up keep their choices." }))) return;
+    try { await api(`/menu/modifier-groups/${g.id}`, "DELETE"); toast.success(`${g.name} deleted.`); onSaved(); onClose(); }
+    catch (err) { toast.error((err as Error).message); }
+  }
   const required = min > 0;
   return (
     <Dialog open={!!value} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -501,7 +531,10 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
             <Button type="button" variant="outline" onClick={() => setOpts([...opts, blankOpt])}><PlusIcon /> Add option</Button>
             <p className="text-xs text-muted-foreground">An option linked to a menu item uses that item&apos;s recipe unless it has its own.</p>
           </div>
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !opts.some((o) => o.name.trim())}>Save</Button></DialogFooter>
+          <DialogFooter>
+            {value !== "new" && <Button type="button" variant="ghost" className="mr-auto text-danger" onClick={() => void remove()}><Trash2Icon /> Delete group</Button>}
+            <Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!name.trim() || !opts.some((o) => o.name.trim())}>Save</Button>
+          </DialogFooter>
         </form>
         <RecipeDialog target={recipeFor} currency={currency} onClose={() => setRecipeFor(null)} />
       </DialogContent>
