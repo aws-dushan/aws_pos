@@ -6,7 +6,7 @@ using OnePos.Api.Platform;
 namespace OnePos.Api.Pos;
 
 /// <summary>
-/// Branding: the company logo (top of receipts and credit notes, on screen and the customer display), what each branch's receipt
+/// Branding: each branch's logo (top of its receipts and credit notes, on screen and its customer display), what each branch's receipt
 /// header shows, and the pictures the customer display shows between orders. Images are checked by content (JPEG, PNG, WebP),
 /// at most 2 MB, stored next to the menu photos and served with their version in the address (cached hard, never stale).
 /// </summary>
@@ -105,61 +105,68 @@ public static class Branding
     {
         var root = config["Images:Root"] ?? Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "data", "images"));
 
-        // ---- The company logo ------------------------------------------------------------------------------------------
-        api.MapPost("/companies/{companyId:guid}/logo", async (Guid companyId, IFormFile file, HttpContext http, Db db, Live live) =>
+        // ---- The branch's logo -------------------------------------------------------------------------------------------
+        // Stored with the company's images; a file can be shared (each branch started with the company's logo), so an old one is
+        // deleted only once no branch uses it.
+        async Task<Guid> CompanyOf(Db db, Guid branchId) =>
+            await db.Platform((c, tx) => c.ExecuteScalarAsync<Guid?>("select company_id from branch where id = @branchId", new { branchId }, tx)) ?? throw new NotFoundException("Branch not found.");
+
+        async Task<string?> ChangeLogo(Db db, Guid companyId, Guid id, Guid userId, string? name, string what) => await db.Company(companyId, async (c, tx) =>
         {
+            var prev = await c.ExecuteScalarAsync<string?>("select logo_file from branch where id = @id for update", new { id }, tx);
+            await c.ExecuteAsync("update branch set logo_file = @name, logo_at = now() where id = @id", new { id, name }, tx);
+            await Audit.RecordAsync(c, tx, companyId, id, userId, "branch", id.ToString(), "logo", what == "removed" ? "Logo removed" : prev is null ? "Logo added" : "Logo replaced");
+            var shared = prev is not null && await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where logo_file = @prev)", new { prev }, tx);
+            return shared ? null : prev;
+        });
+
+        api.MapPost("/branches/{id:guid}/logo", async (Guid id, IFormFile file, HttpContext http, Db db, Live live) =>
+        {
+            var companyId = await CompanyOf(db, id);
             var scope = await http.ScopeAsync(db, companyId);
             scope.Require("branch.manage");
             var (bytes, ext) = await ReadAsync(file);
             var dir = Path.Combine(root, companyId.ToString("N"));
             Directory.CreateDirectory(dir);
-            var name = $"logo-{DateTime.UtcNow:yyyyMMddHHmmssfff}.{ext}";
-            var old = await db.Company(companyId, async (c, tx) =>
-            {
-                var prev = await c.ExecuteScalarAsync<string?>("select logo_file from company where id = @companyId for update", new { companyId }, tx);
-                await File.WriteAllBytesAsync(Path.Combine(dir, name), bytes);
-                await c.ExecuteAsync("update company set logo_file = @name, logo_at = now() where id = @companyId", new { companyId, name }, tx);
-                await Audit.RecordAsync(c, tx, companyId, null, scope.UserId, "company", companyId.ToString(), "logo", prev is null ? "Logo added" : "Logo replaced");
-                return prev;
-            });
+            var name = $"logo-{id:N}-{DateTime.UtcNow:yyyyMMddHHmmssfff}.{ext}";
+            await File.WriteAllBytesAsync(Path.Combine(dir, name), bytes);
+            var old = await ChangeLogo(db, companyId, id, scope.UserId, name, "saved");
             if (old is not null) ItemImages.TryDelete(Path.Combine(dir, old));
-            await live.ToCompany(companyId, "branding.changed");
+            await live.ToBranch(id, "branding.changed");
             return Results.Ok(new { ok = true });
         }).DisableAntiforgery();
 
-        api.MapDelete("/companies/{companyId:guid}/logo", async (Guid companyId, HttpContext http, Db db, Live live) =>
+        api.MapDelete("/branches/{id:guid}/logo", async (Guid id, HttpContext http, Db db, Live live) =>
         {
+            var companyId = await CompanyOf(db, id);
             var scope = await http.ScopeAsync(db, companyId);
             scope.Require("branch.manage");
-            var old = await db.Company(companyId, async (c, tx) =>
-            {
-                var prev = await c.ExecuteScalarAsync<string?>("select logo_file from company where id = @companyId for update", new { companyId }, tx);
-                await c.ExecuteAsync("update company set logo_file = null, logo_at = now() where id = @companyId", new { companyId }, tx);
-                await Audit.RecordAsync(c, tx, companyId, null, scope.UserId, "company", companyId.ToString(), "logo", "Logo removed");
-                return prev;
-            });
+            var old = await ChangeLogo(db, companyId, id, scope.UserId, null, "removed");
             if (old is not null) ItemImages.TryDelete(Path.Combine(root, companyId.ToString("N"), old));
-            await live.ToCompany(companyId, "branding.changed");
+            await live.ToBranch(id, "branding.changed");
             return Results.Ok(new { ok = true });
         });
 
-        api.MapGet("/companies/{companyId:guid}/logo", async (Guid companyId, HttpContext http, Db db) =>
+        api.MapGet("/branches/{id:guid}/logo", async (Guid id, HttpContext http, Db db) =>
         {
+            var companyId = await CompanyOf(db, id);
             await http.ScopeAsync(db, companyId);
-            var file = await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<string?>("select logo_file from company where id = @companyId", new { companyId }, tx));
+            var file = await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<string?>("select logo_file from branch where id = @id", new { id }, tx));
             var path = file is null ? null : Path.Combine(root, companyId.ToString("N"), file);
             if (path is null || !File.Exists(path)) return Results.NotFound();
-            http.Response.Headers.CacheControl = "private, max-age=31536000, immutable";
+            // With its version in the address (receipts, settings) it never changes; without (the customer display), asked again each time.
+            http.Response.Headers.CacheControl = http.Request.Query.ContainsKey("v") ? "private, max-age=31536000, immutable" : "no-cache";
             return Results.File(path, TypeOf(path));
         });
 
-        // The digital receipt page (no sign-in) shows the logo of the receipt's company, found by the receipt's link.
+        // The digital receipt page (no sign-in) shows the logo of the receipt's branch, found by the receipt's link.
         app.MapGet("/api/public/receipts/{token}/logo", async (string token, Db db) =>
         {
-            var companyId = await db.Platform((c, tx) => c.ExecuteScalarAsync<Guid?>("select company_id from receipt_link where token = @token", new { token }, tx));
-            if (companyId is not { } co) return Results.NotFound();
-            var file = await db.Company(co, (c, tx) => c.ExecuteScalarAsync<string?>("select logo_file from company where id = @co", new { co }, tx));
-            var path = file is null ? null : Path.Combine(root, co.ToString("N"), file);
+            var link = await db.Platform((c, tx) => c.QuerySingleOrDefaultAsync<(Guid CompanyId, Guid OrderId)?>("select company_id, order_id from receipt_link where token = @token", new { token }, tx));
+            if (link is not { } l) return Results.NotFound();
+            var file = await db.Company(l.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>(
+                "select b.logo_file from pos_order o join branch b on b.id = o.branch_id where o.id = @OrderId", new { l.OrderId }, tx));
+            var path = file is null ? null : Path.Combine(root, l.CompanyId.ToString("N"), file);
             return path is null || !File.Exists(path) ? Results.NotFound() : Results.File(path, TypeOf(path));
         }).AllowAnonymous();
 
@@ -172,7 +179,7 @@ public static class Branding
             return await db.Company(companyId, async (c, tx) =>
             {
                 var b = await c.QuerySingleAsync<(string Language, string? Header, string? Footer, string Settings, string? Email, string? Website, DateTime? LogoAt, bool HasLogo, string TradingName)>("""
-                    select b.receipt_language, b.receipt_header, b.receipt_footer, b.receipt_settings::text, co.email, co.website, co.logo_at, co.logo_file is not null, co.name
+                    select b.receipt_language, b.receipt_header, b.receipt_footer, b.receipt_settings::text, co.email, co.website, b.logo_at, b.logo_file is not null, co.name
                     from branch b join company co on co.id = b.company_id where b.id = @id
                     """, new { id }, tx);
                 return new { language = b.Language, header = b.Header, footer = b.Footer, email = b.Email, website = b.Website, settings = Settings(b.Settings), logoAt = b.HasLogo ? b.LogoAt : null, tradingName = b.TradingName };

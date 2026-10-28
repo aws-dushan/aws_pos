@@ -79,7 +79,7 @@ function ReceiptSetup() {
     const r: Receipt = {
       legalName: co.legalName, legalNameAr: co.legalNameAr, trn: co.trn, currency: co.baseCurrency, branch: br.name, branchCode: br.code, branchAr: br.nameAr,
       address: br.address, addressAr: br.addressAr, phone: br.phone, receiptHeader: f.header, receiptFooter: f.footer, language: f.language,
-      email: f.email, website: f.website, settings: f.settings, logoAt: f.logoAt, companyId: company.id, tradingName: f.tradingName,
+      email: f.email, website: f.website, settings: f.settings, logoAt: f.logoAt, companyId: company.id, branchId: br.id, tradingName: f.tradingName,
       detail: {
         order: {
           id: "x", number: 195, invoiceNo: `INV-${br.code}-000123`, orderType: "takeaway", tableLabel: null, customerName: "Layla", customerPhone: "050 123 4567",
@@ -111,17 +111,17 @@ function ReceiptSetup() {
     catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
   async function uploadLogo(file: File) {
-    if (!company) return;
+    if (!branch) return;
     try {
       // PNG keeps a transparent background; large photos are shrunk first.
       const blob = file.size > 1_500_000 ? await shrinkImage(file, 1000) : file;
-      await apiUpload(`/companies/${company.id}/logo`, blob, file.name);
+      await apiUpload(`/branches/${branch.id}/logo`, blob, file.name);
       toast.success("Logo saved"); cfg.reload();
     } catch (e) { toast.error((e as Error).message); }
   }
   async function removeLogo() {
-    if (!company || !(await confirmDialog({ title: "Remove the logo?", message: "Receipts show the company name instead.", confirmLabel: "Remove", tone: "danger" }))) return;
-    try { await api(`/companies/${company.id}/logo`, "DELETE"); cfg.reload(); } catch (e) { toast.error((e as Error).message); }
+    if (!branch || !(await confirmDialog({ title: "Remove the logo?", message: `${branch.name}'s receipts show the name instead.`, confirmLabel: "Remove", tone: "danger" }))) return;
+    try { await api(`/branches/${branch.id}/logo`, "DELETE"); cfg.reload(); } catch (e) { toast.error((e as Error).message); }
   }
 
   if (cfg.error) return <ErrorNote message={cfg.error} />;
@@ -143,12 +143,12 @@ function ReceiptSetup() {
     <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_360px]">
       <div className="space-y-5">
         <section className="surface p-5" data-module="admin">
-          <h2 className="mb-1 font-heading font-semibold">Company logo</h2>
-          <p className="mb-4 text-sm text-muted-foreground">Printed at the top of receipts and credit notes in black and white. A wide logo on a white or transparent background prints best.</p>
+          <h2 className="mb-1 font-heading font-semibold">Logo for {branch?.name}</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Printed at the top of this branch&apos;s receipts and credit notes in black and white, and shown on its customer display. A wide logo on a white or transparent background prints best.</p>
           <div className="flex flex-wrap items-center gap-4">
             <div className="flex h-24 w-56 items-center justify-center overflow-hidden rounded-xl border bg-white">
-              {/* eslint-disable-next-line @next/next/no-img-element -- the company's own logo, same origin */}
-              {f.logoAt ? <img src={withBase(`/api/companies/${company!.id}/logo?v=${encodeURIComponent(f.logoAt)}`)} alt="Logo" className="max-h-20 max-w-52 object-contain" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- the branch's own logo, same origin */}
+              {f.logoAt ? <img src={withBase(`/api/branches/${branch!.id}/logo?v=${encodeURIComponent(f.logoAt)}`)} alt="Logo" className="max-h-20 max-w-52 object-contain" />
                 : <span className="text-sm text-muted-foreground">No logo</span>}
             </div>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => { const x = e.target.files?.[0]; e.target.value = ""; if (x) void uploadLogo(x); }} />
