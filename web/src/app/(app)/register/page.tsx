@@ -12,7 +12,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { shortcutTitle } from "@/lib/shortcuts";
 import { DiscountDialog, PlatformOfferDialog } from "@/components/discount-dialog";
 import { fmtIn } from "@/lib/num";
-import { byWeight, fmtQty, imageUrl, orderNo, initials, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
+import { byWeight, fmtQty, imageUrl, orderNo, initials, itemGroups, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ObjectStatus, PageHeader, Segmented, TONE } from "@/components/kit";
@@ -263,7 +263,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
     o.customerName, o.customerPhone, o.orderType === "delivery" && !o.platformId ? o.deliveryAddress : null,
   ].filter(Boolean).join(" · ");
   // In the order the menu sets on the item (e.g. Size before Extras).
-  const groupsOf = (i: MenuItem) => i.groupIds.map((id) => menu.data?.groups.find((g) => g.id === id)).filter((g): g is ModifierGroup => !!g);
+  const groupsOf = (i: MenuItem) => itemGroups(i, menu.data?.groups);
   const qtyOf = (id: string) => active.filter((l) => l.itemId === id).reduce((n, l) => n + l.qty, 0);
   const tone = (i: MenuItem) => menu.data?.categories.find((c) => c.id === i.categoryId)?.tone ?? "fin";
 

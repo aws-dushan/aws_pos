@@ -235,14 +235,15 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
   value: MenuItem | "new" | "combo" | null; menu: Menu; companyId?: string; fromFacts?: boolean; defaultCategory: string | null; currency: string; branchName?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | "remove" | null>(null);
-  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false };
+  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false, counts: {} as Record<string, string> };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     setPhoto(null);
     setF(value && value !== "new" && value !== "combo" ? { categoryId: value.categoryId, name: value.name, nameAr: value.nameAr ?? "", description: value.description ?? "", price: String(value.price), station: value.station,
-      erpItemCode: value.erpItemCode ?? "", isActive: value.isActive, groupIds: value.groupIds, branchPrice: value.branchPrice === null ? "" : String(value.branchPrice), isCombo: value.isCombo }
+      erpItemCode: value.erpItemCode ?? "", isActive: value.isActive, groupIds: value.groupIds, branchPrice: value.branchPrice === null ? "" : String(value.branchPrice), isCombo: value.isCombo,
+      counts: Object.fromEntries((value.groupCounts ?? []).filter((x) => x.max != null).map((x) => [x.groupId, String(x.max)])) }
       : value === "combo" ? { ...blank, isCombo: true, station: "none" } : blank);
   }
   const existing = value && value !== "new" && value !== "combo" ? value : null;
@@ -253,7 +254,9 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
   async function save(e: React.FormEvent) {
     e.preventDefault();
     try {
-      const body = { ...f, price: Number(f.price) };
+      // "How many" on an attached group: exactly that many (blank = the group's own rule).
+      const groupCounts = f.groupIds.map((groupId) => { const n = Number(f.counts[groupId]); return { groupId, min: n > 0 ? n : null, max: n > 0 ? n : null }; });
+      const body = { ...f, price: Number(f.price), groupCounts };
       const r = existing ? await api<{ id: string }>(`/menu/items/${existing.id}`, "PUT", body) : await api<{ id: string }>("/menu/items", "POST", body);
       const bp = f.branchPrice.trim();
       if (existing && !existing.erpPriced && bp !== (existing.branchPrice === null ? "" : String(existing.branchPrice)))
@@ -312,6 +315,22 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
               {!menu.groups.length && <span className="text-sm text-muted-foreground">No groups yet (Option groups tab).</span>}
             </div>
           </Field>
+          {f.groupIds.some((id) => menu.groups.find((g) => g.id === id && g.maxSelect > 1)) && (
+            <Field label="How many on this item" hint="For groups where several can be chosen, e.g. 12 for the box of 12. Blank = the group's own rule.">
+              <div className="grid gap-2">
+                {f.groupIds.map((id) => menu.groups.find((g) => g.id === id)).filter((g): g is ModifierGroup => !!g && g.maxSelect > 1).map((g) => {
+                  const options = g.options.filter((o) => o.isActive).length;
+                  return (
+                    <label key={g.id} className="flex items-center gap-3 text-sm">
+                      <span className="min-w-0 flex-1 truncate">{g.name} <span className="text-muted-foreground">· group: {g.minSelect ? `${g.minSelect}–${g.maxSelect}` : `up to ${g.maxSelect}`}, {options} options</span></span>
+                      <Input className="h-10 w-24" inputMode="numeric" placeholder="Group's" value={f.counts[g.id] ?? ""}
+                        onChange={(e) => setF({ ...f, counts: { ...f.counts, [g.id]: e.target.value.replace(/\D/g, "") } })} />
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
           {existing && !f.isCombo && (
             <button type="button" onClick={() => setRecipeFor({ kind: "item", id: existing.id, name: existing.name })}
               className="flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-colors hover:bg-muted/60">

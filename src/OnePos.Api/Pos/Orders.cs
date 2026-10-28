@@ -374,7 +374,7 @@ public static class Orders
             if (plat.Applies && plat.Price is null) throw new DomainException($"{item.Name} has no {plat.Platform} price in FACTS.");
             // Modifiers: options must belong to the item's groups, within each group's least and most choices.
             var groups = (await c.QueryAsync<(Guid Id, string Name, int Min, int Max)>("""
-                select g.id, g.name, g.min_select, g.max_select from menu_item_modifier m join modifier_group g on g.id = m.group_id where m.item_id = @itemId order by m.sort
+                select g.id, g.name, coalesce(m.min_select, g.min_select), coalesce(m.max_select, g.max_select) from menu_item_modifier m join modifier_group g on g.id = m.group_id where m.item_id = @itemId order by m.sort
                 """, new { body.ItemId }, tx)).ToList();
             var optionIds = (body.OptionIds ?? []).Distinct().ToArray();
             var opts = (await c.QueryAsync<(Guid Id, Guid GroupId, string Name, decimal Price, Guid? ItemId, string? Station, bool FactsPrice)>("""

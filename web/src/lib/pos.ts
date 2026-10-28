@@ -18,6 +18,8 @@ export type MenuItem = {
   erpName: string | null; erpUnit: string | null; qtyDecimals: number; erpNew: boolean; erpRemoved: boolean; needsPrice: boolean; erpStock: number | null; erpStockAt: string | null;
   /** This branch takes the price from its FACTS price type: branchPrice is FACTS' price (null = none there) and can't be changed here. */
   erpPriced: boolean;
+  /** How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); groups not listed use their own. */
+  groupCounts?: { groupId: string; min: number | null; max: number | null }[];
   /** FACTS stock at its last read less what this branch sold since; null when the item has no FACTS stock. */
   stockLeft: number | null;
 };
@@ -106,6 +108,14 @@ export const imageUrl = (companyId: string | undefined, i: MenuItem) =>
 
 /** An item's own price here; a combo has none (it costs the prices on its choices). */
 export const priceOf = (i: MenuItem) => (i.isCombo ? 0 : i.branchPrice ?? i.price);
+
+/** An item's option groups as the register asks them: in its order, with the counts set on the item. */
+export function itemGroups(i: MenuItem, groups: ModifierGroup[] | undefined): ModifierGroup[] {
+  return i.groupIds.map((id) => groups?.find((g) => g.id === id)).filter((g): g is ModifierGroup => !!g).map((g) => {
+    const n = i.groupCounts?.find((x) => x.groupId === g.id);
+    return n ? { ...g, minSelect: n.min ?? g.minSelect, maxSelect: n.max ?? g.maxSelect } : g;
+  });
+}
 
 /** The least an item costs with its required choices: a combo's "from" price. */
 export const leastPrice = (i: MenuItem, groups: ModifierGroup[]) => priceOf(i) + groups.reduce((t, g) =>
