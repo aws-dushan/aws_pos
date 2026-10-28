@@ -13,7 +13,9 @@ public static class Menu
 {
     public sealed record CategoryBody(string Name, string? NameAr, string? Tone, int? Sort, bool? IsActive);
     public sealed record ItemBody(Guid CategoryId, string Name, string? NameAr, string? Description, decimal Price, string? Station, string? ErpItemCode,
-        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo);
+        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo, GroupCount[]? GroupCounts = null);
+    /// <summary>How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); null = the group's own.</summary>
+    public sealed record GroupCount(Guid GroupId, int? Min, int? Max);
     /// <summary>An option; with ItemId it is a menu item offered inside a combo ("Shish tawook" in "Choose a main").</summary>
     public sealed record OptionBody(Guid? Id, string Name, decimal Price, bool? IsActive, Guid? ItemId, bool? FactsPrice);
     public sealed record GroupBody(string Name, int MinSelect, int MaxSelect, OptionBody[]? Options);
@@ -46,6 +48,8 @@ public static class Menu
         public DateTime? ImageAt { get; set; }
         public bool HasImage { get; set; }
         public Guid[] GroupIds { get; set; } = [];
+        /// <summary>Attached groups whose count is set on this item.</summary>
+        public List<GroupCount> GroupCounts { get; set; } = [];
         // This branch's override (when a branch is chosen).
         public bool IsSold { get; set; } = true;
         public decimal? BranchPrice { get; set; }
@@ -166,7 +170,7 @@ public static class Menu
                     insert into menu_item (company_id, category_id, name, name_ar, description, price, station, erp_item_code, sort, is_combo)
                     values (@co, @CategoryId, @Name, @NameAr, @Description, @Price, @Station, @ErpItemCode, @sort, @combo) returning id
                     """, new { co = scope.CompanyId, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, sort, combo = b.IsCombo == true }, tx);
-                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? []);
+                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "menu_item", id.ToString(), "created", $"Menu item {b.Name} created",
                     Audit.Created(("Price", b.Price), ("Station", b.Station)));
@@ -197,7 +201,7 @@ public static class Menu
                       needs_price = case when @Price > 0 then false else needs_price end, erp_new = false where id = @id
                     """, new { id, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, Sort = b.Sort ?? old.Sort, IsActive = b.IsActive ?? old.IsActive,
                                combo = b.IsCombo ?? old.IsCombo }, tx);
-                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? []);
+                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
                 if (old.Price != b.Price)
                     await c.ExecuteAsync("""
@@ -357,6 +361,10 @@ public static class Menu
             }
         }
         foreach (var g in groups) g.Options = options.Where(o => o.GroupId == g.Id).ToList();
+        // Counts set per item (how many from a group on this item).
+        var counts = (await c.QueryAsync<(Guid ItemId, Guid GroupId, int? Min, int? Max)>(
+            "select item_id, group_id, min_select, max_select from menu_item_modifier where min_select is not null or max_select is not null", transaction: tx)).ToLookup(x => x.ItemId);
+        foreach (var it in items) it.GroupCounts = counts[it.Id].Select(x => new GroupCount(x.GroupId, x.Min, x.Max)).ToList();
         var shortStock = branchId is { } b2 ? await c.ExecuteScalarAsync<string>("select short_stock from branch where id = @b2", new { b2 }, tx) : "allow";
         // Delivery platforms with FACTS prices: what each item costs on them here (the register shows these on a platform's bill).
         var platformPrices = await PlatformPrices.ForMenuAsync(c, tx, branchId);
@@ -427,12 +435,27 @@ public static class Menu
             throw new DomainException($"Every choice in a combo must be a menu item{(facts ? " with an ERP item code" : "")}. Fix: {string.Join(", ", bad)}.");
     }
 
-    private static async Task SetGroupsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid itemId, Guid[] groupIds)
+    /// <summary>Attaches the groups in order, each with its count on this item (none sent = the counts it had stay).</summary>
+    private static async Task SetGroupsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid itemId, Guid[] groupIds, GroupCount[]? counts = null)
     {
+        counts ??= (await c.QueryAsync<GroupCount>("select group_id as groupid, min_select as min, max_select as max from menu_item_modifier where item_id = @itemId", new { itemId }, tx)).ToArray();
         await c.ExecuteAsync("delete from menu_item_modifier where item_id = @itemId", new { itemId }, tx);
         var i = 0;
         foreach (var g in groupIds.Distinct())
-            await c.ExecuteAsync("insert into menu_item_modifier (company_id, item_id, group_id, sort) values (@companyId, @itemId, @g, @sort)", new { companyId, itemId, g, sort = i++ }, tx);
+        {
+            var n = counts.FirstOrDefault(x => x.GroupId == g);
+            int? min = n?.Min, max = n?.Max;
+            if (min is < 0 || max is < 1 || (min is { } lo && max is { } hi && hi < lo)) throw new DomainException("How many to choose: at least 1, and the most not less than the least.");
+            if (max is { } most)
+            {
+                var (name, options) = await c.QuerySingleAsync<(string, int)>(
+                    "select g.name, (select count(*)::int from modifier_option o where o.group_id = g.id and o.is_active) from modifier_group g where g.id = @g", new { g }, tx);
+                if ((min ?? 0) > options) throw new DomainException($"{name} has {options} options: it can't ask for {min} different ones.");
+                if (most > options) max = options;
+            }
+            await c.ExecuteAsync("insert into menu_item_modifier (company_id, item_id, group_id, sort, min_select, max_select) values (@companyId, @itemId, @g, @sort, @min, @max)",
+                new { companyId, itemId, g, sort = i++, min, max }, tx);
+        }
     }
 
     /// <summary>Options are matched by id: kept ones are updated, new ones added, missing ones switched off (old orders still name them).</summary>
