@@ -16,7 +16,9 @@ public static class Orders
     public sealed record OpenBody(string Type, string? TableLabel, int? Guests, string? CustomerName, string? CustomerPhone, string? DeliveryAddress, Guid? TableId);
     public sealed record ChangeBody(string? Type, string? TableLabel, int? Guests, string? CustomerName, string? CustomerPhone, string? DeliveryAddress,
         string? Note, decimal? DiscountPct, Guid? PlatformId = null, string? PlatformRef = null);
-    public sealed record LineBody(Guid ItemId, decimal? Qty, Guid[]? OptionIds, string? Note);
+    public sealed record LineBody(Guid ItemId, decimal? Qty, Guid[]? OptionIds, string? Note, ContentBody[]? Contents = null);
+    /// <summary>One material chosen into an item whose contents are chosen at the till (its FACTS code and how many, in the unit it's counted in).</summary>
+    public sealed record ContentBody(string Code, decimal Qty);
     public sealed record LineChangeBody(decimal? Qty, string? Note);
     /// <summary>CardType: the FACTS card payment method the cashier picked (e.g. "ERBQS VISA CARD"), where the branch has them.</summary>
     public sealed record PayLine(string Method, decimal Amount, decimal? Tendered, string? Reference, string? CardType = null);
@@ -400,11 +402,13 @@ public static class Orders
             var mods = groups.SelectMany(g => opts.Where(x => x.GroupId == g.Id).Select(x => new { groupId = g.Id, optionId = x.Id, group = g.Name, name = x.Name, price = x.Price, itemId = x.ItemId, station = x.Station })).ToList();
             // A combo costs what its chosen items cost in it (the prices on its choices, which FACTS gets item by item).
             var unit = Money.Round((item.IsCombo ? 0 : plat.Applies ? plat.Price!.Value : item.BranchPrice ?? item.Price) + mods.Sum(m => m.price));
+            var lineMods = mods.Cast<object>().ToList();
+            lineMods.AddRange(await ContentsAsync(c, tx, o, body));
             var note = Opt(body.Note);
             // A promotion running now for this item (and this kind of order): it goes on the line and stays while the bill is open.
             var promo = await Discounts.BestPromotionAsync(c, tx, o, body.ItemId, unit);
             // The same item with the same choices, the same promotion and no note, not yet sent: add to that line.
-            var modsJson = JsonSerializer.Serialize(mods);
+            var modsJson = JsonSerializer.Serialize(lineMods);
             var same = await c.ExecuteScalarAsync<Guid?>("""
                 select id from order_line where order_id = @id and item_id = @itemId and not is_void and sent_qty = 0 and note is null and modifiers = cast(@modsJson as jsonb) and @note is null
                   and disc_id is not distinct from @promoId and coalesce(disc_source, 'promotion') = 'promotion'
@@ -699,6 +703,36 @@ public static class Orders
         return type;
     }
 
+
+    /// <summary>
+    /// An item whose contents are chosen at the till (a box of chocolates): what goes in, from its FACTS BOM, each in the unit it's
+    /// counted in (pieces whole), at most what the item holds in all. They go on the line as entries with "content" (shown like its
+    /// options, at no price: the item's price is the box's), and its repacking takes them out in FACTS.
+    /// </summary>
+    private static async Task<List<object>> ContentsAsync(NpgsqlConnection c, NpgsqlTransaction tx, OrderRow o, LineBody body)
+    {
+        var item = await c.QuerySingleAsync<(string Name, bool On, decimal? Most, string? Type, string? Code)>(
+            "select name, bom_contents, contents_max, erp_item_type, erp_item_code from menu_item where id = @ItemId", new { body.ItemId }, tx);
+        var picks = (body.Contents ?? []).Where(x => x.Qty != 0).ToList();
+        if (!item.On)
+        {
+            if (picks.Count > 0) throw new DomainException($"{item.Name}'s contents aren't chosen at the till.");
+            return [];
+        }
+        if (picks.Count == 0) throw new DomainException($"Choose what goes in {item.Name}.");
+        var can = (await Boms.ContentsAsync(c, tx, item.Type, item.Code, o.BusinessDate)).ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
+        var list = new List<object>();
+        foreach (var p in picks.GroupBy(x => x.Code.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            if (!can.TryGetValue(p.Key, out var m)) throw new DomainException($"{p.Key} isn't in {item.Name}'s BOM.");
+            var qty = p.Sum(x => x.Qty);
+            CheckQty(qty, m.Unit.Equals("PCS", StringComparison.OrdinalIgnoreCase) ? 0 : 3, m.Name);
+            list.Add(new { group = "Contents", name = $"{m.Name} × {qty:0.###} {m.Unit}", price = 0m, content = new { type = m.Type, code = m.Code, name = m.Name, unit = m.Unit, qty } });
+        }
+        var total = picks.Sum(x => x.Qty);
+        if (item.Most is { } most && total > most) throw new DomainException($"{item.Name} holds at most {most:0.###}: {total:0.###} chosen.");
+        return list;
+    }
 
     /// <summary>A quantity: more than 0, at most 9,999, with no more decimals than the item's unit allows (0 = whole units).</summary>
     internal static void CheckQty(decimal qty, int decimals, string name)

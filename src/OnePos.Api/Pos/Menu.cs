@@ -1,6 +1,7 @@
 using Dapper;
 using Npgsql;
 using OnePos.Api.Data;
+using OnePos.Api.Erp;
 using OnePos.Api.Platform;
 
 namespace OnePos.Api.Pos;
@@ -13,7 +14,7 @@ public static class Menu
 {
     public sealed record CategoryBody(string Name, string? NameAr, string? Tone, int? Sort, bool? IsActive);
     public sealed record ItemBody(Guid CategoryId, string Name, string? NameAr, string? Description, decimal Price, string? Station, string? ErpItemCode,
-        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo, GroupCount[]? GroupCounts = null);
+        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo, GroupCount[]? GroupCounts = null, bool? BomContents = null, decimal? ContentsMax = null);
     /// <summary>How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); null = the group's own.</summary>
     public sealed record GroupCount(Guid GroupId, int? Min, int? Max);
     /// <summary>An option; with ItemId it is a menu item offered inside a combo ("Shish tawook" in "Choose a main").</summary>
@@ -41,6 +42,7 @@ public static class Menu
         public decimal Price { get; set; }
         public string Station { get; set; } = "";
         public string? ErpItemCode { get; set; }
+        public string? ErpItemType { get; set; }
         public int Sort { get; set; }
         public bool IsActive { get; set; }
         public bool IsCombo { get; set; }
@@ -50,6 +52,11 @@ public static class Menu
         public Guid[] GroupIds { get; set; } = [];
         /// <summary>Attached groups whose count is set on this item.</summary>
         public List<GroupCount> GroupCounts { get; set; } = [];
+        /// <summary>Its contents are chosen at the till from its FACTS BOM (a box of chocolates), up to ContentsMax in all.</summary>
+        public bool BomContents { get; set; }
+        public decimal? ContentsMax { get; set; }
+        /// <summary>BomContents: the BOM materials that can go in, each in the unit it's counted in.</summary>
+        public List<Boms.Content> Contents { get; set; } = [];
         // This branch's override (when a branch is chosen).
         public bool IsSold { get; set; } = true;
         public decimal? BranchPrice { get; set; }
@@ -180,7 +187,7 @@ public static class Menu
             return Results.Ok(new { id });
         });
 
-        api.MapPut("/menu/items/{id:guid}", async (Guid id, ItemBody body, HttpContext http, Db db, Live live) =>
+        api.MapPut("/menu/items/{id:guid}", async (Guid id, ItemBody body, HttpContext http, Db db, Live live, FactsSync facts) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("menu.manage");
@@ -203,15 +210,38 @@ public static class Menu
                                combo = b.IsCombo ?? old.IsCombo }, tx);
                 await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
+                // Contents chosen at the till: only for an item made from a FACTS BOM.
+                var contents = b.BomContents ?? old.BomContents;
+                var most = b.BomContents is null ? old.ContentsMax : b.ContentsMax is > 0 ? decimal.Round(b.ContentsMax.Value, 3, MidpointRounding.AwayFromZero) : null;
+                if (contents && !old.BomContents)
+                {
+                    var day = await c.ExecuteScalarAsync<DateOnly>("select current_date", transaction: tx);
+                    if (old.ErpItemCode is null || (await Boms.ContentsAsync(c, tx, old.ErpItemType, old.ErpItemCode, day)).Count == 0)
+                        throw new DomainException($"{old.Name} has no BOM from FACTS, so its contents can't be chosen at the till.");
+                }
+                await c.ExecuteAsync("update menu_item set bom_contents = @contents, contents_max = @most where id = @id", new { id, contents, most }, tx);
                 if (old.Price != b.Price)
                     await c.ExecuteAsync("""
                         insert into item_price_history (company_id, item_id, old_price, new_price, source, changed_by) values (@co, @id, @old, @new, 'manual', @userId)
                         """, new { co = scope.CompanyId, id, old = old.Price, @new = b.Price, userId = scope.UserId }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "menu_item", id.ToString(), "changed", $"Menu item {old.Name} changed",
                     [new("Name", old.Name, b.Name), new("Price", old.Price, b.Price), new("Station", old.Station, b.Station),
-                     new("Category", old.CategoryId, b.CategoryId), new("Active", old.IsActive, b.IsActive ?? old.IsActive)]);
+                     new("Category", old.CategoryId, b.CategoryId), new("Active", old.IsActive, b.IsActive ?? old.IsActive),
+                     new("Contents chosen at the till", old.BomContents, b.BomContents ?? old.BomContents), new("Holds at most", old.ContentsMax, b.BomContents is null ? old.ContentsMax : b.ContentsMax)]);
                 return 0;
             });
+            // Switched on: FACTS' PCS units for its materials now (the BOM sync keeps them after), so KG chocolates count in pieces.
+            if (body.BomContents == true)
+                try
+                {
+                    var codes = await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<string>("""
+                        select distinct l.item_code from menu_item i join bom b on b.item_code = i.erp_item_code and b.item_type = i.erp_item_type
+                        join bom_version v on v.bom_id = b.id join bom_line l on l.version_id = v.id where i.id = @id
+                        """, new { id }, tx));
+                    await using var f = await facts.OpenAsync(scope.CompanyId);
+                    await Boms.SyncUnitsAsync(db, f, scope.CompanyId, codes.ToArray());
+                }
+                catch (Exception e) when (e is Microsoft.Data.SqlClient.SqlException or InvalidOperationException or DomainException) { }   // FACTS away: the BOM sync brings them later
             await live.ToCompany(scope.CompanyId, "menu.changed");
             return Results.Ok(new { id });
         });
@@ -304,6 +334,24 @@ public static class Menu
             await live.ToCompany(scope.CompanyId, "menu.changed");
             return Results.Ok(new { id });
         });
+
+        // Delete a group: it comes off every item it was on (with its options and their recipes). Bills keep what was chosen (names and prices on the line).
+        api.MapDelete("/menu/modifier-groups/{id:guid}", async (Guid id, HttpContext http, Db db, Live live) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("menu.manage");
+            await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var old = await c.QuerySingleOrDefaultAsync<Group>("select * from modifier_group where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Modifier group not found.");
+                var items = (await c.QueryAsync<string>("select i.name from menu_item_modifier m join menu_item i on i.id = m.item_id where m.group_id = @id order by i.name", new { id }, tx)).ToList();
+                await c.ExecuteAsync("delete from modifier_group where id = @id", new { id }, tx);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "modifier_group", id.ToString(), "deleted", $"Modifier group {old.Name} deleted",
+                    [new("Items", items.Count == 0 ? "none" : string.Join(", ", items), null)]);
+                return 0;
+            });
+            await live.ToCompany(scope.CompanyId, "menu.changed");
+            return Results.Ok(new { id });
+        });
     }
 
     public static async Task<object> LoadAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid? branchId, bool activeOnly)
@@ -365,6 +413,8 @@ public static class Menu
         var counts = (await c.QueryAsync<(Guid ItemId, Guid GroupId, int? Min, int? Max)>(
             "select item_id, group_id, min_select, max_select from menu_item_modifier where min_select is not null or max_select is not null", transaction: tx)).ToLookup(x => x.ItemId);
         foreach (var it in items) it.GroupCounts = counts[it.Id].Select(x => new GroupCount(x.GroupId, x.Min, x.Max)).ToList();
+        foreach (var it in items.Where(x => x.BomContents))
+            it.Contents = await Boms.ContentsAsync(c, tx, it.ErpItemType, it.ErpItemCode, today ?? DateOnly.FromDateTime(DateTime.UtcNow));
         var shortStock = branchId is { } b2 ? await c.ExecuteScalarAsync<string>("select short_stock from branch where id = @b2", new { b2 }, tx) : "allow";
         // Delivery platforms with FACTS prices: what each item costs on them here (the register shows these on a platform's bill).
         var platformPrices = await PlatformPrices.ForMenuAsync(c, tx, branchId);

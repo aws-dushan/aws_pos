@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using System.Xml.Linq;
 using Dapper;
 using Npgsql;
@@ -292,7 +293,7 @@ public static class Boms
             -- The line's item, or for a combo each chosen item (FACTS sells those, not the combo).
             cross join lateral (select l.item_id union all
                                 select (m->>'itemId')::uuid from jsonb_array_elements(l.modifiers) m where m->>'itemId' is not null) s(item_id)
-            join menu_item i on i.id = s.item_id
+            join menu_item i on i.id = s.item_id and not i.bom_contents
             join bom bm on bm.item_code = i.erp_item_code and bm.item_type = i.erp_item_type and (bm.ended_from is null or bm.ended_from > @day)
             join v on v.bom_id = bm.id
             where o.branch_id = @branchId and o.business_date = @day and o.status in ('paid','refunded') and not l.is_void and l.qty > 0
@@ -300,17 +301,38 @@ public static class Boms
             group by v.id, bm.item_type, bm.item_code, bm.item_name, bm.unit
             order by bm.item_name
             """, new { branchId, day, orderId }, tx)).ToList();
-        if (sold.Count == 0) return 0;
+        // Items whose contents were chosen at the till (a box of chocolates): what went in each, not the BOM's fixed quantities.
+        var picked = (await c.QueryAsync<(Guid VersionId, string Type, string Code, string Name, string Unit, decimal Qty, string Modifiers)>("""
+            with v as (
+              select distinct on (bv.bom_id) bv.id, bv.bom_id from bom_version bv where bv.valid_from <= @day order by bv.bom_id, bv.valid_from desc)
+            select v.id, bm.item_type, bm.item_code, bm.item_name, bm.unit, l.qty, l.modifiers::text
+            from order_line l join pos_order o on o.id = l.order_id
+            join menu_item i on i.id = l.item_id and i.bom_contents
+            join bom bm on bm.item_code = i.erp_item_code and bm.item_type = i.erp_item_type and (bm.ended_from is null or bm.ended_from > @day)
+            join v on v.bom_id = bm.id
+            where o.branch_id = @branchId and o.business_date = @day and o.status in ('paid','refunded') and not l.is_void and l.qty > 0
+              and (cast(@orderId as uuid) is null or o.id = @orderId)
+            order by bm.item_name, l.sort
+            """, new { branchId, day, orderId }, tx)).ToList();
+        if (sold.Count == 0 && picked.Count == 0) return 0;
         var lines = (await c.QueryAsync<LineRow>("select version_id, item_type, item_code, item_name, unit, qty from bom_line where version_id = any(@ids) order by sort",
             new { ids = sold.Select(s => s.VersionId).ToArray() }, tx)).ToList();
+        var items = sold.Select(s => (s.Type, s.Code, s.Name, s.Unit, s.Qty,
+                Materials: lines.Where(l => l.VersionId == s.VersionId).Select(l => (l.ItemType, l.ItemCode, l.ItemName, l.Unit, Qty: l.Qty * s.Qty)).ToList()))
+            .Concat(picked.GroupBy(p => (p.Type, p.Code, p.Name, p.Unit)).Select(g => (g.Key.Type, g.Key.Code, g.Key.Name, g.Key.Unit, Qty: g.Sum(p => p.Qty),
+                Materials: g.SelectMany(p => Contents(p.Modifiers).Select(m => (m.Type, m.Code, m.Name, m.Unit, Qty: m.Qty * p.Qty)))
+                    .GroupBy(m => (m.Type, m.Code, m.Name, m.Unit)).Select(x => (x.Key.Type, x.Key.Code, x.Key.Name, x.Key.Unit, Qty: x.Sum(m => m.Qty))).ToList())))
+            .Where(x => x.Materials.Count > 0).ToList();
+        if (items.Count == 0) return 0;
+        // A material counted in pieces (PCS) goes as pieces: FACTS turns them into its base unit (KG) by its own unit conversion.
         var xml = new XElement("data", new XElement("Repacking",
             new XElement("DocDate", day.ToString("yyyy-MM-dd", Inv)), new XElement("Location", b.Loc), new XElement("Reference", reference),
-            sold.Select(s => new XElement("Item",
+            items.Select(s => new XElement("Item",
                 new XElement("ItemType", s.Type), new XElement("ItemCode", s.Code), new XElement("ItemName", s.Name),
                 new XElement("Qty", s.Qty.ToString("0.###", Inv)), new XElement("Unit", s.Unit),
-                lines.Where(l => l.VersionId == s.VersionId).Select(l => new XElement("Material",
-                    new XElement("ItemType", l.ItemType), new XElement("ItemCode", l.ItemCode), new XElement("ItemName", l.ItemName),
-                    new XElement("Qty", Math.Round(l.Qty * s.Qty, 3, MidpointRounding.AwayFromZero).ToString("0.###", Inv)), new XElement("Unit", l.Unit)))))));
+                s.Materials.Select(l => new XElement("Material",
+                    new XElement("ItemType", l.Item1), new XElement("ItemCode", l.Item2), new XElement("ItemName", l.Item3),
+                    new XElement("Qty", Math.Round(l.Qty, 3, MidpointRounding.AwayFromZero).ToString("0.###", Inv)), new XElement("Unit", l.Item4)))))));
         var added = await c.ExecuteAsync("""
             insert into erp_post (company_id, branch_id, kind, order_id, doc_no, business_date, amount, xml, status)
             values (@Company, @branchId, 'repacking', @orderId, @reference, @day, 0, @xml, 'pending')
@@ -318,8 +340,73 @@ public static class Boms
             """, new { b.Company, branchId, orderId, reference, day, xml = xml.ToString(SaveOptions.DisableFormatting) }, tx);
         if (added == 0) return 0;
         await c.ExecuteAsync("update bom_version set locked_at = coalesce(locked_at, now()), used_until = greatest(used_until, @day) where id = any(@ids)",
-            new { ids = sold.Select(s => s.VersionId).ToArray(), day }, tx);
-        return sold.Count;
+            new { ids = sold.Select(s => s.VersionId).Concat(picked.Select(p => p.VersionId)).Distinct().ToArray(), day }, tx);
+        return items.Count;
+    }
+
+    /// <summary>What a bill line's chosen contents are (from its modifiers: the entries with "content").</summary>
+    public static List<(string Type, string Code, string Name, string Unit, decimal Qty)> Contents(string modifiers)
+    {
+        var list = new List<(string, string, string, string, decimal)>();
+        foreach (var m in JsonDocument.Parse(modifiers).RootElement.EnumerateArray())
+            if (m.TryGetProperty("content", out var x) && x.ValueKind == JsonValueKind.Object)
+                list.Add((x.GetProperty("type").GetString() ?? "", x.GetProperty("code").GetString() ?? "", x.GetProperty("name").GetString() ?? "",
+                    x.GetProperty("unit").GetString() ?? "", x.GetProperty("qty").GetDecimal()));
+        return list;
+    }
+
+    /// <summary>
+    /// The materials an item's contents can be chosen from: its BOM's version valid on the day, each counted in pieces where its
+    /// base unit isn't PCS but FACTS has a PCS unit for it (otherwise in the BOM's unit, e.g. KG).
+    /// </summary>
+    public static async Task<List<Content>> ContentsAsync(NpgsqlConnection c, NpgsqlTransaction tx, string? itemType, string? itemCode, DateOnly day) =>
+        itemCode is null ? [] : (await c.QueryAsync<Content>("""
+            with v as (
+              select bv.id from bom b join bom_version bv on bv.bom_id = b.id and bv.valid_from <= @day
+              where b.item_code = @itemCode and b.item_type = @itemType and (b.ended_from is null or b.ended_from > @day)
+              order by bv.valid_from desc limit 1)
+            select l.item_type as type, l.item_code as code, l.item_name as name, l.unit as bom_unit,
+                   case when upper(l.unit) <> 'PCS' and u.per_unit is not null then 'PCS' else l.unit end as unit,
+                   case when upper(l.unit) <> 'PCS' then u.per_unit end as per_unit
+            from bom_line l join v on v.id = l.version_id
+            left join material_unit u on u.item_code = l.item_code and u.unit = 'PCS'
+            order by l.item_name
+            """, new { itemType, itemCode, day }, tx)).ToList();
+
+    public sealed class Content
+    {
+        public string Type { get; set; } = "";
+        public string Code { get; set; } = "";
+        public string Name { get; set; } = "";
+        /// <summary>The unit it's counted in at the till: PCS where FACTS has one for it, else the BOM's unit.</summary>
+        public string Unit { get; set; } = "";
+        public string BomUnit { get; set; } = "";
+        /// <summary>Counted in pieces: how much of the BOM's unit one piece is (Belgica: 0.0125 KG).</summary>
+        public decimal? PerUnit { get; set; }
+    }
+
+    /// <summary>FACTS' PCS unit for BOM materials kept in another unit (STOCK_UNIT: 1 KG = 80 PCS → one piece is 0.0125 KG).</summary>
+    public static async Task<int> SyncUnitsAsync(Db db, Microsoft.Data.SqlClient.SqlConnection f, Guid companyId, string[]? codes = null)
+    {
+        codes ??= (await db.Company(companyId, (c, tx) => c.QueryAsync<string>("select distinct item_code from bom_line", transaction: tx))).ToArray();
+        if (codes.Length == 0) return 0;
+        var rows = (await f.QueryAsync<(string Code, string Base, decimal From, decimal To)>("""
+            select ltrim(rtrim(u.STKU_DOCNO)), ltrim(rtrim(m.STKMST_UNIT_DOCNO)), u.STKU_FROM_QTY, u.STKU_TO_QTY
+            from STOCK_UNIT u join STOCK_MASTER m on m.STKMST_DOCTYPE = u.STKU_DOCTYPE and m.STKMST_DOCNO = u.STKU_DOCNO
+            where ltrim(rtrim(u.STKU_UNIT_DOCNO)) = 'PCS' and ltrim(rtrim(m.STKMST_UNIT_DOCNO)) <> 'PCS' and u.STKU_FROM_QTY > 0 and u.STKU_TO_QTY > 0
+              and ltrim(rtrim(u.STKU_DOCNO)) in (select value from string_split(@codes, ','))
+            """, new { codes = string.Join(',', codes) }, commandTimeout: 60)).GroupBy(r => r.Code).Select(g => g.First()).ToList();
+        return await db.Company(companyId, async (c, tx) =>
+        {
+            await c.ExecuteAsync("delete from material_unit where item_code = any(@codes) and not (item_code = any(@have))",
+                new { codes, have = rows.Select(r => r.Code).ToArray() }, tx);
+            foreach (var r in rows)
+                await c.ExecuteAsync("""
+                    insert into material_unit (company_id, item_code, unit, base_unit, per_unit) values (@companyId, @Code, 'PCS', @Base, @per)
+                    on conflict (company_id, item_code, unit) do update set base_unit = excluded.base_unit, per_unit = excluded.per_unit, synced_at = now()
+                    """, new { companyId, r.Code, r.Base, per = Math.Round(r.From / r.To, 6, MidpointRounding.AwayFromZero) }, tx);
+            return rows.Count;
+        });
     }
 
     /// <summary>
@@ -402,7 +489,9 @@ public static class Boms
             update bom b set ended_from = greatest(@today, coalesce((select max(used_until) from bom_version v where v.bom_id = b.id) + 1, @today))
             where b.facts_doc is not null and b.ended_from is null and not (b.item_code = any(@codes))
             """, new { today, codes = rows.Select(r => r.Fg).Distinct().ToArray() }, tx));
-        return new { boms = made + changed + same, made, changed, unchanged = same, ended };
+        // Materials kept in KG that FACTS also counts in pieces: for contents chosen at the till.
+        var units = await SyncUnitsAsync(db, f, companyId);
+        return new { boms = made + changed + same, made, changed, unchanged = same, ended, units };
     }
 
     private static string Req(string? v, string what) => string.IsNullOrWhiteSpace(v) ? throw new DomainException($"The {what} is missing.") : v.Trim();
