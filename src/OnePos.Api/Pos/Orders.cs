@@ -642,7 +642,7 @@ public static class Orders
         var header = await c.QuerySingleAsync<(string LegalName, string? Trn, string Currency, string Branch, string BranchCode, string? Address, string? Phone, string? ReceiptHeader, string? ReceiptFooter,
             string? LegalNameAr, string? BranchAr, string? AddressAr, string Language, string Settings, string? Email, string? Website, DateTime? LogoAt, bool HasLogo, string TradingName, string Status)>("""
             select co.legal_name, co.trn, co.base_currency as currency, b.name as branch, b.code as branch_code, b.address, b.phone, b.receipt_header, b.receipt_footer,
-                   co.legal_name_ar, b.name_ar, b.address_ar, b.receipt_language, b.receipt_settings::text, co.email, co.website, co.logo_at, co.logo_file is not null, co.name, o.status
+                   co.legal_name_ar, b.name_ar, b.address_ar, b.receipt_language, b.receipt_settings::text, co.email, co.website, b.logo_at, b.logo_file is not null, co.name, o.status
             from pos_order o join branch b on b.id = o.branch_id join company co on co.id = o.company_id where o.id = @id
             """, new { id }, tx);
         var settings = Branding.Settings(header.Settings);
@@ -663,7 +663,7 @@ public static class Orders
         {
             header.LegalName, header.Trn, header.Currency, header.Branch, header.BranchCode, header.Address, header.Phone, header.ReceiptHeader, header.ReceiptFooter,
             header.LegalNameAr, header.BranchAr, header.AddressAr, header.Language, header.Email, header.Website,
-            settings, logoAt = header.HasLogo ? header.LogoAt : null, companyId, header.TradingName, detail, qrToken,
+            settings, logoAt = header.HasLogo ? header.LogoAt : null, companyId, branchId = detail.Order.BranchId, header.TradingName, detail, qrToken,
         };
     }
 
