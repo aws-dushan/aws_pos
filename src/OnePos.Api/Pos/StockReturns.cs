@@ -285,7 +285,7 @@ public static class StockReturns
             var note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
             if (reason == "other" && note is null) throw new DomainException("Say why it goes back.");
             var (s, master, tz) = await db.Company(scope.CompanyId, async (c, tx) => (await WastageApproval.SetupAsync(c, tx, scope.Branch),
-                await c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @co", new { co = scope.CompanyId }, tx),
+                await c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx),
                 await c.ExecuteScalarAsync<string>("select time_zone from branch where id = @b", new { b = scope.Branch }, tx) ?? "Asia/Dubai"));
             if (!CanReturn(s)) throw new DomainException("Returns need an approver: set this branch's wastage approver and their FACTS username (Companies & branches).");
             Returnable? item;

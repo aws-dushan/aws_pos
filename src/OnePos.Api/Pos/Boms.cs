@@ -188,7 +188,7 @@ public static class Boms
             RequireView(scope);
             var term = (q ?? "").Trim();
             if (term.Length < 2) return Results.Ok(Array.Empty<object>());
-            var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @id", new { id = scope.CompanyId }, tx));
+            var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select case when count(distinct coalesce(facts_item_master, '*')) = 1 then max(facts_item_master) end from branch where company_id = @companyId and is_active", new { companyId = scope.CompanyId }, tx));
             await using var f = await erp.OpenAsync(scope.CompanyId);
             var rows = await f.QueryAsync<(string Code, string Name, string Type, string Unit, string? Kind)>("""
                 select top 30 ltrim(rtrim(m.STKMST_DOCNO)), m.STKMST_DESC, ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO)), ltrim(rtrim(m.STKMST_STTYPE))
@@ -332,7 +332,7 @@ public static class Boms
     public static async Task<object> SyncFromFactsAsync(Db db, Microsoft.Data.SqlClient.SqlConnection f, Guid companyId)
     {
         var (master, tz) = await db.Company(companyId, async (c, tx) => (
-            await c.ExecuteScalarAsync<string?>("select facts_item_master from company where id = @companyId", new { companyId }, tx),
+            await c.ExecuteScalarAsync<string?>("select case when count(distinct coalesce(facts_item_master, '*')) = 1 then max(facts_item_master) end from branch where company_id = @companyId and is_active", new { companyId }, tx),
             await c.ExecuteScalarAsync<string?>("select time_zone from branch where company_id = @companyId order by is_active desc, code limit 1", new { companyId }, tx) ?? "Asia/Dubai"));
         var hasActive = await f.ExecuteScalarAsync<int?>("select COL_LENGTH('BOM_HEADER', 'BOM_ACTIVE_STATUS')") is not null;
         var active = hasActive ? " and isnull(BOM_ACTIVE_STATUS, 0) = 0" : "";
