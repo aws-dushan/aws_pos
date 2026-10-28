@@ -155,7 +155,7 @@ export default function MenuPage() {
                           {i.erpStock !== null && <Pill className={i.erpStock > 0 ? TONE.done : TONE.danger}>Stock {fmtIn(i.erpStock, i.erpStock % 1 ? 2 : 0)}</Pill>}
                         </div>
                         <div className="mt-auto flex flex-wrap gap-2 pt-3">
-                          <Button variant={noPrice(i) && i.isSold && !i.erpPriced ? "default" : "outline"} className="h-10" onClick={() => setEditItem(i)}><PencilIcon /> {noPrice(i) && !i.erpPriced ? "Set price" : "Edit"}</Button>
+                          <Button variant={noPrice(i) && i.isSold && !i.erpPriced ? "default" : "outline"} className="h-10" onClick={() => setEditItem(i)}><PencilIcon /> Edit</Button>
                           <Button variant="outline" className="h-10" onClick={() => branchSet(i, { soldOutToday: !i.soldOut }, i.soldOut ? `${i.name} is back on.` : `${i.name} is sold out for today.`)}>
                             {i.soldOut ? <><CheckIcon /> Back on</> : <><BanIcon /> Sold out</>}
                           </Button>
@@ -406,12 +406,12 @@ function ItemPicker({ items, value, onChange }: { items: MenuItem[]; value: stri
   return (
     <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ(""); }}>
       <PopoverTrigger render={
-        <button type="button" aria-label="Menu item" className="flex h-8 min-w-0 items-center rounded-lg border border-input bg-card px-2 text-left text-sm dark:bg-input/30">
+        <button type="button" aria-label="Menu item" title={chosen ? `${chosen.name}${chosen.erpItemCode ? ` · ${chosen.erpItemCode}` : ""}` : undefined} className="flex h-8 min-w-0 items-center rounded-lg border border-input bg-card px-2 text-left text-sm dark:bg-input/30">
           <span className={cn("min-w-0 flex-1 truncate", !chosen && "text-muted-foreground")}>{chosen ? chosen.name : "Not an item"}</span>
           {chosen?.erpItemCode && <span className="ml-1.5 shrink-0 text-xs text-muted-foreground tabular-nums">{chosen.erpItemCode}</span>}
         </button>
       } />
-      <PopoverContent align="start" className="w-80 gap-1.5 p-1.5">
+      <PopoverContent align="start" className="w-[28rem] max-w-[calc(100vw-2rem)] gap-1.5 p-1.5">
         <Input autoFocus value={q} placeholder="Search name or item code" onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); if (found[0]) pick(found[0]); } }} />
         <div className="max-h-64 overflow-y-auto">
@@ -419,7 +419,7 @@ function ItemPicker({ items, value, onChange }: { items: MenuItem[]; value: stri
           {found.map((x) => (
             <button key={x.id} type="button" onClick={() => pick(x)}
               className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", x.id === value && "bg-muted")}>
-              <span className="min-w-0 flex-1 truncate">{x.name}</span>
+              <span className="min-w-0 flex-1">{x.name}</span>
               <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{x.erpItemCode ?? "No item code"}</span>
             </button>
           ))}
@@ -458,7 +458,7 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
   const required = min > 0;
   return (
     <Dialog open={!!value} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-4xl">
         <form onSubmit={save} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{value === "new" ? "New option group" : `Options · ${name}`}</DialogTitle>
@@ -482,7 +482,7 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
             <div className="text-[0.8rem] font-medium text-foreground/80">Options</div>
             <p className="text-xs text-muted-foreground">For a combo, every option must be a menu item: the kitchen gets that item, and FACTS gets it with its item code at the price here (its price in the combo; it starts at the item&apos;s menu price). Otherwise the price is the upcharge. Switch on FACTS to charge the linked item&apos;s live price at the branch (from FACTS) instead of a typed one.</p>
             {opts.map((o, i) => (
-              <div key={o.id ?? `new-${i}`} className="grid grid-cols-[1fr_9rem_6rem_auto_auto_auto] items-center gap-2">
+              <div key={o.id ?? `new-${i}`} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_6rem_auto_auto_auto] items-center gap-2">
                 <Input value={o.name} placeholder={`Option ${i + 1}`} onChange={(e) => setOpts(opts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
                 <ItemPicker items={items} value={o.itemId}
                   onChange={(it) => setOpts(opts.map((x, j) => (j === i ? { ...x, itemId: it?.id ?? "", name: x.name.trim() || !it ? x.name : it.name,
