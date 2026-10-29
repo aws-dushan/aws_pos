@@ -287,13 +287,17 @@ public static class Orders
         });
 
         // Everything a printed receipt (tax invoice) needs: the order, the company's legal name and TRN, the branch's receipt text.
+        // To look at: the till's staff, and whoever sees the invoices in Reports, for any branch they work at ("All my branches").
         api.MapGet("/orders/{id:guid}/receipt", async (Guid id, HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
-            scope.Require("pos.sell");
+            if (!scope.Can("reports.view") && !scope.Can("facts.post") && !scope.Can("day.manage")) scope.Require("pos.sell");
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                await BranchCheckAsync(c, tx, id, scope.Branch);
+                var b = await c.ExecuteScalarAsync<Guid?>("select branch_id from pos_order where id = @id", new { id }, tx) ?? throw new NotFoundException("Order not found.");
+                if (b != scope.BranchId && !scope.IsAdmin
+                    && !await c.ExecuteScalarAsync<bool>("select exists (select 1 from user_branch where user_id = @u and branch_id = @b)", new { u = scope.UserId, b }, tx))
+                    throw new ForbiddenException("This order belongs to a branch you don't work at.");
                 return await ReceiptAsync(c, tx, id, scope.CompanyId, publicView: false);
             });
         });

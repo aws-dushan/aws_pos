@@ -9,7 +9,7 @@ import { openDrawerForCash, printReceipt, type ReceiptLine } from "@/lib/device"
 import { cn } from "@/lib/utils";
 import { fmtIn, roundTo } from "@/lib/num";
 import { fmtQty, METHOD_LABEL, orderLabel, TYPE_LABEL, type OrderDetail, type PayMethod, orderNo, cardLabel } from "@/lib/pos";
-import { Segmented } from "@/components/kit";
+import { ErrorNote, Segmented } from "@/components/kit";
 import { Numpad } from "@/components/numpad";
 import { celebrate } from "@/components/motion";
 import { PrintedLines } from "@/components/printed-lines";
@@ -409,8 +409,12 @@ export async function printOrderReceipt(orderId: string, drawer: boolean, jobId 
   }
 }
 
-/** A printable tax-invoice receipt (only it prints: globals.css .print-area). Phase 1 prints through the browser; the Device Service takes over. */
+/**
+ * A printable tax-invoice receipt (only it prints: globals.css .print-area). Phase 1 prints through the browser; the Device Service
+ * takes over. Without till rights (e.g. reports only) it is a preview: no Print button.
+ */
 export function ReceiptDialog({ orderId, onClose, primary }: { orderId: string | null; onClose: () => void; primary?: { label: string; onClick: () => void } }) {
+  const { can } = useSession();
   const r = useApi<Receipt>(orderId ? `/orders/${orderId}/receipt` : null);
   const qr = useReceiptQr(r.data?.qrToken);
   const d = r.data?.detail;
@@ -418,14 +422,14 @@ export function ReceiptDialog({ orderId, onClose, primary }: { orderId: string |
     <Dialog open={!!orderId} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] sm:max-w-sm">
         <DialogHeader><DialogTitle>Receipt{d ? ` · ${orderNo(d.order)}` : ""}</DialogTitle></DialogHeader>
-        {!r.data || !d ? <div className="h-80 rounded-xl skeleton-shimmer" /> : (
+        {r.error ? <ErrorNote message={r.error} /> : !r.data || !d ? <div className="h-80 rounded-xl skeleton-shimmer" /> : (
           <PrintedLines lines={receiptLines(r.data, qr)} className="max-h-[60vh]" />
         )}
         <DialogFooter>
-          <Button variant="outline" className="h-12" disabled={!d} onClick={async () => {
+          {can("pos.sell") && <Button variant="outline" className="h-12" disabled={!d} onClick={async () => {
             try { if (!(await printOrderReceipt(orderId!, false))) printReceiptArea(); else toast.success("Receipt sent to the printer."); }
             catch (e) { toast.error((e as Error).message); }
-          }}><PrinterIcon /> Print</Button>
+          }}><PrinterIcon /> Print</Button>}
           <Button className="h-12" onClick={primary?.onClick ?? onClose}>{primary?.label ?? "Done"}</Button>
         </DialogFooter>
       </DialogContent>
