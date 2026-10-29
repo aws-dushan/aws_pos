@@ -317,6 +317,36 @@ public static class Notices
         }
     }
 
+    /// <summary>
+    /// The bell, live: listens for the database's signal on every new notice (0089) and tells that company's open screens to re-read
+    /// it ("notices.changed"), whichever part of One POS made the notice. A lost connection is opened again after a few seconds.
+    /// </summary>
+    public sealed class Listener(IConfiguration config, Live live, ILogger<Listener> logger) : BackgroundService
+    {
+        protected override async Task ExecuteAsync(CancellationToken stop)
+        {
+            var owner = config.GetConnectionString("Owner");
+            while (!stop.IsCancellationRequested)
+            {
+                try
+                {
+                    await using var c = new NpgsqlConnection(owner);
+                    await c.OpenAsync(stop);
+                    c.Notification += (_, e) =>
+                    {
+                        var parts = e.Payload.Split(':');
+                        if (parts.Length == 2 && Guid.TryParse(parts[0], out var companyId) && Guid.TryParse(parts[1], out var branchId))
+                            _ = live.ToCompany(companyId, "notices.changed", new { branchId });
+                    };
+                    await c.ExecuteAsync("listen onepos_notice");
+                    while (!stop.IsCancellationRequested) await c.WaitAsync(stop);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { logger.LogWarning(ex, "Notice listener lost its connection"); }
+                await Task.Delay(TimeSpan.FromSeconds(5), stop).ContinueWith(_ => { });
+            }
+        }
+    }
+
     /// <summary>Every minute: notices waiting to be emailed go out (a failure is kept on the notice and not retried).</summary>
     public sealed class Sender(Db db, IDataProtectionProvider dp, IConfiguration config, ILogger<Sender> logger) : BackgroundService
     {

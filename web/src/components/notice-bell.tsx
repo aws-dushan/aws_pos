@@ -20,7 +20,8 @@ export function NoticeBell() {
   const { can } = useSession();
   const show = can("reports.view") || can("day.manage");
   const list = useApi<{ unread: number; items: Notice[] }>(show ? "/notices?take=20" : null);
-  useLiveEvent(["day.changed"], () => list.reload());
+  // A new notice anywhere in the company (the database signals it), a closed day, or back online after a dropped connection.
+  useLiveEvent(["notices.changed", "day.changed", "reconnected"], () => list.reload());
   if (!show || !list.data?.items.length) return null;
   const n = list.data.unread;
   const hasAlert = list.data.items.some((x) => !x.isRead && x.kind === "alert");
