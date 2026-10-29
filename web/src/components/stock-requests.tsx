@@ -74,7 +74,7 @@ export function StockRequests() {
     const storeName = d?.stores.find((s) => s.code === storeCode)?.name ?? storeCode;
     const items = `${lines.length} item${lines.length === 1 ? "" : "s"}`;
     if (!draft && d?.preapproved && !(await confirmDialog({
-      title: `Send ${items} to ${storeName}?`, message: "It goes to FACTS straight away as a stock transfer request (STR50) and can't be changed after.", confirmLabel: "Send request",
+      title: `Send ${items} to ${storeName}?`, message: "It goes to FACTS straight away as a stock transfer request (STR50) and can't be changed after.", confirmLabel: "Send to store",
     }))) return;
     setBusy(true);
     try {
@@ -145,7 +145,7 @@ export function StockRequests() {
             <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-2">
               <Button variant="outline" className="h-12" disabled={busy || !storeCode || !lines.length || !!bad} onClick={() => void save(true)}><SaveIcon /> Save draft</Button>
               <Button className="h-12" disabled={busy || !storeCode || !lines.length || !!bad} onClick={() => void save(false)}>
-                {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />} Send request{lines.length ? ` · ${lines.length} item${lines.length === 1 ? "" : "s"}` : ""}
+                {busy ? <Loader2Icon className="animate-spin" /> : <SendIcon />} {d.preapproved ? "Send to store" : "Send for approval"}{lines.length ? ` · ${lines.length} item${lines.length === 1 ? "" : "s"}` : ""}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
