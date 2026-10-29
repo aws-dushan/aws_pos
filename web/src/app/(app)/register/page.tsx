@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
   ArmchairIcon, BikeIcon, CombineIcon, LockIcon, MonitorIcon, SplitIcon, ChefHatIcon, ChevronLeftIcon, EllipsisIcon, HandPlatterIcon, Loader2Icon, MinusIcon, PlusIcon, ReceiptTextIcon,
-  SearchIcon, ShoppingBagIcon, ShoppingBasketIcon, StickyNoteIcon, Trash2Icon, UsersRoundIcon, UtensilsCrossedIcon, XIcon, InboxIcon, ChevronUpIcon, PencilIcon, UserRoundIcon, PercentIcon, TagIcon } from "lucide-react";
+  SearchIcon, ShoppingBagIcon, ShoppingBasketIcon, StickyNoteIcon, Trash2Icon, UsersRoundIcon, UtensilsCrossedIcon, XIcon, InboxIcon, ChevronUpIcon, PencilIcon, UserRoundIcon, PercentIcon, TagIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, newKey, useApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -314,6 +314,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
               className="h-12 w-full rounded-xl border bg-card pr-10 pl-10 text-[0.95rem] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 dark:bg-input/30" />
             {q && <button type="button" aria-label="Clear search" onClick={() => setQ("")} className="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted"><XIcon className="size-4" /></button>}
           </div>
+          {company?.erpConnector === "facts" && <RefreshMenuButton onDone={() => menu.reload()} />}
         </div>
         <PickupStrip />
         <NoSaleDialog open={noSale} onClose={() => setNoSale(false)} />
@@ -516,6 +517,33 @@ function OrderScreen({ orderId }: { orderId: string }) {
 }
 
 /** The bill's discount line: its name (a listed discount, a platform's offer), its % or "Discounts" when items have their own. */
+/** Reads items, prices, BOMs and stock from FACTS now (at most once a minute per company), then reloads the menu. */
+function RefreshMenuButton({ onDone }: { onDone: () => void }) {
+  const last = useApi<{ at: string | null }>("/erp/sync/last");
+  const [busy, setBusy] = useState(false);
+  const [at, setAt] = useState<string | null | undefined>(undefined);
+  const shown = at === undefined ? last.data?.at : at;
+  const time = (t: string | null) => t ? new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "last";
+  const refresh = async () => {
+    setBusy(true);
+    try {
+      const r = await api<{ refreshed: boolean; at: string | null; error: string | null }>("/erp/sync/refresh", "POST", {});
+      setAt(r.at);
+      onDone();
+      if (r.error) toast.error(`FACTS didn't answer: showing the ${time(r.at)} update.`, { description: r.error });
+      else toast.success(`Menu up to date${r.at ? ` · ${time(r.at)}` : ""}`);
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Button variant="outline" className="size-12 shrink-0 rounded-xl" aria-label="Refresh items, prices, BOMs and stock from FACTS"
+      title={busy ? "Reading FACTS…" : shown ? `Last updated from FACTS ${timeAgo(shown)}` : "Refresh items, prices, BOMs and stock from FACTS"}
+      disabled={busy} onClick={() => void refresh()}>
+      <RefreshCwIcon className={cn("size-5", busy && "animate-spin")} />
+    </Button>
+  );
+}
+
 function billDiscountLabel(o: OrderDetail["order"]): string {
   // A customer's pre-approved discount: its reason and whose (e.g. "Complimentary · Ahmed").
   if (o.discountSource === "customer") return `${o.discountName ?? "Pre-approved"} · ${o.discountNote ?? ""} ${o.discountPct}%`.trim();
