@@ -36,6 +36,13 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         return c;
     }
 
+    /// <summary>When each company last pressed the register's refresh (this API instance): FACTS is read at most once a minute.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, DateTime> Refreshed = new();
+
+    /// <summary>When prices and stock were last read from FACTS successfully (the register shows it).</summary>
+    private static Task<DateTime?> LastReadAsync(Db db, Guid companyId) => db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<DateTime?>(
+        "select max(finished_at) from erp_sync where kind in ('prices', 'stock') and ok", transaction: tx));
+
     private static string Clean(string? s) => string.Join(' ', (s ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     /// <summary>Runs one sync and records it (erp_sync): ok with a summary, or failed with the reason.</summary>
@@ -567,7 +574,35 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             return Results.Ok(await sync.SyncPricesAsync(scope.CompanyId, scope.UserId));
         });
 
-        api.MapPost("/erp/enable-sold", async (EnableBody body, HttpContext http, Db db, FactsSync sync) =>
+        // The register's refresh button: items, prices, BOMs and stock from FACTS now, for anyone at a till. FACTS is read at most once
+        // a minute per company; a press inside that minute (this till or another) only says when it was last read.
+        api.MapGet("/erp/sync/last", async (HttpContext http, Db db) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("pos.sell");
+            return Results.Ok(new { at = await LastReadAsync(db, scope.CompanyId) });
+        });
+
+        api.MapPost("/erp/sync/refresh", async (HttpContext http, Db db, FactsSync sync) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("pos.sell");
+            var now = DateTime.UtcNow;
+            var last = Refreshed.GetOrAdd(scope.CompanyId, DateTime.MinValue);
+            if (now - last < TimeSpan.FromMinutes(1) || !Refreshed.TryUpdate(scope.CompanyId, now, last))
+                return Results.Ok(new { refreshed = false, at = await LastReadAsync(db, scope.CompanyId), error = (string?)null });
+            string? error = null;
+            foreach (var step in new Func<Task<object>>[] {
+                () => sync.SyncItemsAsync(scope.CompanyId, scope.UserId), () => sync.SyncPricesAsync(scope.CompanyId, scope.UserId),
+                () => sync.SyncBomsAsync(scope.CompanyId, scope.UserId), () => sync.SyncStockAsync(scope.CompanyId, scope.UserId) })
+            {
+                try { await step(); }
+                catch (DomainException ex) { error ??= ex.Message; }
+            }
+            return Results.Ok(new { refreshed = error is null, at = await LastReadAsync(db, scope.CompanyId), error });
+        });
+
+        api.MapPost("/erp/enable-sold",async (EnableBody body, HttpContext http, Db db, FactsSync sync) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("menu.manage");
