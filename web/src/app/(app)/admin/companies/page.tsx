@@ -29,7 +29,7 @@ type Branch = {
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
   marketingApproverId: string | null; marketingApprovalEmail: string | null; marketingFactsUser: string | null; marketingAccount: string | null;
-  requestApproverId: string | null; requestApprovalEmail: string | null; requestFactsUser: string | null;
+  requestApproverId: string | null; requestApprovalEmail: string | null; requestFactsUser: string | null; requestPreapproved: boolean;
   discountApprovalEmails: string[] | null;
 };
 
@@ -674,23 +674,24 @@ function MarketingBox({ company, branch, onSaved }: { company: Company; branch: 
 
 /**
  * Stock requests at one branch (STR50): who approves them (a One POS user), where requests are emailed, and the approver's FACTS
- * username the approved STR50 is posted as. Set, the branch has a Requests tab on Stock. Saved on its own.
+ * username the STR50 is posted as; or pre-approved, posted as soon as the branch sends it (the email then only gets a copy). Set, the
+ * branch has a Requests tab on Stock. Saved on its own.
  */
 function RequestApprovalBox({ company, branch, onSaved }: { company: Company; branch: Branch; onSaved: () => void }) {
   const users = useApi<CompanyUser[]>(`/companies/${company.id}/users`);
-  const [v, setV] = useState({ approverId: branch.requestApproverId ?? "", email: branch.requestApprovalEmail ?? "", factsUser: branch.requestFactsUser ?? "" });
+  const [v, setV] = useState({ approverId: branch.requestApproverId ?? "", email: branch.requestApprovalEmail ?? "", factsUser: branch.requestFactsUser ?? "", pre: !!branch.requestPreapproved });
   const [busy, setBusy] = useState(false);
   async function save(off = false) {
     setBusy(true);
     try {
-      await api(`/branches/${branch.id}/request-approval`, "PUT", off ? { approverId: null, email: null, factsUser: null }
-        : { approverId: v.approverId || null, email: v.email.trim() || null, factsUser: v.factsUser.trim() || null });
-      if (off) setV({ approverId: "", email: "", factsUser: "" });
+      await api(`/branches/${branch.id}/request-approval`, "PUT", off ? { approverId: null, email: null, factsUser: null, preapproved: false }
+        : { approverId: v.approverId || null, email: v.email.trim() || null, factsUser: v.factsUser.trim() || null, preapproved: v.pre });
+      if (off) setV({ approverId: "", email: "", factsUser: "", pre: false });
       toast.success(off ? "Stock requests off for this branch." : "Stock requests saved.");
       onSaved();
     } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
-  const on = !!branch.requestApproverId;
+  const on = !!branch.requestApproverId || !!branch.requestPreapproved;
   return (
     <div data-module="inv" className="rounded-2xl border p-4">
       <div className="mb-3 flex items-start gap-3">
@@ -699,24 +700,29 @@ function RequestApprovalBox({ company, branch, onSaved }: { company: Company; br
           <div className="font-medium">Stock requests {on ? <Pill className={TONE.done} dot>On</Pill> : <Pill className={TONE.muted}>Off</Pill>}</div>
           <p className="text-xs text-muted-foreground">
             The branch asks a store for stock on Stock &rarr; Requests; the request waits for the approver (email and Approvals page), who can change quantities.
-            Approved, it is posted in FACTS as a stock transfer request (STR50) as the approver&apos;s FACTS username. Off: no Requests tab.
+            Approved, it is posted in FACTS as a stock transfer request (STR50) as the FACTS username below. Pre-approved: no approver, what the
+            branch sends is posted at once. Off: no Requests tab.
           </p>
         </div>
       </div>
       {users.error ? <ErrorNote message={users.error} /> : (
         <div className="grid items-start gap-4 sm:grid-cols-2">
-          <Field label="Approver" hint="The One POS user who approves the requests.">
+          <div className="flex items-center gap-3 sm:col-span-2">
+            <Switch on={v.pre} onChange={(pre) => setV({ ...v, pre })} label="Pre-approved" />
+            <span className="text-sm">Pre-approved <span className="text-muted-foreground">· sent requests go to FACTS at once, no approval</span></span>
+          </div>
+          <Field label="Approver" hint={v.pre ? "Optional: still decides requests already waiting." : "The One POS user who approves the requests."}>
             <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
               <option value="">Choose a user</option>
               {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
             </select>
           </Field>
-          <Field label="Approval email"><Input type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="name@company.com" /></Field>
-          <Field label="FACTS username" hint="Posts the approved STR50 in FACTS."><Input value={v.factsUser} maxLength={20} onChange={(e) => setV({ ...v, factsUser: e.target.value })} placeholder="e.g. NaziaS" /></Field>
+          <Field label={v.pre ? "Copy to email (optional)" : "Approval email"}><Input type="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="name@company.com" /></Field>
+          <Field label="FACTS username" hint={v.pre ? "Posts the sent STR50 in FACTS." : "Posts the approved STR50 in FACTS."}><Input value={v.factsUser} maxLength={20} onChange={(e) => setV({ ...v, factsUser: e.target.value })} placeholder="e.g. NaziaS" /></Field>
         </div>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save stock requests</Button>
+        <Button type="button" className="h-10" disabled={busy || (!v.approverId && !v.pre)} onClick={() => void save()}>Save stock requests</Button>
         {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
       </div>
     </div>

@@ -158,7 +158,7 @@ public static class AuthEndpoints
                     select b.id, b.company_id, b.code, b.name, b.table_service, b.kitchen_enabled, b.returns_enabled, b.day_control, b.is_active,
                            b.marketing_approver_id is not null and b.marketing_account is not null and b.erp_location_code is not null
                              and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as marketing_enabled,
-                           b.request_approver_id is not null and b.request_facts_user is not null and b.erp_location_code is not null
+                           (b.request_approver_id is not null or b.request_preapproved) and b.request_facts_user is not null and b.erp_location_code is not null
                              and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as requests_enabled
                     from branch b
                     where b.company_id = any(@companyIds) and (b.is_active or @isAdmin)

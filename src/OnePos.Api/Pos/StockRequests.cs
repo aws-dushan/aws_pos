@@ -17,19 +17,21 @@ namespace OnePos.Api.Pos;
 /// waits for the branch's request approver (company administrators can stand in), who can change quantities, then approve or reject.
 /// Approved, it goes to FACTS at once as a POSTED STR50 from the store to the outlet (usp_ONEPOS_PostTransferRequest), as the
 /// approver's FACTS username. The store sends it with STV50s as today; those point back at the STR50's lines, so each line shows what
-/// arrived. A branch without a request approver has no Requests tab.
+/// arrived. A branch set to pre-approved needs no approver: what it sends is posted at once (one STR50 per request), as the branch's
+/// FACTS username. A request can be kept as a draft first, changed or deleted until it is sent. A branch with neither an approver nor
+/// pre-approval has no Requests tab.
 /// </summary>
 public static class StockRequests
 {
     public sealed record NewLine(string ItemCode, decimal Qty);
-    public sealed record RequestBody(string StoreCode, DateOnly? NeededBy, string? Note, NewLine[] Lines);
+    public sealed record RequestBody(string StoreCode, DateOnly? NeededBy, string? Note, NewLine[] Lines, bool? Draft);
     public sealed record ApproveLine(Guid Id, decimal Qty);
     public sealed record ApproveBody(ApproveLine[] Lines, string? Note);
     public sealed record ApproveRequest(Guid Id, ApproveLine[]? Lines);
     public sealed record ApproveManyBody(ApproveRequest[] Requests, string? Note);
     public sealed record RejectBody(string Note);
     public sealed record StoreBody(string Code, string? Name, bool? IsActive);
-    public sealed record ApprovalBody(Guid? ApproverId, string? Email, string? FactsUser);
+    public sealed record ApprovalBody(Guid? ApproverId, string? Email, string? FactsUser, bool? Preapproved);
 
     private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
@@ -81,14 +83,18 @@ public static class StockRequests
         from stock_request r join branch b on b.id = r.branch_id join app_user u on u.id = r.requested_by left join app_user d on d.id = r.decided_by
         """;
 
-    /// <summary>The branch can ask for stock: FACTS-linked with its location, and a request approver who has a FACTS username.</summary>
-    private static async Task<(bool On, string? Loc, string? Approver, string? Email)> SetupAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid branchId)
+    /// <summary>
+    /// The branch can ask for stock: FACTS-linked with its location, a FACTS username to post as, and a request approver or
+    /// pre-approval (what it sends is posted at once).
+    /// </summary>
+    private static async Task<(bool On, string? Loc, string? Approver, string? Email, bool Preapproved)> SetupAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid branchId)
     {
-        var s = await c.QuerySingleAsync<(string Connector, string? Loc, Guid? ApproverId, string? FactsUser, string? Email, string? Approver)>("""
-            select co.erp_connector, b.erp_location_code, b.request_approver_id, b.request_facts_user, b.request_approval_email, u.display_name
+        var s = await c.QuerySingleAsync<(string Connector, string? Loc, Guid? ApproverId, string? FactsUser, string? Email, string? Approver, bool Preapproved)>("""
+            select co.erp_connector, b.erp_location_code, b.request_approver_id, b.request_facts_user, b.request_approval_email, u.display_name, b.request_preapproved
             from branch b join company co on co.id = b.company_id left join app_user u on u.id = b.request_approver_id where b.id = @branchId
             """, new { branchId }, tx);
-        return (s.Connector == "facts" && s.Loc is not null && s.ApproverId is not null && !string.IsNullOrWhiteSpace(s.FactsUser), s.Loc, s.Approver, s.Email);
+        return (s.Connector == "facts" && s.Loc is not null && (s.ApproverId is not null || s.Preapproved) && !string.IsNullOrWhiteSpace(s.FactsUser),
+            s.Loc, s.Approver, s.Email, s.Preapproved);
     }
 
     private static async Task<List<LineRow>> LinesAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid[] ids) =>
@@ -134,16 +140,17 @@ public static class StockRequests
     /// store go to FACTS as one STR50: their lines one after another (each line keeps its STR50 line number, so what arrives shows per
     /// line). Answers the branches touched.
     /// </summary>
-    private static async Task<List<Guid>> ApproveAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, IEnumerable<ApproveRequest> wanted, string? decisionNote)
+    private static async Task<List<Guid>> ApproveAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, IEnumerable<ApproveRequest> wanted, string? decisionNote,
+        bool preapproved = false)
     {
         var asked = wanted.GroupBy(w => w.Id).Select(g => g.First()).ToList();
         var ids = asked.Select(w => w.Id).ToArray();
         var rows = (await c.QueryAsync<RequestRow>($"{RowSql} where r.id = any(@ids) order by r.requested_at for update of r", new { ids }, tx)).ToList();
         if (rows.Count != ids.Length) throw new NotFoundException("Some of these requests were not found. Refresh and try again.");
         if (rows.Any(r => r.Approval != "waiting")) throw new DomainException("Some of these were decided already, or cancelled. Refresh and try again.");
-        if (rows.Any(r => !MayDecide(scope, r.ApproverId))) throw new ForbiddenException("You don't approve requests for that branch.");
+        if (!preapproved && rows.Any(r => !MayDecide(scope, r.ApproverId))) throw new ForbiddenException("You don't approve requests for that branch.");
         if (rows.FirstOrDefault(r => r.Loc is null || string.IsNullOrWhiteSpace(r.FactsUser)) is { } noUser)
-            throw new DomainException($"Set the request approver's FACTS username for {noUser.BranchName} first (Companies & branches).");
+            throw new DomainException($"Set the stock requests' FACTS username for {noUser.BranchName} first (Companies & branches).");
         var lines = await LinesAsync(c, tx, ids);
         var qtyOf = asked.SelectMany(w => w.Lines ?? []).GroupBy(l => l.Id).ToDictionary(g => g.Key, g => g.First().Qty);
         if (qtyOf.Values.Any(q => q < 0)) throw new DomainException("A quantity can't be below zero.");
@@ -167,7 +174,7 @@ public static class StockRequests
             var changed = mine.Where(l => Qty(l) != l.Qty).Select(l => $"{l.ItemName} {l.Qty.ToString("0.###", Inv)} → {Qty(l).ToString("0.###", Inv)}").ToList();
             await c.ExecuteAsync("update stock_request set approval = 'approved', decided_by = @u, decided_at = now(), decision_note = @note where id = @Id", new { r.Id, u = scope.UserId, note }, tx);
             await Audit.RecordAsync(c, tx, scope.CompanyId, r.BranchId, scope.UserId, "stock_request", r.Id.ToString(), "approved",
-                $"REQ-{r.Number} approved: {keep.Count} item{(keep.Count == 1 ? "" : "s")} from {r.StoreCode}{(changed.Count > 0 ? $" (changed: {string.Join("; ", changed)})" : "")}", note: note);
+                $"REQ-{r.Number} {(preapproved ? "sent pre-approved" : "approved")}: {keep.Count} item{(keep.Count == 1 ? "" : "s")} from {r.StoreCode}{(changed.Count > 0 ? $" (changed: {string.Join("; ", changed)})" : "")}", note: note);
         }
 
         // One STR50 per branch and store: the requests' lines one after another, each line keeping its STR50 line number.
@@ -201,6 +208,111 @@ public static class StockRequests
         return rows.Select(r => r.BranchId).Distinct().ToList();
     }
 
+    /// <summary>
+    /// A new request (id null) or a draft changed: checked against FACTS' item master, then kept as a draft or sent. Sent, it waits
+    /// for the approver, or at a pre-approved branch is approved by whoever sent it and goes to FACTS as its own STR50.
+    /// </summary>
+    private static async Task<IResult> SaveAsync(Guid? draftId, RequestBody body, HttpContext http, Db db, FactsSync facts, Live live)
+    {
+        var scope = await http.ScopeAsync(db);
+        if (!scope.Can("kitchen.view")) scope.Require("pos.sell");
+        var draft = body.Draft == true;
+        var lines = (body.Lines ?? []).Where(l => !string.IsNullOrWhiteSpace(l.ItemCode)).Select(l => l with { ItemCode = l.ItemCode.Trim() }).ToList();
+        if (lines.Count == 0) throw new DomainException("Add at least one item.");
+        if (lines.Any(l => l.Qty <= 0)) throw new DomainException("Every item needs a quantity above zero.");
+        if (lines.GroupBy(l => l.ItemCode).Any(g => g.Count() > 1)) throw new DomainException("An item is listed twice: put its whole quantity on one line.");
+        if (lines.Count > 200) throw new DomainException("At most 200 items in one request.");
+        var note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
+        if (note is { Length: > 150 }) throw new DomainException("Keep the note under 150 characters (the store sees it in FACTS).");
+        var (setup, store, master, today) = await db.Company(scope.CompanyId, async (c, tx) => (
+            await SetupAsync(c, tx, scope.Branch),
+            (await c.QueryAsync<(string Code, string Name)>("select code, name from request_store where code = @code and is_active", new { code = (body.StoreCode ?? "").Trim() }, tx)).FirstOrDefault(),
+            await c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx),
+            await Days.DateAsync(c, tx, scope.Branch)));
+        if (!setup.On) throw new DomainException("Requests aren't set up: set this branch's request approver (or pre-approval) and the FACTS username (Companies & branches).");
+        if (store.Code is null) throw new DomainException("Choose the store to ask.");
+        if (store.Code == setup.Loc) throw new DomainException("That store is this branch's own location.");
+        if (body.NeededBy is { } nb && nb < today) throw new DomainException("The needed-by date is already past.");
+
+        // The items as FACTS has them (name, type, unit): a code FACTS doesn't know is refused.
+        List<(string Code, string Name, string Type, string Unit)> known;
+        await using (var f = await facts.OpenAsync(scope.CompanyId))
+            known = (await f.QueryAsync<(string, string, string, string)>("""
+                select ltrim(rtrim(m.STKMST_DOCNO)), ltrim(rtrim(m.STKMST_DESC)), ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO)) from STOCK_MASTER m
+                where m.STKMST_ACTIVE_STATUS = 0 and (@master is null or m.STKMST_DOCTYPE = @master) and ltrim(rtrim(m.STKMST_DOCNO)) in (select value from string_split(@codes, ','))
+                """, new { master, codes = string.Join(',', lines.Select(l => l.ItemCode)) }, commandTimeout: 30)).ToList();
+        var missing = lines.Where(l => known.All(k => k.Code != l.ItemCode)).Select(l => l.ItemCode).ToList();
+        if (missing.Count > 0) throw new DomainException($"Not FACTS items (or not active): {string.Join(", ", missing)}.");
+
+        var (id, number) = await db.Company(scope.CompanyId, async (c, tx) =>
+        {
+            Guid rid;
+            int n;
+            if (draftId is { } did)
+            {
+                var old = await c.QuerySingleOrDefaultAsync<RequestRow>($"{RowSql} where r.id = @did and r.branch_id = @b for update of r", new { did, b = scope.Branch }, tx)
+                    ?? throw new NotFoundException("Request not found.");
+                if (old.Approval != "draft") throw new DomainException("This request was sent already. Refresh and try again.");
+                if (!scope.Can("day.manage") && old.RequestedBy != scope.UserId) throw new ForbiddenException("Only a manager can change someone else's draft.");
+                (rid, n) = (did, old.Number);
+                // Sent now: it counts from today, as the person who sent it.
+                await c.ExecuteAsync("""
+                    update stock_request set store_code = @Code, store_name = @Name, needed_by = @neededBy, note = @note, business_date = @today,
+                        requested_at = now(), requested_by = @u, approval = @approval where id = @rid
+                    """, new { store.Code, store.Name, neededBy = body.NeededBy, note, today, u = scope.UserId, approval = draft ? "draft" : "waiting", rid }, tx);
+                await c.ExecuteAsync("delete from stock_request_line where request_id = @rid", new { rid }, tx);
+            }
+            else
+            {
+                await c.ExecuteAsync("select pg_advisory_xact_lock(hashtext('stock_request:' || @b::text))", new { b = scope.Branch }, tx);
+                n = await c.ExecuteScalarAsync<int>("select coalesce(max(number), 0) + 1 from stock_request where branch_id = @b", new { b = scope.Branch }, tx);
+                rid = await c.ExecuteScalarAsync<Guid>("""
+                    insert into stock_request (company_id, branch_id, number, business_date, store_code, store_name, needed_by, note, requested_by, approval)
+                    values (@co, @b, @n, @today, @Code, @Name, @neededBy, @note, @u, @approval) returning id
+                    """, new { co = scope.CompanyId, b = scope.Branch, n, today, store.Code, store.Name, neededBy = body.NeededBy, note, u = scope.UserId, approval = draft ? "draft" : "waiting" }, tx);
+            }
+            var i = 0;
+            foreach (var l in lines)
+            {
+                var k = known.First(x => x.Code == l.ItemCode);
+                await c.ExecuteAsync("""
+                    insert into stock_request_line (company_id, request_id, line, item_type, item_code, item_name, unit, qty)
+                    values (@co, @rid, @line, @Type, @Code, @Name, @Unit, @qty)
+                    """, new { co = scope.CompanyId, rid, line = ++i, k.Type, k.Code, k.Name, k.Unit, qty = l.Qty }, tx);
+            }
+            var what = lines.Select(l => { var k = known.First(x => x.Code == l.ItemCode); return $"{l.Qty.ToString("0.###", Inv)} {k.Unit} {k.Name}"; }).ToList();
+            var items = $"{lines.Count} item{(lines.Count == 1 ? "" : "s")}";
+            await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "stock_request", rid.ToString(), draft ? "draft" : "recorded",
+                $"REQ-{n} to {store.Name} ({store.Code}): {items}{(draft ? " (draft)" : "")}", note: note);
+            if (draft) return (rid, n);
+
+            var preapproved = setup.Preapproved;
+            if (preapproved) await ApproveAsync(c, tx, scope, [new(rid, null)], "Pre-approved", preapproved: true);
+            // Waiting: the approver is asked. Pre-approved: only a copy, when the branch has an email for it.
+            var emailTo = setup.Email is { Length: > 0 } e ? new[] { e } : [];
+            if (preapproved && emailTo.Length == 0) return (rid, n);
+            var (by, branchName) = await c.QuerySingleAsync<(string, string)>("select (select display_name from app_user where id = @u), (select name from branch where id = @b)", new { u = scope.UserId, b = scope.Branch }, tx);
+            var noticeLines = new List<Notices.Line> { new("From store", $"{store.Name} ({store.Code})"), new("Requested by", by), new("Branch", branchName) };
+            if (body.NeededBy is { } need) noticeLines.Add(new("Needed by", need.ToString("dd MMM yyyy", Inv)));
+            if (note is not null) noticeLines.Add(new("Note", note));
+            noticeLines.AddRange(what.Select(w => new Notices.Line("Item", w)));
+            var smtp = await c.ExecuteScalarAsync<bool>("select smtp_settings is not null from company where id = @co", new { co = scope.CompanyId }, tx);
+            await c.ExecuteAsync("""
+                insert into notice (company_id, branch_id, business_date, kind, title, lines, email_status, email_to, link)
+                values (@co, @b, @today, 'request', @title, cast(@lines as jsonb), @email, @emailTo, @link)
+                """, new
+                {
+                    co = scope.CompanyId, b = scope.Branch, today,
+                    title = preapproved ? $"Stock request sent (pre-approved) · REQ-{n} · {items} from {store.Name}" : $"Stock request to approve · REQ-{n} · {items} from {store.Name}",
+                    lines = JsonSerializer.Serialize(noticeLines, Web), email = smtp && emailTo.Length > 0 ? "pending" : "none", emailTo, link = preapproved ? "/stock" : "/approvals",
+                }, tx);
+            return (rid, n);
+        });
+        if (!draft && setup.Preapproved) FactsPosting.Sender.Wake();
+        await live.ToBranch(scope.Branch, "stock.changed");
+        return Results.Ok(new { id, number = $"REQ-{number}", status = draft ? "draft" : setup.Preapproved ? "approved" : "waiting" });
+    }
+
     public static void Map(RouteGroupBuilder api)
     {
         // The Requests tab: the branch's requests over the last days, the stores it can ask, and who approves.
@@ -212,14 +324,17 @@ public static class StockRequests
             {
                 var s = await SetupAsync(c, tx, scope.Branch);
                 var st = (await c.QueryAsync<(string Code, string Name)>("select code, name from request_store where is_active order by name", null, tx)).ToList();
-                var rs = (await c.QueryAsync<RequestRow>($"{RowSql} where r.branch_id = @b and r.requested_at >= now() - make_interval(days => @days) order by r.requested_at desc",
+                var rs = (await c.QueryAsync<RequestRow>($"""
+                    {RowSql} where r.branch_id = @b and (r.approval = 'draft' or r.requested_at >= now() - make_interval(days => @days))
+                    order by r.approval = 'draft' desc, r.requested_at desc
+                    """,
                     new { b = scope.Branch, days = Math.Clamp(days ?? 14, 1, 180) }, tx)).ToList();
                 return (s, st, rs, await LinesAsync(c, tx, rs.Select(r => r.Id).ToArray()));
             });
             var delivered = await DeliveredAsync(facts, scope.CompanyId, rows.Select(r => r.ErpDoc));
             return Results.Ok(new
             {
-                enabled = setup.On, location = setup.Loc, approver = setup.Approver, stores = stores.Select(x => new { x.Code, x.Name }),
+                enabled = setup.On, location = setup.Loc, approver = setup.Approver, preapproved = setup.Preapproved, stores = stores.Select(x => new { x.Code, x.Name }),
                 requests = rows.Select(r => Shape(r, lines, delivered)),
             });
         });
@@ -243,80 +358,14 @@ public static class StockRequests
             return Results.Ok(rows.Select(r => new { code = r.Code, name = r.Name.Trim(), type = r.Type, unit = r.Unit }));
         });
 
-        // Ask a store for stock: it waits for the branch's request approver (under the bell and by email).
-        api.MapPost("/stock/requests", async (RequestBody body, HttpContext http, Db db, FactsSync facts, Live live) =>
-        {
-            var scope = await http.ScopeAsync(db);
-            if (!scope.Can("kitchen.view")) scope.Require("pos.sell");
-            var lines = (body.Lines ?? []).Where(l => !string.IsNullOrWhiteSpace(l.ItemCode)).Select(l => l with { ItemCode = l.ItemCode.Trim() }).ToList();
-            if (lines.Count == 0) throw new DomainException("Add at least one item.");
-            if (lines.Any(l => l.Qty <= 0)) throw new DomainException("Every item needs a quantity above zero.");
-            if (lines.GroupBy(l => l.ItemCode).Any(g => g.Count() > 1)) throw new DomainException("An item is listed twice: put its whole quantity on one line.");
-            if (lines.Count > 200) throw new DomainException("At most 200 items in one request.");
-            var note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim();
-            if (note is { Length: > 150 }) throw new DomainException("Keep the note under 150 characters (the store sees it in FACTS).");
-            var (setup, store, master, today) = await db.Company(scope.CompanyId, async (c, tx) => (
-                await SetupAsync(c, tx, scope.Branch),
-                (await c.QueryAsync<(string Code, string Name)>("select code, name from request_store where code = @code and is_active", new { code = (body.StoreCode ?? "").Trim() }, tx)).FirstOrDefault(),
-                await c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx),
-                await Days.DateAsync(c, tx, scope.Branch)));
-            if (!setup.On) throw new DomainException("Requests need an approver: set this branch's request approver and their FACTS username (Companies & branches).");
-            if (store.Code is null) throw new DomainException("Choose the store to ask.");
-            if (store.Code == setup.Loc) throw new DomainException("That store is this branch's own location.");
-            if (body.NeededBy is { } nb && nb < today) throw new DomainException("The needed-by date is already past.");
+        // Ask a store for stock: kept as a draft, or sent. Sent, it waits for the branch's request approver (under the bell and by
+        // email), or, at a pre-approved branch, goes to FACTS at once as a posted STR50.
+        api.MapPost("/stock/requests", (RequestBody body, HttpContext http, Db db, FactsSync facts, Live live) => SaveAsync(null, body, http, db, facts, live));
 
-            // The items as FACTS has them (name, type, unit): a code FACTS doesn't know is refused.
-            List<(string Code, string Name, string Type, string Unit)> known;
-            await using (var f = await facts.OpenAsync(scope.CompanyId))
-                known = (await f.QueryAsync<(string, string, string, string)>("""
-                    select ltrim(rtrim(m.STKMST_DOCNO)), ltrim(rtrim(m.STKMST_DESC)), ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO)) from STOCK_MASTER m
-                    where m.STKMST_ACTIVE_STATUS = 0 and (@master is null or m.STKMST_DOCTYPE = @master) and ltrim(rtrim(m.STKMST_DOCNO)) in (select value from string_split(@codes, ','))
-                    """, new { master, codes = string.Join(',', lines.Select(l => l.ItemCode)) }, commandTimeout: 30)).ToList();
-            var missing = lines.Where(l => known.All(k => k.Code != l.ItemCode)).Select(l => l.ItemCode).ToList();
-            if (missing.Count > 0) throw new DomainException($"Not FACTS items (or not active): {string.Join(", ", missing)}.");
+        // A draft changed (store, date, note, items), and kept as a draft or sent.
+        api.MapPut("/stock/requests/{id:guid}", (Guid id, RequestBody body, HttpContext http, Db db, FactsSync facts, Live live) => SaveAsync(id, body, http, db, facts, live));
 
-            var (id, number) = await db.Company(scope.CompanyId, async (c, tx) =>
-            {
-                await c.ExecuteAsync("select pg_advisory_xact_lock(hashtext('stock_request:' || @b::text))", new { b = scope.Branch }, tx);
-                var n = await c.ExecuteScalarAsync<int>("select coalesce(max(number), 0) + 1 from stock_request where branch_id = @b", new { b = scope.Branch }, tx);
-                var rid = await c.ExecuteScalarAsync<Guid>("""
-                    insert into stock_request (company_id, branch_id, number, business_date, store_code, store_name, needed_by, note, requested_by)
-                    values (@co, @b, @n, @today, @Code, @Name, @neededBy, @note, @u) returning id
-                    """, new { co = scope.CompanyId, b = scope.Branch, n, today, store.Code, store.Name, neededBy = body.NeededBy, note, u = scope.UserId }, tx);
-                var i = 0;
-                foreach (var l in lines)
-                {
-                    var k = known.First(x => x.Code == l.ItemCode);
-                    await c.ExecuteAsync("""
-                        insert into stock_request_line (company_id, request_id, line, item_type, item_code, item_name, unit, qty)
-                        values (@co, @rid, @line, @Type, @Code, @Name, @Unit, @qty)
-                        """, new { co = scope.CompanyId, rid, line = ++i, k.Type, k.Code, k.Name, k.Unit, qty = l.Qty }, tx);
-                }
-                var what = lines.Select(l => { var k = known.First(x => x.Code == l.ItemCode); return $"{l.Qty.ToString("0.###", Inv)} {k.Unit} {k.Name}"; }).ToList();
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "stock_request", rid.ToString(), "recorded",
-                    $"REQ-{n} to {store.Name} ({store.Code}): {lines.Count} item{(lines.Count == 1 ? "" : "s")}", note: note);
-                var (by, branchName) = await c.QuerySingleAsync<(string, string)>("select (select display_name from app_user where id = @u), (select name from branch where id = @b)", new { u = scope.UserId, b = scope.Branch }, tx);
-                var noticeLines = new List<Notices.Line> { new("From store", $"{store.Name} ({store.Code})"), new("Requested by", by), new("Branch", branchName) };
-                if (body.NeededBy is { } need) noticeLines.Add(new("Needed by", need.ToString("dd MMM yyyy", Inv)));
-                if (note is not null) noticeLines.Add(new("Note", note));
-                noticeLines.AddRange(what.Select(w => new Notices.Line("Item", w)));
-                var smtp = await c.ExecuteScalarAsync<bool>("select smtp_settings is not null from company where id = @co", new { co = scope.CompanyId }, tx);
-                var emailTo = setup.Email is { Length: > 0 } e ? new[] { e } : [];
-                await c.ExecuteAsync("""
-                    insert into notice (company_id, branch_id, business_date, kind, title, lines, email_status, email_to, link)
-                    values (@co, @b, @today, 'request', @title, cast(@lines as jsonb), @email, @emailTo, '/approvals')
-                    """, new
-                    {
-                        co = scope.CompanyId, b = scope.Branch, today, title = $"Stock request to approve · REQ-{n} · {lines.Count} item{(lines.Count == 1 ? "" : "s")} from {store.Name}",
-                        lines = JsonSerializer.Serialize(noticeLines, Web), email = smtp && emailTo.Length > 0 ? "pending" : "none", emailTo,
-                    }, tx);
-                return (rid, n);
-            });
-            await live.ToBranch(scope.Branch, "stock.changed");
-            return Results.Ok(new { id, number = $"REQ-{number}" });
-        });
-
-        // Changed my mind, while it waits: the person who asked, or a manager.
+        // Changed my mind, while it waits (cancelled) or is a draft (deleted): the person who asked, or a manager.
         api.MapPost("/stock/requests/{id:guid}/cancel", async (Guid id, HttpContext http, Db db, Live live) =>
         {
             var scope = await http.ScopeAsync(db);
@@ -324,8 +373,14 @@ public static class StockRequests
             {
                 var r = await c.QuerySingleOrDefaultAsync<RequestRow>($"{RowSql} where r.id = @id and r.branch_id = @b for update of r", new { id, b = scope.Branch }, tx)
                     ?? throw new NotFoundException("Request not found.");
-                if (r.Approval != "waiting") throw new DomainException(r.Approval == "approved" ? "This was approved and posted in FACTS; ask the store to cancel it there." : "This request was decided already.");
+                if (r.Approval is not ("waiting" or "draft")) throw new DomainException(r.Approval == "approved" ? "This was approved and posted in FACTS; ask the store to cancel it there." : "This request was decided already.");
                 if (!scope.Can("day.manage") && r.RequestedBy != scope.UserId) throw new ForbiddenException("Only a manager can cancel someone else's request.");
+                if (r.Approval == "draft")
+                {
+                    await c.ExecuteAsync("delete from stock_request where id = @id", new { id }, tx);
+                    await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "stock_request", id.ToString(), "deleted", $"REQ-{r.Number} draft deleted");
+                    return 0;
+                }
                 await c.ExecuteAsync("update stock_request set approval = 'cancelled', decided_by = @u, decided_at = now() where id = @id", new { id, u = scope.UserId }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "stock_request", id.ToString(), "cancelled", $"REQ-{r.Number} cancelled");
                 return 0;
@@ -449,8 +504,8 @@ public static class StockRequests
             return Results.Ok(new { code, name });
         });
 
-        // Who approves this branch's requests (null approver: off, no Requests tab), where requests are emailed, and the FACTS username
-        // the approved STR50 is posted as.
+        // Who approves this branch's requests, or pre-approved (sent is posted at once), where requests are emailed (a copy only, when
+        // pre-approved), and the FACTS username the STR50 is posted as. Neither approver nor pre-approval: off, no Requests tab.
         api.MapPut("/branches/{id:guid}/request-approval", async (Guid id, ApprovalBody body, HttpContext http, Db db, Live live) =>
         {
             var companyId = await db.Platform((c, tx) => c.ExecuteScalarAsync<Guid?>("select company_id from branch where id = @id", new { id }, tx))
@@ -462,26 +517,31 @@ public static class StockRequests
             var factsUser = string.IsNullOrWhiteSpace(body.FactsUser) ? null : body.FactsUser.Trim();
             if (factsUser is { Length: > 20 }) throw new DomainException("A FACTS username has at most 20 characters.");
             var approver = body.ApproverId;
+            var preapproved = body.Preapproved == true;
             await db.Company(companyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleAsync<(string Code, Guid? Approver, string? Email, string? FactsUser)>(
-                    "select code, request_approver_id, request_approval_email, request_facts_user from branch where id = @id for update", new { id }, tx);
+                var old = await c.QuerySingleAsync<(string Code, Guid? Approver, string? Email, string? FactsUser, bool Preapproved)>(
+                    "select code, request_approver_id, request_approval_email, request_facts_user, request_preapproved from branch where id = @id for update", new { id }, tx);
                 string? name = null;
                 if (approver is { } a)
                 {
                     name = await c.ExecuteScalarAsync<string?>(
                         "select u.display_name from app_user u where u.id = @a and u.is_active and (u.is_admin or exists (select 1 from user_company uc where uc.user_id = u.id and uc.company_id = @companyId))",
                         new { a, companyId }, tx) ?? throw new DomainException("Choose an active user of this company as the approver.");
-                    if (email is null) throw new DomainException($"Enter the email {name}'s stock requests go to.");
-                    if (factsUser is null) throw new DomainException("Enter the approver's FACTS username: approved requests are posted in FACTS as that user.");
+                    if (email is null && !preapproved) throw new DomainException($"Enter the email {name}'s stock requests go to.");
                 }
-                var on = approver is not null;
-                await c.ExecuteAsync("update branch set request_approver_id = @approver, request_approval_email = @email, request_facts_user = @factsUser where id = @id",
-                    new { approver, email = on ? email : null, factsUser = on ? factsUser : null, id }, tx);
+                var on = approver is not null || preapproved;
+                if (on && factsUser is null)
+                    throw new DomainException(preapproved ? "Enter the FACTS username: sent requests are posted in FACTS as that user." : "Enter the approver's FACTS username: approved requests are posted in FACTS as that user.");
+                // Pre-approved with an approver still set: the approver keeps deciding what was already waiting.
+                await c.ExecuteAsync("""
+                    update branch set request_approver_id = @approver, request_approval_email = @email, request_facts_user = @factsUser, request_preapproved = @preapproved where id = @id
+                    """, new { approver, email = on ? email : null, factsUser = on ? factsUser : null, preapproved, id }, tx);
                 var oldName = old.Approver is { } o ? await c.ExecuteScalarAsync<string?>("select display_name from app_user where id = @o", new { o }, tx) : null;
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "changed", $"Branch {old.Code}: stock requests {(on ? "set" : "off")}",
                 [
                     new("Request approver", oldName, name), new("Approval email", old.Email, on ? email : null), new("FACTS username", old.FactsUser, on ? factsUser : null),
+                    new("Pre-approved", old.Preapproved, preapproved),
                 ]);
                 return 0;
             });

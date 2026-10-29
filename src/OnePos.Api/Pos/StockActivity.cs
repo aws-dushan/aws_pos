@@ -100,7 +100,7 @@ public static class StockActivity
                                coalesce(l.str_line, l.line) as str_line
                         from stock_request r join stock_request_line l on l.request_id = r.id join branch b on b.id = r.branch_id
                         join app_user u on u.id = r.requested_by left join app_user d on d.id = r.decided_by
-                        where r.branch_id = any(@ids) and r.business_date between @f and @t
+                        where r.branch_id = any(@ids) and r.business_date between @f and @t and r.approval <> 'draft'
                         order by r.business_date, r.number, l.line
                         """, args, tx)).ToList(),
                     _ => [],

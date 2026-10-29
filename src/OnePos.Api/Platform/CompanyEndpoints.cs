@@ -96,6 +96,8 @@ public static class CompanyEndpoints
         public string? FactsDivision { get; set; }
         public string? RequestApprovalEmail { get; set; }
         public string? RequestFactsUser { get; set; }
+        /// <summary>Stock requests go to FACTS as soon as they're sent, without an approver.</summary>
+        public bool RequestPreapproved { get; set; }
         /// <summary>Where discount requests sent to a manager are emailed (null: no email).</summary>
         public string[]? DiscountApprovalEmails { get; set; }
     }
