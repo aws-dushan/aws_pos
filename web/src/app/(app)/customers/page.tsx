@@ -27,7 +27,7 @@ export default function CustomersPage() {
   return (
     <div>
       <PageHeader title="Customers" icon={ContactRoundIcon} module="bp" count={list.data?.length}
-        description="Regulars found by phone at the register. A paid order with a new phone number and a name adds one."
+        description="This branch's regulars, found by phone at its register. A paid order with a new phone number and a name adds one. Each branch has its own customers."
         actions={<Button size="lg" onClick={() => setOpen("new")}><PlusIcon /> New customer</Button>} />
       <SearchField value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or phone" className="mb-4 w-80 max-w-full" />
       <ErrorNote message={list.error} />

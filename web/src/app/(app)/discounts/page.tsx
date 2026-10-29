@@ -47,14 +47,15 @@ function status(d: Discount, today: string): { label: string; tone: string } {
 
 /**
  * Discounts (approved 19-10-2026): promotions the till applies by itself, and the ready-made cashier discounts. Changes apply to
- * items added from now on; bills already rung keep what they got.
+ * items added from now on; bills already rung keep what they got. Shows the header branch's (its own and every-branch ones), or all.
  */
 export default function DiscountsPage() {
-  const { company, me } = useSession();
+  const { company, me, branch } = useSession();
+  const [scope, setScope] = useState<"branch" | "all">("branch");
   const cur = company?.currency ?? "AED";
   const [tab, setTab] = useState<Kind>("promotion");
   const [q, setQ] = useState("");
-  const list = useApi<{ discounts: Discount[]; today: string }>("/discounts");
+  const list = useApi<{ discounts: Discount[]; today: string }>(`/discounts${scope === "all" ? "?all=true" : ""}`);
   const menu = useApi<Menu>("/menu");
   const roles = useApi<Role[]>(company ? `/companies/${company.id}/roles` : null);
   const platforms = useApi<Platform[]>("/platforms");
@@ -87,6 +88,7 @@ export default function DiscountsPage() {
         actions={<Button className="h-11" onClick={() => setEdit(tab)}><PlusIcon /> {tab === "promotion" ? "New promotion" : "New cashier discount"}</Button>} />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Segmented id="disc-tab" value={tab} onChange={setTab} options={[{ value: "promotion", label: "Promotions" }, { value: "cashier", label: "Cashier discounts" }]} />
+        <Segmented id="disc-scope" value={scope} onChange={setScope} options={[{ value: "branch", label: "This branch" }, { value: "all", label: "All branches" }]} />
         <SearchField placeholder="Search by name" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-xs flex-1" />
       </div>
       {list.error ? <ErrorNote message={list.error} /> : list.loading && !list.data ? <LoadingRows /> : rows.length === 0 ? (
@@ -119,7 +121,7 @@ export default function DiscountsPage() {
           </Table>
         </TablePanel>
       )}
-      {edit && <DiscountForm value={edit} today={today} currency={cur} menu={menu.data ?? null} roles={roles.data ?? []} platforms={(platforms.data ?? []).filter((p) => p.isActive)}
+      {edit && <DiscountForm value={edit} today={today} branchId={branch?.id ?? null} currency={cur} menu={menu.data ?? null} roles={roles.data ?? []} platforms={(platforms.data ?? []).filter((p) => p.isActive)}
         branches={branches.map((b) => ({ id: b.id, name: b.name }))} isAdmin={me.user.isAdmin}
         onClose={() => setEdit(null)} onSaved={() => { setEdit(null); list.reload(); }} />}
     </div>
@@ -143,15 +145,15 @@ function Chips<T extends string | number>({ options, value, onChange }: { option
 }
 
 /** One form for a promotion or a cashier discount: plain choices, the optional ones optional. */
-function DiscountForm({ value, today, currency, menu, roles, platforms, branches, onClose, onSaved }: {
-  value: Discount | Kind; today: string; currency: string; menu: Menu | null; roles: Role[]; platforms: Platform[]; branches: { id: string; name: string }[];
+function DiscountForm({ value, today, branchId, currency, menu, roles, platforms, branches, onClose, onSaved }: {
+  value: Discount | Kind; today: string; branchId: string | null; currency: string; menu: Menu | null; roles: Role[]; platforms: Platform[]; branches: { id: string; name: string }[];
   isAdmin: boolean; onClose: () => void; onSaved: () => void;
 }) {
   const existing = typeof value === "string" ? null : value;
   const kind: Kind = existing?.kind ?? (value as Kind);
   const [f, setF] = useState<Omit<Discount, "id">>(existing ?? {
     kind, name: "", type: "pct", value: 0, appliesTo: "all", categoryIds: [], itemIds: [], target: "bill", roleIds: [], needsNote: false,
-    validFrom: today, validTo: null, days: [], timeFrom: null, timeTo: null, branchIds: [], channel: "all", platformId: null, isActive: true,
+    validFrom: today, validTo: null, days: [], timeFrom: null, timeTo: null, branchIds: branchId ? [branchId] : [], channel: "all", platformId: null, isActive: true,
   });
   const [valueText, setValueText] = useState(existing ? String(existing.value) : "");
   const [itemQ, setItemQ] = useState("");

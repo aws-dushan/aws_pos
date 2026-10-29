@@ -19,14 +19,15 @@ type SummaryRow = { id: string; name: string; rate: number; feeRate: number; ord
 type Summary = { from: string; to: string; payoutsEnabled: boolean; items: SummaryRow[];
   totals: { orders: number; net: number; commission: number; bankFee: number; owed: number; payout: number; received: number | null; stillOwed: number | null } };
 type Payout = { id: string; platformId: string; platformName: string; receivedOn: string; periodFrom: string | null; periodTo: string | null; amount: number; commission: number; bankFee: number;
-  reference: string | null; note: string | null; recordedByName: string | null };
+  reference: string | null; note: string | null; recordedByName: string | null; branchId: string; branchName: string };
 const day = (s: string) => new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-/** The delivery platform report: over business days, what each platform's orders sold, its commission, and what it owes. */
+/** The delivery platform report: over business days, what each platform's orders sold, its commission, and what it owes this branch (or all). */
 export default function PlatformReportPage() {
   const { company, can } = useSession();
+  const branches = company?.branches ?? [];
   const cur = company?.currency ?? "AED";
   const today = iso(new Date());
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(1); return iso(d); });
@@ -34,12 +35,21 @@ export default function PlatformReportPage() {
   const [scope, setScope] = useState<"branch" | "all">("branch");
   const summary = useApi<Summary>(`/platforms/summary?from=${from}&to=${to}${scope === "all" ? "&all=true" : ""}`);
   const on = !!summary.data?.payoutsEnabled;
-  const payouts = useApi<Payout[]>(on ? `/platforms/payouts?from=${from}&to=${to}` : null);
+  const payouts = useApi<Payout[]>(on ? `/platforms/payouts?from=${from}&to=${to}${scope === "all" ? "&all=true" : ""}` : null);
   useLiveEvent(["order.changed", "platforms.changed"], () => { summary.reload(); payouts.reload(); });
   const [recording, setRecording] = useState(false);
   const canRecord = can("branch.manage") || can("day.manage");
   const t = summary.data?.totals;
 
+  async function move(p: Payout, branchId: string) {
+    try {
+      await api(`/platforms/payouts/${p.id}/branch`, "PUT", { branchId });
+      toast.success("Payout moved.");
+      summary.reload(); payouts.reload();
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  }
   async function takeOff(p: Payout) {
     if (!window.confirm(`Take off the ${p.platformName} payout of ${cur} ${fmtIn(p.amount, 2)}?`)) return;
     try {
@@ -71,7 +81,7 @@ export default function PlatformReportPage() {
         <div className="mb-5 grid gap-3 sm:grid-cols-2">
           <StatTile label="Received in these days" value={`${cur} ${fmtIn(t.received ?? 0, 2)}`} icon={LandmarkIcon} module="bank" hint="Payouts recorded, by date received" />
           <StatTile label="Still owed by the platforms" value={`${cur} ${fmtIn(t.stillOwed ?? 0, 2)}`} icon={HandCoinsIcon} module="bank" tone={(t.stillOwed ?? 0) > 0 ? "warn" : "default"}
-            hint="All branches, to date: owed less payouts and the commission and bank fee they kept" />
+            hint={`${scope === "all" ? "All branches" : "This branch"}, to date: owed less payouts and the commission and bank fee they kept`} />
         </div>
       )}
       <ErrorNote message={summary.error} />
@@ -116,7 +126,7 @@ export default function PlatformReportPage() {
             <TablePanel>
               <Table>
                 <TableHeader><TableRow>
-                  <TableHead className="pl-5">Received</TableHead><TableHead>Platform</TableHead><TableHead>Period</TableHead><TableHead>Reference</TableHead>
+                  <TableHead className="pl-5">Received</TableHead><TableHead>Platform</TableHead><TableHead>Branch</TableHead><TableHead>Period</TableHead><TableHead>Reference</TableHead>
                   <TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Commission kept</TableHead><TableHead className="text-right">Bank fee kept</TableHead><TableHead className="pr-5" />
                 </TableRow></TableHeader>
                 <TableBody>
@@ -124,6 +134,14 @@ export default function PlatformReportPage() {
                     <TableRow key={p.id}>
                       <TableCell className="pl-5">{day(p.receivedOn)}</TableCell>
                       <TableCell className="font-medium">{p.platformName}</TableCell>
+                      <TableCell>
+                        {canRecord && branches.length > 1 ? (
+                          <select value={p.branchId} aria-label={`Branch of the ${p.platformName} payout`} onChange={(e) => void move(p, e.target.value)}
+                            className="h-9 rounded-lg border border-input bg-card px-2 text-sm dark:bg-input/30">
+                            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                          </select>
+                        ) : p.branchName}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{p.periodFrom && p.periodTo ? `${day(p.periodFrom)} – ${day(p.periodTo)}` : "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{p.reference ?? "—"}{p.note ? ` · ${p.note}` : ""}</TableCell>
                       <TableCell className="text-right font-medium tabular-nums">{fmtIn(p.amount, 2)}</TableCell>

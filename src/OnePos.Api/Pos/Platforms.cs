@@ -29,11 +29,13 @@ public static class Platforms
         public string? Note { get; set; }
         public string? RecordedByName { get; set; }
         public DateTime RecordedAt { get; set; }
+        public Guid BranchId { get; set; }
+        public string BranchName { get; set; } = "";
     }
 
     private const string PayoutSql = """
-        select x.*, p.name as platform_name, u.display_name as recorded_by_name
-        from platform_payout x join delivery_platform p on p.id = x.platform_id join app_user u on u.id = x.recorded_by
+        select x.*, p.name as platform_name, u.display_name as recorded_by_name, b.name as branch_name
+        from platform_payout x join delivery_platform p on p.id = x.platform_id join app_user u on u.id = x.recorded_by join branch b on b.id = x.branch_id
         """;
 
     private static Task<bool> PayoutsOnAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Guid companyId) =>
@@ -56,6 +58,7 @@ public static class Platforms
     }
 
     public sealed record FactsCustomerBody(string? Customer);
+    public sealed record PayoutBranchBody(Guid BranchId);
 
     private sealed class SummaryRow
     {
@@ -199,15 +202,16 @@ public static class Platforms
                     group by p.id, p.name, p.commission_pct, p.bank_fee_pct, p.sort order by p.sort, p.name
                     """, new { ids, from, to }, tx)).ToList();
                 var payouts = await PayoutsOnAsync(c, tx, scope.CompanyId);
-                // Payouts are company-wide: received in these days, and what each platform still owes to date (all branches).
+                // Payouts are per branch: received in these days, and what each platform still owes these branches to date.
                 var settle = payouts ? (await c.QueryAsync<(Guid Id, decimal Received, decimal Balance)>("""
                     select p.id,
-                           coalesce((select sum(x.amount) from platform_payout x where x.platform_id = p.id and x.voided_at is null and x.received_on between @from and @to), 0),
+                           coalesce((select sum(x.amount) from platform_payout x where x.platform_id = p.id and x.voided_at is null and x.branch_id = any(@ids)
+                                       and x.received_on between @from and @to), 0),
                            coalesce((select sum(case when pay.kind = 'payment' then pay.amount else -pay.amount end) from payment pay join pos_order po on po.id = pay.order_id
-                                     where po.platform_id = p.id and pay.method = 'platform'), 0)
-                           - coalesce((select sum(x.amount + x.commission + x.bank_fee) from platform_payout x where x.platform_id = p.id and x.voided_at is null), 0)
+                                     where po.platform_id = p.id and pay.method = 'platform' and po.branch_id = any(@ids)), 0)
+                           - coalesce((select sum(x.amount + x.commission + x.bank_fee) from platform_payout x where x.platform_id = p.id and x.voided_at is null and x.branch_id = any(@ids)), 0)
                     from delivery_platform p
-                    """, new { from, to }, tx)).ToDictionary(x => x.Id) : [];
+                    """, new { from, to, ids }, tx)).ToDictionary(x => x.Id) : [];
                 var items = rows.Select(r => new
                 {
                     r.Id, r.Name, rate = r.CommissionPct, feeRate = r.BankFeePct, r.Orders, r.Sales, r.Refunded, net = r.Sales - r.Refunded,
@@ -251,13 +255,35 @@ public static class Platforms
             return Results.Ok(new { body.PayoutsEnabled });
         });
 
-        api.MapGet("/platforms/payouts", async (HttpContext http, Db db, DateOnly from, DateOnly to) =>
+        // Payouts received in these days: this branch's, or all branches'.
+        api.MapGet("/platforms/payouts", async (HttpContext http, Db db, DateOnly from, DateOnly to, bool? all) =>
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("reports.view")) scope.Require("branch.manage");
+            var b = all == true ? (Guid?)null : scope.Branch;
             return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<PayoutRow>($"""
-                {PayoutSql} where x.voided_at is null and x.received_on between @from and @to order by x.received_on desc, x.recorded_at desc
-                """, new { from, to }, tx));
+                {PayoutSql} where x.voided_at is null and x.received_on between @from and @to and (@b::uuid is null or x.branch_id = @b)
+                order by x.received_on desc, x.recorded_at desc
+                """, new { from, to, b }, tx));
+        });
+
+        // A payout recorded against the wrong branch (or assigned wrongly when payouts became per branch): moved to another.
+        api.MapPut("/platforms/payouts/{id:guid}/branch", async (Guid id, PayoutBranchBody body, HttpContext http, Db db, Live live) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            if (!scope.Can("branch.manage")) scope.Require("day.manage");
+            await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var old = await c.QuerySingleOrDefaultAsync<PayoutRow>($"{PayoutSql} where x.id = @id and x.voided_at is null for update of x", new { id }, tx)
+                    ?? throw new NotFoundException("Payout not found (or taken off).");
+                var name = await c.ExecuteScalarAsync<string?>("select name from branch where id = @BranchId", new { body.BranchId }, tx) ?? throw new DomainException("Choose the branch.");
+                await c.ExecuteAsync("update platform_payout set branch_id = @BranchId where id = @id", new { body.BranchId, id }, tx);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, body.BranchId, scope.UserId, "platform_payout", id.ToString(), "changed",
+                    $"{old.PlatformName} payout of {old.Amount:N2} moved to {name}", [new("Branch", old.BranchName, name)]);
+                return 0;
+            });
+            await live.ToCompany(scope.CompanyId, "platforms.changed");
+            return Results.Ok(new { id });
         });
 
         api.MapPost("/platforms/payouts", async (PayoutBody body, HttpContext http, Db db, Live live) =>
@@ -273,14 +299,14 @@ public static class Platforms
                 if (!await PayoutsOnAsync(c, tx, scope.CompanyId)) throw new DomainException("Platform payouts aren't tracked in One POS for this company (Administration → Delivery platforms).");
                 var name = await c.ExecuteScalarAsync<string?>("select name from delivery_platform where id = @PlatformId", new { body.PlatformId }, tx) ?? throw new DomainException("Choose the platform.");
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into platform_payout (company_id, platform_id, received_on, period_from, period_to, amount, commission, bank_fee, reference, note, recorded_by)
-                    values (@co, @PlatformId, @ReceivedOn, @PeriodFrom, @PeriodTo, @amount, @commission, @bankFee, @reference, @note, @u) returning id
+                    insert into platform_payout (company_id, branch_id, platform_id, received_on, period_from, period_to, amount, commission, bank_fee, reference, note, recorded_by)
+                    values (@co, @b, @PlatformId, @ReceivedOn, @PeriodFrom, @PeriodTo, @amount, @commission, @bankFee, @reference, @note, @u) returning id
                     """, new
                     {
-                        co = scope.CompanyId, body.PlatformId, body.ReceivedOn, body.PeriodFrom, body.PeriodTo, amount = Money.Round(body.Amount), commission = Money.Round(body.Commission ?? 0), bankFee = Money.Round(body.BankFee ?? 0),
+                        co = scope.CompanyId, b = scope.Branch, body.PlatformId, body.ReceivedOn, body.PeriodFrom, body.PeriodTo, amount = Money.Round(body.Amount), commission = Money.Round(body.Commission ?? 0), bankFee = Money.Round(body.BankFee ?? 0),
                         reference = string.IsNullOrWhiteSpace(body.Reference) ? null : body.Reference.Trim(), note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim(), u = scope.UserId,
                     }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform_payout", id.ToString(), "recorded",
+                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "platform_payout", id.ToString(), "recorded",
                     $"{name} payout of {body.Amount:N2} received {body.ReceivedOn:dd MMM yyyy} (commission {body.Commission ?? 0:N2})", note: body.Reference);
                 return await c.QuerySingleAsync<PayoutRow>($"{PayoutSql} where x.id = @id", new { id }, tx);
             });

@@ -7,7 +7,8 @@ namespace OnePos.Api.Pos;
 
 /// <summary>
 /// Customers (REQ CUS-01 … CUS-04), optional on every order. The register finds one by phone (or name) and attaches it; a paid
-/// order with a phone number nobody has yet and a name creates the customer. Visits and spend are their paid orders.
+/// order with a phone number nobody has yet and a name creates the customer. Visits and spend are their paid orders. Customers are
+/// per branch: a branch only finds, lists and changes its own (the same phone can be a customer at two branches).
 /// </summary>
 public static class Customers
 {
@@ -64,19 +65,19 @@ public static class Customers
     /// <summary>After an order is paid: attach the customer with its phone number, or create one from the order's name and phone.</summary>
     public static async Task LinkAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid orderId, Guid userId)
     {
-        var o = await c.QuerySingleAsync<(Guid CompanyId, Guid? CustomerId, string? Name, string? Phone, string? Address, string Type)>(
-            "select company_id, customer_id, customer_name, customer_phone, delivery_address, order_type from pos_order where id = @orderId", new { orderId }, tx);
+        var o = await c.QuerySingleAsync<(Guid CompanyId, Guid BranchId, Guid? CustomerId, string? Name, string? Phone, string? Address, string Type)>(
+            "select company_id, branch_id, customer_id, customer_name, customer_phone, delivery_address, order_type from pos_order where id = @orderId", new { orderId }, tx);
         if (o.CustomerId is not null) return;
         var key = PhoneKey(o.Phone);
         if (key is null) return;
-        var id = await c.ExecuteScalarAsync<Guid?>("select id from customer where phone_key = @key", new { key }, tx);
+        var id = await c.ExecuteScalarAsync<Guid?>("select id from customer where branch_id = @BranchId and phone_key = @key", new { o.BranchId, key }, tx);
         if (id is null)
         {
             if (string.IsNullOrWhiteSpace(o.Name)) return;
             id = await c.ExecuteScalarAsync<Guid>("""
-                insert into customer (company_id, name, phone, phone_key, address, created_by) values (@co, @name, @phone, @key, @address, @userId)
-                on conflict (company_id, phone_key) where phone_key is not null do update set name = customer.name returning id
-                """, new { co = o.CompanyId, name = o.Name.Trim(), phone = o.Phone!.Trim(), key, address = o.Type == "delivery" ? o.Address : null, userId }, tx);
+                insert into customer (company_id, branch_id, name, phone, phone_key, address, created_by) values (@co, @BranchId, @name, @phone, @key, @address, @userId)
+                on conflict (branch_id, phone_key) where phone_key is not null do update set name = customer.name returning id
+                """, new { co = o.CompanyId, o.BranchId, name = o.Name.Trim(), phone = o.Phone!.Trim(), key, address = o.Type == "delivery" ? o.Address : null, userId }, tx);
         }
         await c.ExecuteAsync("update pos_order set customer_id = @id where id = @orderId", new { id, orderId }, tx);
     }
@@ -91,7 +92,7 @@ public static class Customers
 
     public static void Map(RouteGroupBuilder api)
     {
-        // Search by name or phone (any part); newest visitors first. Empty search: the most recent customers.
+        // This branch's customers, by name or phone (any part); newest visitors first. Empty search: the most recent customers.
         api.MapGet("/customers", async (HttpContext http, Db db, string? q) =>
         {
             var scope = await http.ScopeAsync(db);
@@ -99,10 +100,10 @@ public static class Customers
             var term = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
             var key = PhoneKey(term) ?? (term is not null && term.Count(char.IsDigit) >= 3 ? new string(term.Where(char.IsDigit).ToArray()) : null);
             return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<Row>($"""
-                select * from ({RowSql}) x
+                select * from ({RowSql} where c.branch_id = @b) x
                 where (@term is null or lower(x.name) like '%' || lower(@term) || '%' or (@key is not null and x.phone_key like '%' || @key || '%'))
                 order by x.last_visit desc nulls last, x.created_at desc limit 50
-                """, new { term, key }, tx));
+                """, new { term, key, b = scope.Branch }, tx));
         });
 
         api.MapGet("/customers/{id:guid}", async (Guid id, HttpContext http, Db db) =>
@@ -111,7 +112,7 @@ public static class Customers
             scope.Require("pos.sell");
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var cu = await c.QuerySingleOrDefaultAsync<Row>($"{RowSql} where c.id = @id", new { id }, tx) ?? throw new NotFoundException("Customer not found.");
+                var cu = await c.QuerySingleOrDefaultAsync<Row>($"{RowSql} where c.id = @id and c.branch_id = @b", new { id, b = scope.Branch }, tx) ?? throw new NotFoundException("Customer not found.");
                 var orders = await c.QueryAsync<(Guid Id, int? Number, string? InvoiceNo, DateTime? ClosedAt, string BranchCode, string OrderType, decimal Total, decimal Refunded, string Status, int Items)>("""
                     select o.id, o.number, o.invoice_no, o.closed_at, b.code, o.order_type, o.total, o.refunded, o.status,
                            (select count(*) from order_line l where l.order_id = o.id and not l.is_void)::int
@@ -139,11 +140,12 @@ public static class Customers
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var key = PhoneKey(b.Phone);
-                if (key is not null && await c.ExecuteScalarAsync<string?>("select name from customer where phone_key = @key", new { key }, tx) is { } who)
+                if (key is not null && await c.ExecuteScalarAsync<string?>("select name from customer where branch_id = @br and phone_key = @key", new { br = scope.Branch, key }, tx) is { } who)
                     throw new ConflictException($"{who} already has this phone number.");
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into customer (company_id, name, phone, phone_key, email, address, notes, created_by) values (@co, @Name, @Phone, @key, @Email, @Address, @Notes, @u) returning id
-                    """, new { co = scope.CompanyId, b.Name, b.Phone, key, b.Email, b.Address, b.Notes, u = scope.UserId }, tx);
+                    insert into customer (company_id, branch_id, name, phone, phone_key, email, address, notes, created_by)
+                    values (@co, @br, @Name, @Phone, @key, @Email, @Address, @Notes, @u) returning id
+                    """, new { co = scope.CompanyId, br = scope.Branch, b.Name, b.Phone, key, b.Email, b.Address, b.Notes, u = scope.UserId }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.BranchId, scope.UserId, "customer", id.ToString(), "created", $"Customer {b.Name} added");
                 return await c.QuerySingleAsync<Row>($"{RowSql} where c.id = @id", new { id }, tx);
             });
@@ -156,9 +158,9 @@ public static class Customers
             var b = Clean(body);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Customer not found.");
+                var old = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @id and branch_id = @br for update", new { id, br = scope.Branch }, tx) ?? throw new NotFoundException("Customer not found.");
                 var key = PhoneKey(b.Phone);
-                if (key is not null && await c.ExecuteScalarAsync<string?>("select name from customer where phone_key = @key and id <> @id", new { key, id }, tx) is { } who)
+                if (key is not null && await c.ExecuteScalarAsync<string?>("select name from customer where branch_id = @br and phone_key = @key and id <> @id", new { br = scope.Branch, key, id }, tx) is { } who)
                     throw new ConflictException($"{who} already has this phone number.");
                 await c.ExecuteAsync("""
                     update customer set name = @Name, phone = @Phone, phone_key = @key, email = @Email, address = @Address, notes = @Notes, is_active = @active where id = @id
@@ -180,7 +182,7 @@ public static class Customers
             if (reason is not null && !PreapprovedReasons.ContainsKey(reason)) throw new DomainException("Choose why this customer's discount is pre-approved.");
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Customer not found.");
+                var old = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @id and branch_id = @br for update", new { id, br = scope.Branch }, tx) ?? throw new NotFoundException("Customer not found.");
                 await c.ExecuteAsync("""
                     update customer set preapproved_pct = @pct, preapproved_reason = @reason, preapproved_until = @until,
                       preapproved_by = case when @pct is null then null else @u end, preapproved_at = case when @pct is null then null else now() end where id = @id
@@ -206,7 +208,8 @@ public static class Customers
                 await c.ExecuteAsync("update pos_order set customer_id = null, customer_name = null, customer_phone = null where id = @id", new { id }, tx);
                 return;
             }
-            var cu = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @cid and is_active", new { cid }, tx) ?? throw new NotFoundException("Customer not found.");
+            var cu = await c.QuerySingleOrDefaultAsync<Row>("select * from customer where id = @cid and branch_id = @BranchId and is_active", new { cid, o.BranchId }, tx)
+                ?? throw new NotFoundException("Customer not found at this branch.");
             await c.ExecuteAsync("""
                 update pos_order set customer_id = @cid, customer_name = @Name, customer_phone = @Phone,
                   delivery_address = case when order_type = 'delivery' and delivery_address is null then @Address else delivery_address end

@@ -72,7 +72,7 @@ export default function VouchersPage() {
   return (
     <div>
       <PageHeader title="Vouchers & loyalty" icon={GiftIcon} module="sales" count={list.data?.length}
-        description="Gift vouchers and store credit paid with at the till, and the points customers collect."
+        description="The gift vouchers and store credit this branch issued, and the points its customers collect. A voucher pays at any branch."
         actions={company?.vouchersEnabled && manage && <Button size="lg" onClick={() => setIssuing(true)}><PlusIcon /> Issue voucher</Button>} />
       <ErrorNote message={rewards.error} />
       <div className="mb-6 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
