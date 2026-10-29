@@ -185,14 +185,15 @@ public static class Rewards
             });
         });
 
+        // The vouchers this branch issued (any branch takes them in payment).
         api.MapGet("/vouchers", async (HttpContext http, Db db, string? q) =>
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("day.manage")) scope.Require("reports.view");
             var term = string.IsNullOrWhiteSpace(q) ? null : q.Trim();
             return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<VoucherRow>($"""
-                {VoucherSql} where (@term is null or v.code ilike '%' || @term || '%' or c.name ilike '%' || @term || '%') order by v.issued_at desc limit 200
-                """, new { term }, tx));
+                {VoucherSql} where v.issued_branch = @b and (@term is null or v.code ilike '%' || @term || '%' or c.name ilike '%' || @term || '%') order by v.issued_at desc limit 200
+                """, new { term, b = scope.Branch }, tx));
         });
 
         api.MapGet("/vouchers/{id:guid}", async (Guid id, HttpContext http, Db db) =>
@@ -250,8 +251,11 @@ public static class Rewards
             {
                 var s = await LoyaltyAsync(c, tx, scope.CompanyId);
                 var vouchers = await c.ExecuteScalarAsync<bool>("select vouchers_enabled from company where id = @id", new { id = scope.CompanyId }, tx);
-                var members = await c.QuerySingleAsync<(int Customers, long Points)>("select count(*) filter (where points > 0)::int, coalesce(sum(points), 0)::bigint from customer", transaction: tx);
-                var open = await c.QuerySingleAsync<(int Count, decimal Balance)>("select count(*)::int, coalesce(sum(balance), 0) from voucher where status = 'active' and balance > 0", transaction: tx);
+                // This branch's: its customers' points, and the vouchers it issued.
+                var members = await c.QuerySingleAsync<(int Customers, long Points)>(
+                    "select count(*) filter (where points > 0)::int, coalesce(sum(points), 0)::bigint from customer where branch_id = @b", new { b = scope.Branch }, tx);
+                var open = await c.QuerySingleAsync<(int Count, decimal Balance)>(
+                    "select count(*)::int, coalesce(sum(balance), 0) from voucher where status = 'active' and balance > 0 and issued_branch = @b", new { b = scope.Branch }, tx);
                 return new
                 {
                     vouchersEnabled = vouchers, loyaltyEnabled = s.Enabled, s.PointsPerUnit, s.PointValue, s.MinRedeem,

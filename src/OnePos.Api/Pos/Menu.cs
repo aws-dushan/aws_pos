@@ -179,7 +179,13 @@ public static class Menu
                     """, new { co = scope.CompanyId, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, sort, combo = b.IsCombo == true }, tx);
                 await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "menu_item", id.ToString(), "created", $"Menu item {b.Name} created",
+                // Sold only at the branch it was made at; the others switch it on (Sell here).
+                if (scope.BranchId is { } here)
+                    await c.ExecuteAsync("""
+                        insert into branch_item (company_id, branch_id, item_id, is_sold) select @co, br.id, @id, br.id = @here from branch br
+                        on conflict (branch_id, item_id) do update set is_sold = excluded.is_sold
+                        """, new { co = scope.CompanyId, id, here }, tx);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.BranchId, scope.UserId, "menu_item", id.ToString(), "created", $"Menu item {b.Name} created",
                     Audit.Created(("Price", b.Price), ("Station", b.Station)));
                 return id;
             });
