@@ -32,6 +32,7 @@ builder.Services.AddHostedService<SalesSummary.Builder>();
 builder.Services.AddHostedService<EmptyOrderSweep>();
 builder.Services.AddHostedService<Days.AutoDay>();
 builder.Services.AddHostedService<Notices.Sender>();
+builder.Services.AddHostedService<Notices.Listener>();
 builder.Services.AddHostedService<ApprovalReminders>();
 builder.Services.AddHostedService<OnePos.Api.Erp.FactsPosting.Sender>();
 builder.Services.AddSignalR();
