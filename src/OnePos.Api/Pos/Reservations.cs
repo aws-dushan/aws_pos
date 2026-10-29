@@ -68,7 +68,7 @@ public static class Reservations
             if (clash.Table is not null) throw new ConflictException($"Table {clash.Table} is booked for {clash.Name} then. Choose another table or time.");
         }
         var key = Customers.PhoneKey(b.Phone);
-        var customerId = key is null ? null : await c.ExecuteScalarAsync<Guid?>("select id from customer where phone_key = @key", new { key }, tx);
+        var customerId = key is null ? null : await c.ExecuteScalarAsync<Guid?>("select id from customer where branch_id = @branchId and phone_key = @key", new { branchId, key }, tx);
         var note = string.IsNullOrWhiteSpace(b.Note) ? null : b.Note.Trim();
         var phone = string.IsNullOrWhiteSpace(b.Phone) ? null : b.Phone.Trim();
         if (isNew)

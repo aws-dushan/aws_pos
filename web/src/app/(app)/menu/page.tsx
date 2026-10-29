@@ -36,7 +36,7 @@ export default function MenuPage() {
   const m = menu.data;
   const fromFacts = company?.erpConnector === "facts";
   // A FACTS catalogue has thousands of items: show what's sold here, what's new from FACTS, what has no price, or all; search finds any.
-  const [view, setView] = useState<"all" | "here" | "new" | "noprice">(fromFacts ? "here" : "all");
+  const [view, setView] = useState<"all" | "here" | "new" | "noprice">("here");
   const [q, setQ] = useState("");
   const term = q.trim().toLowerCase();
   const inView = useMemo(() => (m?.items ?? []).filter((i) =>
@@ -53,7 +53,7 @@ export default function MenuPage() {
   return (
     <div>
       <PageHeader title="Menu" icon={UtensilsCrossedIcon} module="inv" count={m?.items.length}
-        description={`${company?.name}: one menu for every branch. Availability and prices below are for ${branch?.name ?? "the chosen branch"}.`}
+        description={`What ${branch?.name ?? "the chosen branch"} sells, at its prices. "All items" shows the items the other branches sell too; a new item is sold only here until another branch switches it on.`}
         actions={<>
           <Segmented id="menu-tab" value={tab} onChange={setTab} options={[{ value: "items", label: "Items" }, { value: "groups", label: "Option groups" }]} />
           {tab === "items"
@@ -72,7 +72,7 @@ export default function MenuPage() {
             { value: "here", label: `Sold here (${m.items.filter((i) => i.isSold && i.isActive).length})` },
             ...(fromFacts ? [{ value: "new" as const, label: `New from FACTS (${m.items.filter((i) => i.erpNew && i.isActive).length})` }] : []),
             { value: "noprice", label: `No price (${m.items.filter((i) => noPrice(i) && i.isSold && i.isActive).length})` },
-            { value: "all", label: `All (${m.items.length})` },
+            { value: "all", label: `All items (${m.items.length})` },
           ]} />
           <SearchField value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or FACTS code" className="w-72 max-w-full" />
         </div>

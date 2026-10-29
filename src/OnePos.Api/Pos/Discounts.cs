@@ -109,10 +109,12 @@ public static class Discounts
                 $"Your role allows discounts up to {max:0.##} %. A manager can approve {pctOfValue:0.##} %.", orderId: orderId);
     }
 
-    private static async Task<Row> ListedAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid id, string target)
+    /// <summary>A listed cashier discount, given at one of its branches (none listed: every branch).</summary>
+    private static async Task<Row> ListedAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid id, string target, Guid branchId)
     {
-        var d = await c.QuerySingleOrDefaultAsync<Row>("select * from discount where id = @id and kind = 'cashier' and is_active", new { id }, tx)
-                ?? throw new DomainException("That discount isn't available any more.");
+        var d = await c.QuerySingleOrDefaultAsync<Row>("""
+            select * from discount where id = @id and kind = 'cashier' and is_active and (cardinality(branch_ids) = 0 or @branchId = any(branch_ids))
+            """, new { id, branchId }, tx) ?? throw new DomainException("That discount isn't available at this branch.");
         if (d.Target != target) throw new DomainException(target == "bill" ? $"\"{d.Name}\" is for one item, not the whole bill." : $"\"{d.Name}\" is for the whole bill.");
         return d;
     }
@@ -122,13 +124,17 @@ public static class Discounts
     public static void Map(RouteGroupBuilder api)
     {
         // ---------------- Back office ----------------
-        api.MapGet("/discounts", async (HttpContext http, Db db) =>
+        // The header branch's discounts: its own and those for every branch (all=true: the whole company's).
+        api.MapGet("/discounts", async (HttpContext http, Db db, bool? all) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("menu.manage");
+            var only = all == true ? (Guid?)null : scope.Branch;
             return await db.Company(scope.CompanyId, async (c, tx) => Results.Ok(new
             {
-                discounts = await c.QueryAsync<Row>("select * from discount order by kind, is_active desc, name", transaction: tx),
+                discounts = await c.QueryAsync<Row>("""
+                    select * from discount where @only::uuid is null or cardinality(branch_ids) = 0 or @only = any(branch_ids) order by kind, is_active desc, name
+                    """, new { only }, tx),
                 today = scope.BranchId is { } b ? await Days.DateAsync(c, tx, b) : BusinessClock.Today("Asia/Dubai"),
             }));
         });
@@ -174,7 +180,7 @@ public static class Discounts
         });
 
         // ---------------- The till ----------------
-        // The cashier discounts this user may give (by role), for the Discount window.
+        // The cashier discounts this user may give (by role) at this branch, for the Discount window.
         api.MapGet("/pos/discounts", async (HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
@@ -182,7 +188,9 @@ public static class Discounts
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var role = await RoleOfAsync(c, tx, scope);
-                var all = await c.QueryAsync<Row>("select * from discount where kind = 'cashier' and is_active order by name", transaction: tx);
+                var all = await c.QueryAsync<Row>("""
+                    select * from discount where kind = 'cashier' and is_active and (cardinality(branch_ids) = 0 or @b = any(branch_ids)) order by name
+                    """, new { b = scope.Branch }, tx);
                 return Results.Ok(new
                 {
                     canDiscount = scope.Can("pos.discount"),
@@ -204,7 +212,7 @@ public static class Discounts
                 await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "discount", $"Order #{o.Number}: bill discount taken off");
                 return;
             }
-            var listed = body.DiscountId is { } did ? await ListedAsync(c, tx, did, "bill") : null;
+            var listed = body.DiscountId is { } did ? await ListedAsync(c, tx, did, "bill", o.BranchId) : null;
             var pct = listed is not null ? (listed.Type == "pct" ? listed.Value : 0) : body.Pct ?? 0;
             var amount = listed is not null ? (listed.Type == "amount" ? listed.Value : 0) : pct > 0 ? 0 : body.Amount ?? 0;
             if (pct is < 0 or > 100) throw new DomainException("A discount is between 0 and 100 %.");
@@ -235,7 +243,7 @@ public static class Discounts
                 await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "discount", $"Order #{o.Number}: discount on {line.Name} taken off");
                 return;
             }
-            var listed = body.DiscountId is { } did ? await ListedAsync(c, tx, did, "item") : null;
+            var listed = body.DiscountId is { } did ? await ListedAsync(c, tx, did, "item", o.BranchId) : null;
             var (type, value) = listed is not null ? (listed.Type, listed.Value) : (body.Pct ?? 0) > 0 ? ("pct", body.Pct!.Value) : ("amount", body.Amount ?? 0);
             if (type == "pct" && value > 100) throw new DomainException("A discount is between 0 and 100 %.");
             if (value <= 0) throw new DomainException("Enter the discount.");
