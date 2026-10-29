@@ -8,8 +8,7 @@ namespace OnePos.Api.Pos;
 /// <summary>
 /// Branch comparison (admin and finance): every branch the user works in side by side over the days, each against the previous
 /// period of the same length (same weekdays when whole weeks are chosen). Fair figures (per day open), why each branch's sales
-/// changed (more or fewer orders, bigger or smaller bills, discounts, platforms), items that sell well elsewhere but not at a branch,
-/// and a few plain findings drawn from all of it.
+/// changed (more or fewer orders, bigger or smaller bills, discounts, platforms), and a few plain findings drawn from all of it.
 /// </summary>
 public static class BranchComparison
 {
@@ -86,8 +85,6 @@ public static class BranchComparison
                 var ids = branches.Select(b => b.Id).ToArray();
                 var now = await FiguresAsync(c, tx, ids, f, t);
                 var before = await FiguresAsync(c, tx, ids, pf, pt);
-                var items = new Dictionary<Guid, List<(string Name, decimal Qty, decimal Sales)>>();
-                foreach (var id in ids) items[id] = (await SalesSummary.ItemsAsync(c, tx, [id], f, t)).Select(x => (x.Name, x.Qty, x.Sales)).ToList();
 
                 // Only branches that sold in the period are compared.
                 var live = branches.Where(b => now[b.Id].Orders > 0).ToList();
@@ -107,23 +104,6 @@ public static class BranchComparison
                         platformPctNow = Share(n.Platform, n.Net), platformPctBefore = Share(p.Platform, p.Net),
                     };
                 }).ToList();
-
-                // Items that sell well at the other branches but much less here (by share of each branch's sales); the gap in money is
-                // what this branch would sell at the others' average share.
-                var totals = live.ToDictionary(b => b.Id, b => items[b.Id].Sum(x => x.Sales));
-                var gaps = new List<(string Item, string Branch, decimal ShareHere, decimal ShareElsewhere, decimal SalesHere, decimal Gap)>();
-                if (live.Count > 1)
-                    foreach (var name in live.SelectMany(b => items[b.Id].Select(x => x.Name)).Distinct())
-                        foreach (var b in live)
-                        {
-                            var others = live.Where(o => o.Id != b.Id).Select(o => Share(items[o.Id].Where(x => x.Name == name).Sum(x => x.Sales), totals[o.Id])).ToList();
-                            var elsewhere = Money.Round(others.Average());
-                            var salesHere = items[b.Id].Where(x => x.Name == name).Sum(x => x.Sales);
-                            var here = Share(salesHere, totals[b.Id]);
-                            if (elsewhere >= 0.5m && here < elsewhere / 2)
-                                gaps.Add((name, b.Name, here, elsewhere, Money.Round(salesHere), Money.Round((elsewhere - here) / 100 * totals[b.Id])));
-                        }
-                var topGaps = gaps.OrderByDescending(g => g.Gap).Take(15).ToList();
 
                 // Findings: a few plain sentences, the biggest things first.
                 var findings = new List<string>();
@@ -148,8 +128,6 @@ public static class BranchComparison
                 Outlier("discounts", x => x.Discounts, 1.5m, 2);
                 Outlier("voided orders", x => x.Voids, 2, 1);
                 Outlier("wastage", x => x.Wastage, 1.5m, 1);
-                if (topGaps.FirstOrDefault() is { Item: not null } g0)
-                    findings.Add($"{g0.Item} is {g0.ShareElsewhere:0.#}% of sales at the other branches but {g0.ShareHere:0.#}% at {g0.Branch} (about {g0.Gap:N0} in sales).");
                 if (live.Select(b => now[b.Id].DaysOpen).Distinct().Count() > 1)
                     findings.Add($"Not every branch was open every day ({string.Join(", ", live.Select(b => $"{b.Name} {now[b.Id].DaysOpen}"))} days): compare per day open.");
 
@@ -177,7 +155,6 @@ public static class BranchComparison
                         averageBill = all.Sum(x => x.Orders) == 0 ? 0 : Money.Round(all.Sum(x => x.Net) / all.Sum(x => x.Orders)),
                     },
                     why,
-                    gaps = topGaps.Select(g => new { item = g.Item, branch = g.Branch, shareHere = g.ShareHere, shareElsewhere = g.ShareElsewhere, salesHere = g.SalesHere, gap = g.Gap }),
                 };
             });
         });

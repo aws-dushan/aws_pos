@@ -16,7 +16,6 @@ export type Comparison = {
   total: { orders: number; net: number; netPct: number | null; daysOpen: number; discounts: number; refunds: number; voids: number; wastage: number; variance: number; platform: number; averageBill: number };
   why: { branch: string; now: number; before: number; change: number; changePct: number | null; fromOrders: number; fromBill: number; ordersNow: number; ordersBefore: number;
     billNow: number; billBefore: number; discountPctNow: number; discountPctBefore: number; platformPctNow: number; platformPctBefore: number }[];
-  gaps: { item: string; branch: string; shareHere: number; shareElsewhere: number; salesHere: number; gap: number }[];
 };
 
 const money = (n: number) => fmtIn(n, 2);
@@ -24,7 +23,7 @@ const pct = (n: number) => `${fmtIn(n, 1)}%`;
 const vs = (p: number | null) => p === null ? "" : ` ${p >= 0 ? "▲" : "▼"} ${fmtIn(Math.abs(p), 1)}%`;
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
-/** The report's tables (each branch a column, then why sales changed, then items selling less at a branch); the screen and exports use them. */
+/** The report's tables (each branch a column, then why sales changed); the screen and exports use them. */
 export function comparisonSections(c: Comparison): ExportTable[] {
   const b = c.branches;
   const row = (label: string, cell: (x: Comparison["branches"][number]) => string | number, total: string | number = "") => [label, ...b.map(cell), total];
@@ -48,9 +47,6 @@ export function comparisonSections(c: Comparison): ExportTable[] {
     { title: "Why sales changed", head: ["Branch", "Before", "Now", "Change", "From number of orders", "From bill size", "Orders", "Average bill", "Discounts", "Platforms"], rows: c.why.map((w) => [
       w.branch, money(w.before), money(w.now), `${money(w.change)}${vs(w.changePct)}`, money(w.fromOrders), money(w.fromBill),
       `${w.ordersBefore} → ${w.ordersNow}`, `${money(w.billBefore)} → ${money(w.billNow)}`, `${pct(w.discountPctBefore)} → ${pct(w.discountPctNow)}`, `${pct(w.platformPctBefore)} → ${pct(w.platformPctNow)}`,
-    ]) },
-    { title: "Sells less here than at the other branches", head: ["Item", "Branch", "Share of sales here", "At the other branches", "Sales here", "Sales if like the others"], rows: c.gaps.map((g) => [
-      g.item, g.branch, pct(g.shareHere), pct(g.shareElsewhere), money(g.salesHere), `+${money(g.gap)}`,
     ]) },
   ];
 }
