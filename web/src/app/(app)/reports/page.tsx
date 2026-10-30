@@ -35,7 +35,7 @@ type Report = {
   byType: { type: OrderType; orders: number; sales: number }[];
   byBranch: { code: string; name: string; orders: number; sales: number }[];
 };
-type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "gp" | "discounts" | "branches" | "exceptions" | "stock" | "activity";
+type Tab = "items" | "categories" | "days" | "methods" | "cashiers" | "invoices" | "finance" | "summary" | "compare" | "closed" | "gp" | "discounts" | "branches" | "exceptions" | "returns" | "stock" | "activity";
 type GpTotal = { sales: number; cost: number; profit: number };
 type Gp = {
   summary: GpTotal & { pct: number | null };
@@ -68,6 +68,12 @@ type Inv = {
   gross: number; discount: number; vat: number; net: number; refunded: number; paidBy: string | null; facts: string | null; customer?: string | null;
 };
 type InvPay = { orderId: string; type: string; amount: number };
+type Ret = {
+  id: string; orderId: string; number: string; invoiceNo: string | null; businessDate: string; branch: string; kind: "bill" | "items" | "amount"; reason: string;
+  total: number; vat: number; at: string; cashier: string | null; till: string | null; billTotal: number; billAt: string | null; backBy: string | null;
+  facts: string | null; factsDoc: string | null; factsError: string | null;
+};
+const RET_KIND: Record<Ret["kind"], string> = { bill: "Whole bill", items: "Items", amount: "Amount" };
 type ClosedDays = {
   days: { id: string; date: string; branch: string; closedAt: string | null; closedByName: string | null; reopened: number; z: DayReport | null }[];
   shifts: { id: string; date: string; branch: string; registerName: string; userName: string; openedAt: string; closedAt: string | null; status: ShiftStatus; openingFloat: number;
@@ -121,6 +127,8 @@ export default function ReportsPage() {
   const cmpSections = useMemo(() => cmp.data ? comparisonSections(cmp.data) : null, [cmp.data]);
   const inv = useApi<{ invoices: Inv[]; payments: InvPay[] | null }>(invTab ? `/reports/invoices?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}${tab === "finance" ? "&finance=true" : ""}` : null);
   const [invKind, setInvKind] = useState<InvKind>("all");
+  // Returns: every credit note of the days (the Return button's whole bills, and older refunds), with its PSR51 where it went to FACTS.
+  const rets = useApi<{ returns: Ret[] }>(tab === "returns" ? `/reports/returns?from=${from}&to=${to}${where === "all" ? "&branches=all" : ""}` : null);
   const [invQ, setInvQ] = useState("");
   const [receipt, setReceipt] = useState<string | null>(null);
   // Closed days (admin and finance): the days or their shifts, each with its kept Z report.
@@ -188,6 +196,17 @@ export default function ReportsPage() {
           share: null, ids: invRows.map((x) => x.id),
           rows: invRows.map((x) => [x.invoiceNo, ...(many ? [x.branch] : []), time(x.at), x.platform ?? TYPE_LABEL[x.orderType], x.platformRef ?? "—", x.cashier ?? "—", x.till ?? "—",
             fmtQty(x.items), money(x.gross), money(x.discount), money(x.vat), money(x.net), money(x.refunded), x.paidBy ?? "—", invStatus(x), x.facts ? FACTS_LABEL[x.facts] ?? x.facts : "—"]),
+        };
+      }
+      case "returns": {
+        if (!rets.data) return { head: [], rows: [], share: null };
+        const many = where === "all";
+        const xs = rets.data.returns;
+        return {
+          head: ["Credit note", ...(many ? ["Branch"] : []), "Date & time", "Bill", "Bill total", "What", "Reason", "Cashier", "Till", "Amount", "VAT", "Back by", "FACTS", "PSR51"],
+          share: null, ids: xs.map((x) => x.orderId),
+          rows: xs.map((x) => [x.number, ...(many ? [x.branch] : []), time(x.at), x.invoiceNo ?? "—", money(x.billTotal), RET_KIND[x.kind] ?? x.kind, x.reason, x.cashier ?? "—", x.till ?? "Back office",
+            money(x.total), money(x.vat), x.backBy ?? "—", x.facts ? `${FACTS_LABEL[x.facts] ?? x.facts}${x.facts === "failed" && x.factsError ? `: ${x.factsError}` : ""}` : "Not sent", x.factsDoc ?? "—"]),
         };
       }
       case "closed": {
@@ -318,8 +337,8 @@ export default function ReportsPage() {
         }
       }
     }
-  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, cd.data, dayKind, gp.data, gpKind, act.data, actKind, actView]);
-  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", gp: "Gross profit", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", stock: "Stock", activity: "Stock activity" };
+  }, [d, tab, ex.data, exKind, st.data, stockKind, stockMatch, inv.data, invRows, finRows, where, rets.data, cd.data, dayKind, gp.data, gpKind, act.data, actKind, actView]);
+  const titles: Record<Tab, string> = { items: "Sales by item", categories: "Sales by category", days: "Sales by day", methods: "Payments by method", cashiers: "Payments by cashier", invoices: "Invoices", finance: "Finance invoices", summary: "Summary", compare: "Branch comparison", closed: "Closed days", gp: "Gross profit", discounts: "Discounts given", branches: "Sales by branch", exceptions: "Exceptions", returns: "Returns", stock: "Stock", activity: "Stock activity" };
   const stockTitles: Record<StockKind, string> = { all: "All items", out: "Out of stock", negative: "Negative stock", noPlatform: "No platform price" };
   const exTitles: Record<ExKind, string> = { discounts: "Discounts", voids: "Voided orders", lineVoids: "Voided items", refunds: "Refunds", noSales: "No-sales" };
   const gpTitles: Record<GpKind, string> = { items: "Items", categories: "Categories", days: "Days", branches: "Branches" };
@@ -331,7 +350,7 @@ export default function ReportsPage() {
   ].filter(Boolean).join(" · ") : "";
   // Which columns hold figures (right-aligned): for sales tables all but the names; for exceptions, the ones that are numbers.
   const isNum = (v: string | number) => typeof v === "number" || /^[#-]?[\d,]+(\.\d+)?%?$/.test(v);
-  const listTab = tab === "exceptions" || invTab || tab === "closed" || tab === "activity";
+  const listTab = tab === "exceptions" || invTab || tab === "returns" || tab === "closed" || tab === "activity";
   const numCol = (i: number) => listTab ? !!table?.rows.length && table.rows.every((r) => isNum(r[i]) || r[i] === "—") : i >= (tab === "items" || (tab === "gp" && gpKind === "items") ? 2 : tab === "stock" ? 3 : 1);
   // Search, sort and column filters over the table (they start again with another tab, kind or dates).
   const tv = useTableView(table?.head, table?.rows, `${tab}|${exKind}|${dayKind}|${stockKind}|${invKind}|${gpKind}|${actKind}|${actView}|${where}|${from}|${to}`);
@@ -417,6 +436,7 @@ export default function ReportsPage() {
                 { value: "discounts", label: "Discounts" },
                 ...(where === "all" ? [{ value: "branches" as const, label: "Branches" }] : []),
                 { value: "exceptions", label: "Exceptions" },
+                { value: "returns", label: "Returns" },
                 { value: "stock", label: "Stock" },
                 { value: "activity", label: "Stock activity" },
               ]} />
@@ -472,6 +492,17 @@ export default function ReportsPage() {
                 })()}
               </div>
             )}
+            {tab === "returns" && rets.data && (() => {
+              const xs = rets.data.returns;
+              const by = new Map<string, number>();
+              for (const x of xs) by.set(x.cashier ?? "—", (by.get(x.cashier ?? "—") ?? 0) + 1);
+              const most = [...by.entries()].sort((a, z) => z[1] - a[1]).slice(0, 3).map(([n, k]) => `${n} ${k}`).join(", ");
+              return (
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {xs.length} return{xs.length === 1 ? "" : "s"} · {cur} {money(xs.reduce((t, x) => t + x.total, 0))} back{most ? ` · by cashier: ${most}` : ""} · click a row for the bill
+                </p>
+              );
+            })()}
             {tab === "gp" && (
               <div className="mb-3 grid gap-2">
                 <div className="flex flex-wrap items-center gap-3">
@@ -481,7 +512,7 @@ export default function ReportsPage() {
                 <p className="text-xs text-muted-foreground">Sales before VAT, after discounts. Cost is each line&apos;s FACTS batch at its landed cost, read from FACTS now.{gpNote ? ` Left out: ${gpNote}.` : ""}</p>
               </div>
             )}
-            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : tab === "gp" ? gp.error : tab === "activity" ? act.error : undefined} />
+            <ErrorNote message={tab === "stock" ? st.error : invTab ? inv.error : tab === "summary" ? summary.error : tab === "compare" ? cmp.error : tab === "closed" ? cd.error : tab === "returns" ? rets.error : tab === "gp" ? gp.error : tab === "activity" ? act.error : undefined} />
             {tab === "exceptions" && (
               <div className="mb-3 flex flex-wrap items-center gap-3">
                 <Segmented id="ex-kind" size="sm" value={exKind} onChange={setExKind} options={(Object.keys(exTitles) as ExKind[]).map((k) => {

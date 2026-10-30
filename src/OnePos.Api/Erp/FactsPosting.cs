@@ -22,6 +22,9 @@ public static partial class FactsPosting
 {
     public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null);
 
+    /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostReturn.sql): a whole bill's return as a POSTED PSR51, a copy of its POS51.</summary>
+    public const string PostReturnProc = "usp_ONEPOS_PostReturn";
+
     /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveWastageTransfer.sql): a day's wastage as a draft STV50.</summary>
     public const string WastageProc = "usp_ONEPOS_SaveWastageTransfer";
     /// <summary>FACTS: approved wastage as a POSTED STV50 (batches FIFO, FACTS' own approval), as the branch approver's FACTS user.</summary>
@@ -349,13 +352,19 @@ public static partial class FactsPosting
         return lines.Count;
     }
 
-    /// <summary>A credit note was made: posted as SR50 where the company posts refunds and the bill itself was posted.</summary>
+    /// <summary>
+    /// A credit note was made: where the company posts refunds and the bill itself went to FACTS, posted as SR50 (any credit note,
+    /// through the FACTS developer's procedure) or as PSR51 (a whole bill returned, through One POS' procedure; other refunds stay
+    /// for finance). It waits for the bill's POS51.
+    /// </summary>
     public static async Task EnqueueRefundAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid creditNoteId, Guid orderId)
     {
         var co = await c.QuerySingleOrDefaultAsync<(string Refunds, string? Proc)>("""
             select co.facts_refunds, co.facts_refund_proc from pos_order o join company co on co.id = o.company_id where o.id = @orderId
             """, new { orderId }, tx);
-        if (co.Refunds != "sr50") return;
+        if (co.Refunds == "psr51" && await c.ExecuteScalarAsync<string>("select kind from credit_note where id = @creditNoteId", new { creditNoteId }, tx) != "bill") return;
+        if (co.Refunds is not ("sr50" or "psr51")) return;
+        var proc = co.Refunds == "psr51" ? PostReturnProc : co.Proc;
         var inv = await c.QuerySingleOrDefaultAsync<(Guid Company, Guid Branch)>("select company_id, branch_id from erp_post where order_id = @orderId and kind = 'invoice'", new { orderId }, tx);
         if (inv.Branch == Guid.Empty) return;     // the bill itself wasn't posted (before the start date): nothing to credit in FACTS
         var (xml, doc, amount) = await CreditNoteAsync(c, tx, creditNoteId);
@@ -364,8 +373,8 @@ public static partial class FactsPosting
             insert into erp_post (company_id, branch_id, kind, order_id, credit_note_id, doc_no, business_date, amount, xml, status, last_error)
             values (@Company, @Branch, 'refund', @orderId, @creditNoteId, @doc, @day, @amount, @xml, @status, @error)
             on conflict (credit_note_id) where kind = 'refund' do nothing
-            """, new { inv.Company, inv.Branch, orderId, creditNoteId, doc, day, amount, xml, status = co.Proc is null ? "waiting" : "pending",
-                       error = co.Proc is null ? "Waiting for the FACTS procedure that saves SR50 credit notes (from the FACTS developer)." : null }, tx);
+            """, new { inv.Company, inv.Branch, orderId, creditNoteId, doc, day, amount, xml, status = proc is null ? "waiting" : "pending",
+                       error = proc is null ? "Waiting for the FACTS procedure that saves SR50 credit notes (from the FACTS developer)." : null }, tx);
     }
 
     public static void Map(RouteGroupBuilder api)
@@ -404,7 +413,7 @@ public static partial class FactsPosting
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.IsAdmin) throw new ForbiddenException("Only administrators switch posting to FACTS on or off.");
-            if (body.Refunds is not ("none" or "sr50")) throw new DomainException("Refunds are not posted, or posted as SR50.");
+            if (body.Refunds is not ("none" or "sr50" or "psr51")) throw new DomainException("Refunds are not posted, posted as SR50, or returned bills posted as PSR51.");
             var proc = string.IsNullOrWhiteSpace(body.RefundProc) ? null : body.RefundProc.Trim();
             if (proc is not null && !ProcName().IsMatch(proc)) throw new DomainException("The SR50 procedure is a FACTS procedure name (letters, digits, _).");
             if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or One POS' (FIFO batches).");
@@ -594,8 +603,8 @@ public static partial class FactsPosting
 
         private async Task SendAsync(Guid companyId, CancellationToken stop)
         {
-            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser)>("""
-                select p.id, p.kind, p.xml, p.attempts, co.facts_refund_proc, co.facts_invoice_proc, p.order_id, p.facts_user from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
+            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser, string Refunds)>("""
+                select p.id, p.kind, p.xml, p.attempts, co.facts_refund_proc, co.facts_invoice_proc, p.order_id, p.facts_user, co.facts_refunds from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
                 where p.status = 'pending' and p.next_try_at <= now() and b.facts_post_from is not null and co.facts_posting
                 order by p.created_at, p.kind <> 'repacking' limit 50
                 """, transaction: tx))).ToList();
@@ -610,6 +619,16 @@ public static partial class FactsPosting
                 if (p.Kind == "invoice" && p.OrderId is { } billId && await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<bool>(
                         "select exists (select 1 from erp_post where kind = 'repacking' and order_id = @billId and status not in ('posted', 'skipped'))", new { billId }, tx)))
                     continue;
+                // A return waits for its bill's POS51 (it's copied from it); a bill finance enters by hand takes its return with it.
+                if (p.Kind == "refund" && p.Refunds == "psr51" && p.OrderId is { } returnedId)
+                {
+                    var bill = await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<string?>(
+                        "select status from erp_post where kind = 'invoice' and order_id = @returnedId", new { returnedId }, tx));
+                    if (bill == "skipped")
+                        await db.Company(companyId, (c, tx) => c.ExecuteAsync(
+                            "update erp_post set status = 'skipped', last_error = 'Its bill is entered in FACTS by hand: enter the return there too.' where id = @Id", new { p.Id }, tx));
+                    if (bill != "posted") continue;
+                }
                 string status, error = "", doc = "";
                 string? batchNote = null;
                 try
@@ -620,6 +639,7 @@ public static partial class FactsPosting
                         : p.Kind == "return" ? p.FactsUser is null ? throw new InvalidOperationException("A return needs the approver's FACTS username.") : PostWastageProc
                         : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
                         : p.Kind == "repacking" ? p.OrderId is null ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
+                        : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
                     cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" ? WastageUser : "ONEPOS"));

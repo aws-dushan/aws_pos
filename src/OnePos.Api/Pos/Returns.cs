@@ -15,6 +15,7 @@ public static class Returns
     public sealed record ReturnLine(Guid LineId, decimal Qty, bool? Restock);
     public sealed record ReturnBody(ReturnLine[] Lines, string Method, string Reason);
     public sealed record RefundBody(decimal Amount, string Method, string Reason);
+    public sealed record BillReturnBody(string Reason);
 
     public sealed class CreditNoteRow
     {
@@ -124,6 +125,45 @@ public static class Returns
                 $"Order #{o.Number}: {parts.Sum(p => p.Qty)} item(s) returned, {total:N2} refunded by {method}", note: reason);
         }, allowClosed: true));
 
+        // The Return button: the whole bill back, each payment the way it was paid, its items back on stock. On the bill's own
+        // business day anyone at the till does it without approval; a later day needs the return window or a manager, as any refund.
+        // Where the company posts returns to FACTS it goes as a posted PSR51, a copy of the bill's POS51.
+        api.MapPost("/orders/{id:guid}/return-bill", (Guid id, BillReturnBody body, HttpContext http, Db db, Live live) => Orders.Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
+        {
+            if (o.Refunded > 0) throw new DomainException("Part of this bill was refunded already, so it can't be returned as a whole bill.");
+            var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType)>("""
+                select method, sum(amount), card_type from payment where order_id = @id and kind = 'payment' group by method, card_type order by sum(amount) desc
+                """, new { id }, tx)).ToList();
+            if (pays.Count == 0 || o.Paid <= 0) throw new DomainException("Nothing was paid on this bill.");
+            var (_, reason, _) = await CheckAsync(c, tx, o, scope, pays[0].Method, body.Reason);
+            // An earlier day's bill: only an administrator or a manager (day.manage) returns it, or approves it at the till.
+            if (await Days.DateAsync(c, tx, o.BranchId) != o.BusinessDate && !scope.IsAdmin && !scope.Can("day.manage"))
+                await Approvals.RequireAsync(c, tx, http, scope, "refund", o.Paid, "Only a manager returns a bill from an earlier day. A manager can approve it.", late: true, orderId: o.Id);
+            var all = (await c.QueryAsync<Orders.LineRow>("select * from order_line where order_id = @id and not is_void and qty > returned_qty order by sort", new { id }, tx)).ToList();
+            if (all.Count == 0) throw new DomainException("Nothing on this bill can be returned.");
+            var returned = (await c.QueryAsync<(Guid Id, decimal ReturnedQty)>("select id, returned_qty from order_line where order_id = @id", new { id }, tx)).ToDictionary(x => x.Id, x => x.ReturnedQty);
+            // Each line's share of what was paid; the last takes the rounding, so the lines add up to the bill.
+            var subtotal = all.Sum(l => l.LineTotal - l.Discount);
+            var parts = all.Select(l => (Line: l, Qty: l.Qty - returned.GetValueOrDefault(l.Id),
+                                        Amount: subtotal > 0 ? Money.Round(o.Paid * (l.LineTotal - l.Discount) / subtotal) : 0m,
+                                        Vat: subtotal > 0 ? Money.Round(o.Vat * (l.LineTotal - l.Discount) / subtotal) : 0m)).ToList();
+            parts[^1] = parts[^1] with { Amount = o.Paid - parts.Take(parts.Count - 1).Sum(p => p.Amount), Vat = o.Vat - parts.Take(parts.Count - 1).Sum(p => p.Vat) };
+            var noteId = await WriteAsync(c, tx, o, scope, "bill", reason, pays[0].Method, o.Paid, o.Vat, pays);
+            foreach (var p in parts)
+            {
+                await c.ExecuteAsync("""
+                    insert into credit_note_line (company_id, credit_note_id, order_line_id, name, qty, amount, vat, restock)
+                    values (@co, @noteId, @lid, @name, @qty, @amount, @vat, true)
+                    """, new { co = o.CompanyId, noteId, lid = p.Line.Id, name = p.Line.Name, qty = p.Qty, amount = p.Amount, vat = p.Vat }, tx);
+                await c.ExecuteAsync("update order_line set returned_qty = qty where id = @lid", new { lid = p.Line.Id }, tx);
+            }
+            // The items come back on stock (their ingredients).
+            await Recipes.RestockAsync(c, tx, o, parts.Select(p => (p.Line, p.Qty)), scope.UserId);
+            await Erp.FactsPosting.EnqueueRefundAsync(c, tx, noteId, o.Id);
+            await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "return-bill",
+                $"Order #{o.Number}: whole bill returned, {o.Paid:N2} refunded ({string.Join(", ", pays.Select(p => $"{p.CardType ?? p.Method} {p.Amount:N2}"))})", note: reason);
+        }, allowClosed: true));
+
         // An amount back without items (goodwill, overcharge): still a credit note, its VAT in proportion to the bill.
         api.MapPost("/orders/{id:guid}/refund", (Guid id, RefundBody body, HttpContext http, Db db, Live live) => Orders.Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
@@ -164,34 +204,40 @@ public static class Returns
         await Approvals.RequireAsync(c, tx, http, scope, "refund", amount, $"{why} A manager can approve it.", late, orderId: o.Id);
     }
 
-    private static async Task<Guid> WriteAsync(NpgsqlConnection c, NpgsqlTransaction tx, Orders.OrderRow o, Scope scope, string kind, string reason, string method, decimal total, decimal vat)
+    private static async Task<Guid> WriteAsync(NpgsqlConnection c, NpgsqlTransaction tx, Orders.OrderRow o, Scope scope, string kind, string reason, string method, decimal total, decimal vat,
+        IReadOnlyList<(string Method, decimal Amount, string? CardType)>? split = null)
     {
+        // The money back: one way, or (a whole bill) each payment the way it was paid.
+        IReadOnlyList<(string Method, decimal Amount, string? CardType)> backs = split ?? [(method, total, null)];
         // Refunds come out of today's business day and, on a register, the cashier's open shift (its cash count). Cash always
         // comes out of a drawer, so a cash refund needs one; a card refund may be done from the back office.
         var day = (await Days.CurrentAsync(c, tx, o.BranchId, scope.UserId)).Date;
         var shift = await Days.ShiftOfAsync(c, tx, scope.RegisterId, scope.UserId);
-        if (method == "cash" && scope.RegisterId is null) throw new DomainException("A cash refund comes out of a drawer: pick the register you're at first (on the Dashboard).");
+        if (backs.Any(x => x.Method == "cash") && scope.RegisterId is null) throw new DomainException("A cash refund comes out of a drawer: pick the register you're at first (on the Dashboard).");
         if (scope.RegisterId is not null && shift is null) throw new DomainException("Open your shift first: count the float in the drawer (on the Dashboard).");
         var number = await NextAsync(c, tx, o.CompanyId, o.BranchId, "CN");
         var noteId = await c.ExecuteScalarAsync<Guid>("""
             insert into credit_note (company_id, branch_id, order_id, register_id, number, business_date, kind, reason, method, total, vat, created_by)
             values (@co, @b, @id, @reg, @number, @day, @kind, @reason, @method, @total, @vat, @user) returning id
             """, new { co = o.CompanyId, b = o.BranchId, id = o.Id, reg = scope.RegisterId, number, day, kind, reason, method, total, vat, user = scope.UserId }, tx);
-        // Refunded "as a voucher": store credit, a new voucher for the amount (its code prints on the credit note).
-        Guid? voucherId = null;
-        if (method == "voucher")
+        foreach (var back in backs)
         {
-            var customer = await c.ExecuteScalarAsync<Guid?>("select customer_id from pos_order where id = @Id", new { o.Id }, tx);
-            var v = await Rewards.IssueAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, total, "refund", null, customer, $"Refund {number}", o.Id);
-            voucherId = v.Id;
-            await c.ExecuteAsync("update credit_note set voucher_id = @voucherId where id = @noteId", new { voucherId, noteId }, tx);
+            // Refunded "as a voucher": store credit, a new voucher for the amount (its code prints on the credit note).
+            Guid? voucherId = null;
+            if (back.Method == "voucher")
+            {
+                var customer = await c.ExecuteScalarAsync<Guid?>("select customer_id from pos_order where id = @Id", new { o.Id }, tx);
+                var v = await Rewards.IssueAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, back.Amount, "refund", null, customer, $"Refund {number}", o.Id);
+                voucherId = v.Id;
+                await c.ExecuteAsync("update credit_note set voucher_id = @voucherId where id = @noteId", new { voucherId, noteId }, tx);
+            }
+            await c.ExecuteAsync("""
+                insert into payment (company_id, branch_id, register_id, order_id, business_date, kind, method, amount, reason, taken_by, credit_note_id, shift_id, voucher_id, card_type)
+                values (@co, @b, @reg, @id, @day, 'refund', @method, @amount, @reason, @user, @noteId, @shift, @voucherId, @cardType)
+                """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId, id = o.Id, day, method = back.Method, amount = back.Amount, reason, user = scope.UserId, noteId, shift, voucherId, cardType = back.CardType }, tx);
+            // Points the refunded share earned go back; refunded "by points" gives the points back.
+            await Rewards.RefundAsync(c, tx, o, scope.UserId, back.Method, back.Amount);
         }
-        await c.ExecuteAsync("""
-            insert into payment (company_id, branch_id, register_id, order_id, business_date, kind, method, amount, reason, taken_by, credit_note_id, shift_id, voucher_id)
-            values (@co, @b, @reg, @id, @day, 'refund', @method, @total, @reason, @user, @noteId, @shift, @voucherId)
-            """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId, id = o.Id, day, method, total, reason, user = scope.UserId, noteId, shift, voucherId }, tx);
-        // Points the refunded share earned go back; refunded "by points" gives the points back.
-        await Rewards.RefundAsync(c, tx, o, scope.UserId, method, total);
         await c.ExecuteAsync("""
             update pos_order set refunded = refunded + @total, status = case when refunded + @total >= paid then 'refunded' else status end where id = @id
             """, new { id = o.Id, total }, tx);
