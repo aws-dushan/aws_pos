@@ -1,12 +1,12 @@
 -- One POS: rehearse usp_ONEPOS_PostReturn: bill INV-EBL-01-000325 (12.00, VISA, European Bakery Al Qusais) returned whole, as PSR51
--- REHEARSAL-RET-1 posted as ONEPOS. Everything is rolled back at the end: no PSR51 stays, no stock or accounts move. Run after
+-- REHEARSAL-RET-1 posted as POSBAKERY (the FACTS user One POS posts returns as). Everything is rolled back at the end: no PSR51 stays, no stock or accounts move. Run after
 -- creating the procedure, and after PSR51's setup is fixed (DM_UD_LABEL8 = DEBIT, its payment methods' PM_SIGN = -1).
 -- Check in the answers: the accounts reverse the bill's (sales 5000 and VAT 4107 debited, the customer AR credited, the card account
 -- 2315 credited: money out), the stock comes back IN on the bill's batch, and ACTION_STATUS has usp_SAL_APPR_Posting.
 SET XACT_ABORT OFF;
 BEGIN TRANSACTION;
 
-EXEC dbo.usp_ONEPOS_PostReturn @ClientID = N'ONEPOS', @BodyXML = N'<data><CreditNote><CreditNoteNo>REHEARSAL-RET-1</CreditNoteNo><CreditNoteDate>2026-10-30</CreditNoteDate>
+EXEC dbo.usp_ONEPOS_PostReturn @ClientID = N'POSBAKERY', @BodyXML = N'<data><CreditNote><CreditNoteNo>REHEARSAL-RET-1</CreditNoteNo><CreditNoteDate>2026-10-30</CreditNoteDate>
   <InvoiceNo>INV-EBL-01-000325</InvoiceNo><NetAmount>12.00</NetAmount><Reason>Rehearsal</Reason></CreditNote></data>';
 
 -- What it made (inside the transaction), next to the bill's own entries.

@@ -642,7 +642,8 @@ public static partial class FactsPosting
                         : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
-                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" ? WastageUser : "ONEPOS"));
+                    // FACTS saves the document as created by this user, so it must be a FACTS user (a PSR51 too: POSBAKERY).
+                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
                     cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = p.Xml;
                     await using var r = await cmd.ExecuteReaderAsync(stop);
                     // FACTS answers DocumentNo / status / description, possibly more than once (its posting step answers too).
