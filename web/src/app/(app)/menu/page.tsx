@@ -142,6 +142,15 @@ export default function MenuPage() {
                             {i.branchPrice !== null && !i.erpPriced && <div className="text-xs text-muted-foreground line-through tabular-nums">{fmtIn(i.price, 2)}</div>}
                           </div>
                         </div>
+                        {/* Each delivery platform's FACTS price here; none means it can't be sold on that platform. */}
+                        {!!m.platformPrices?.length && (
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                            {m.platformPrices.map((p) => {
+                              const v = p.prices[i.id];
+                              return <span key={p.platformId} className="tabular-nums">{p.name ?? "Platform"} <span className={v == null ? "text-warning" : "font-medium text-foreground"}>{v == null ? "no price" : fmtIn(v, 2)}</span></span>;
+                            })}
+                          </div>
+                        )}
                         <div className="mt-3 flex flex-wrap items-center gap-1.5">
                           {i.isCombo && <Pill className={TONE.violet} dot>Combo</Pill>}
                           {!i.isActive && <Pill>Hidden everywhere</Pill>}

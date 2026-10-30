@@ -50,7 +50,7 @@ export type ModifierGroup = { id: string; name: string; minSelect: number; maxSe
 export type ShortStock = "allow" | "warn" | "block";
 export type Menu = { categories: MenuCategory[]; items: MenuItem[]; groups: ModifierGroup[]; shortStock?: ShortStock;
   /** Delivery platforms linked to a FACTS customer: their price per item here (FACTS items without one can't be sold on them). */
-  platformPrices?: { platformId: string; prices: Record<string, number> }[] };
+  platformPrices?: { platformId: string; name?: string; prices: Record<string, number> }[] };
 
 /** The menu as a platform's bill sees it: FACTS items at the platform's FACTS prices (none there = no price); others unchanged. */
 export function withPlatformPrices(menu: Menu | undefined, platformId: string | null): Menu | undefined {

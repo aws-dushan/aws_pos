@@ -91,13 +91,14 @@ public static class PlatformPrices
         if (branchId is null) return Array.Empty<object>();
         var vat = await c.QuerySingleAsync<(bool InclVat, decimal Rate)>(
             "select b.facts_prices_include_vat, co.vat_rate from branch b join company co on co.id = b.company_id where b.id = @branchId", new { branchId }, tx);
-        var rows = (await c.QueryAsync<(Guid PlatformId, Guid? ItemId, decimal? FactsPrice)>("""
-            select dp.id, pp.item_id, pp.facts_price from delivery_platform dp left join platform_item_price pp on pp.platform_id = dp.id
+        var rows = (await c.QueryAsync<(Guid PlatformId, string Name, Guid? ItemId, decimal? FactsPrice)>("""
+            select dp.id, dp.name, pp.item_id, pp.facts_price from delivery_platform dp left join platform_item_price pp on pp.platform_id = dp.id
             where dp.facts_customer is not null and dp.is_active
             """, transaction: tx)).ToList();
-        return rows.GroupBy(r => r.PlatformId).Select(g => new
+        return rows.GroupBy(r => (r.PlatformId, r.Name)).OrderBy(g => g.Key.Name).Select(g => new
         {
-            platformId = g.Key,
+            platformId = g.Key.PlatformId,
+            name = g.Key.Name,
             prices = g.Where(r => r.ItemId is not null).ToDictionary(r => r.ItemId!.Value.ToString(),
                 r => Money.Round(vat.InclVat ? r.FactsPrice!.Value : r.FactsPrice!.Value * (1 + vat.Rate / 100m))),
         }).ToList();
