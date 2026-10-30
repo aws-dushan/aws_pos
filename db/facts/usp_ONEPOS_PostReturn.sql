@@ -6,13 +6,16 @@ AS
   One POS by AWS Distribution - a whole POS bill returned at the till, into FACTS as a POSTED point of sale return (PSR51).
                                                                                                          Created 30-10-2026 for One POS.
                          30-10-2026: payments keep the bill's RD_CREATED_BY (FACTS allows 6 characters there).
+                         30-10-2026: the header points at the bill as FACTS' screen does (SAL_PREVIOUS_DOCNO, the POS51 tab).
 
   XML: /data/CreditNote with CreditNoteNo (One POS' credit note number, e.g. CN-EBL-01-000001: the PSR51's number), CreditNoteDate,
   InvoiceNo (the bill's POS51 number), NetAmount and Reason (the rest of One POS' credit note XML is not needed here).
 
   1. The PSR51 is a copy of the bill's POS51, as FACTS' return screen makes one from it: the header (customer, location, division,
      VAT, totals), every line with its batch (so the stock goes back on the batch it was sold from) and every payment (refunded the
-     way it was paid). The header and each line point back at the POS51 (SAL_UD_LABEL3/4 = POS51 / its number; SALDET_PREVIOUS_*).
+     way it was paid). The header and each line point back at the POS51 as FACTS' return screen does: SAL_PREVIOUS_DOCNO (the
+     screen's POS51 tab) and SAL_UD_LABEL3/4 = POS51 / its number, SAL_REFDATE = the bill's date, SALDET_PREVIOUS_* on each line;
+     the bill's own previous-document fields (SAL_PREV_*) are not carried over.
      The narration is "One POS return of <bill>: <reason>". Only a whole bill: NetAmount must be the POS51's net.
   2. Posted the way FACTS' Approve does it: FACTS' own usp_DocumentAutoApprove runs PSR51's approval steps (DOCUMENT_PROCEDURES:
      "Transaction Posting" = usp_SAL_APPR_Posting, stock and accounts; its validations) and records the approval (ACTION_STATUS).
@@ -81,6 +84,8 @@ BEGIN
 
         UPDATE #h SET SAL_DOCTYPE = @DocType, SAL_DOCNO = @DocNo, SAL_DOCDATE = @DocDate, SAL_CREATED_BY = @ClientID, SAL_CREATED_TS = GETDATE(),
                       SAL_POSTED_BY = NULL, SAL_POSTED_TS = NULL, SAL_REVISION_NO = 0, SAL_UD_LABEL3 = @FromType, SAL_UD_LABEL4 = @InvoiceNo,
+                      SAL_PREVIOUS_DOCNO = @InvoiceNo, SAL_REFDATE = SAL_DOCDATE,
+                      SAL_PREV_FYCODE = NULL, SAL_PREV_DOCTYPE = NULL, SAL_PREV_DOCNO = NULL, SAL_PREV_DOCDATE = NULL,
                       SAL_NARRATION = N'One POS return of ' + @InvoiceNo + ISNULL(N': ' + NULLIF(@Reason, N''), N'');
         UPDATE #d SET SALDET_DOCTYPE = @DocType, SALDET_DOCNO = @DocNo, SALDET_DOCDATE = @DocDate, SALDET_PREVIOUS_FYCODE = SALDET_FYCODE,
                       SALDET_PREVIOUS_DOCTYPE = @FromType, SALDET_PREVIOUS_DOCNO = @InvoiceNo, SALDET_PREVIOUS_DOCSRNO = SALDET_DOCSRNO, SALDET_AFTER_DOC_QTY = 0;

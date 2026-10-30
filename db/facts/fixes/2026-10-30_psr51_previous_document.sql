@@ -1,0 +1,16 @@
+-- One POS, 30-10-2026: the first two PSR51 returns point at their bill as FACTS' return screen does, so the bill shows in the
+-- screen's POS51 tab (SAL_PREVIOUS_DOCNO), and they no longer carry the bill's own previous-document link (SAL_PREV_*, ACLSO).
+-- Header fields only: amounts, lines, stock, accounts and posting are not touched. Safe to run more than once.
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+
+UPDATE r SET SAL_PREVIOUS_DOCNO = b.SAL_DOCNO, SAL_REFDATE = b.SAL_DOCDATE,
+             SAL_PREV_FYCODE = NULL, SAL_PREV_DOCTYPE = NULL, SAL_PREV_DOCNO = NULL, SAL_PREV_DOCDATE = NULL
+FROM dbo.SALES_HEADER r
+JOIN dbo.SALES_HEADER b ON b.SAL_DOCTYPE = r.SAL_UD_LABEL3 AND b.SAL_DOCNO = r.SAL_UD_LABEL4
+WHERE r.SAL_DOCTYPE = 'PSR51' AND r.SAL_DOCNO IN ('CN-EBL-01-000002', 'CN-EBL-03-000001') AND r.SAL_UD_LABEL3 = 'POS51';
+
+SELECT SAL_DOCNO, SAL_PREVIOUS_DOCNO, SAL_REFDATE, SAL_PREV_DOCTYPE, SAL_PREV_DOCNO, SAL_POSTED_BY FROM dbo.SALES_HEADER
+WHERE SAL_DOCTYPE = 'PSR51' AND SAL_DOCNO IN ('CN-EBL-01-000002', 'CN-EBL-03-000001');
+
+COMMIT TRANSACTION;
