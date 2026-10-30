@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Branch = { id: string; code: string; name: string; location: string | null; postFrom: string | null; paymentModes: number; cardTypes: number; queue: Record<string, number> };
-type Settings = { connector: string; posting: boolean; modesReadAt: string | null; modesReadOk: boolean | null; modesReadError: string | null; refunds: "none" | "sr50"; refundProc: string | null; invoiceProc: string; wastage: "finance" | "draft"; repacking: "off" | "draft" | "posted"; branches: Branch[] };
+type Settings = { connector: string; posting: boolean; modesReadAt: string | null; modesReadOk: boolean | null; modesReadError: string | null; refunds: "none" | "sr50" | "psr51"; refundProc: string | null; invoiceProc: string; wastage: "finance" | "draft"; repacking: "off" | "draft" | "posted"; branches: Branch[] };
 type Preview = { date: string; bills: number; total: number; vat: number; withProblems: number; items: { id: string; invoiceNo: string; total: number; vat: number; problems: string[]; xml: string }[] };
 type LogRow = { id: string; kind: "invoice" | "refund" | "wastage" | "repacking" | "return" | "marketing" | "request"; docNo: string; businessDate: string; amount: number; status: string; attempts: number; lastError: string | null; factsDoc: string | null; createdAt: string; postedAt: string | null; batchNote: string | null };
 
@@ -106,7 +106,10 @@ export default function FactsPostingPage() {
           <div className="space-y-2">
             <span className="block text-[0.8rem] font-medium text-foreground/80">Refunds (credit notes)</span>
             <Segmented id="refunds" value={d.refunds} onChange={(v) => admin && void saveCompany({ refunds: v })} className="w-full max-w-md"
-              options={[{ value: "none", label: "Not posted (finance enters them)" }, { value: "sr50", label: "Post as SR50" }]} />
+              options={[{ value: "none", label: "Not posted (finance enters them)" }, { value: "psr51", label: "Returned bills as PSR51" }, { value: "sr50", label: "Post as SR50" }]} />
+            {d.refunds === "psr51" && (
+              <p className="text-sm text-muted-foreground">A bill returned at the till (Return on Orders: the whole bill) goes to FACTS as a posted PSR51, a copy of its POS51: the same lines and batches back on stock, each payment refunded the way it was paid (procedure usp_ONEPOS_PostReturn). It waits until the bill&apos;s POS51 is posted. Other refunds are entered by finance.</p>
+            )}
             {d.refunds === "sr50" && (
               <div className="flex flex-wrap items-end gap-2">
                 <Field label="FACTS procedure that saves SR50" hint="From the FACTS developer. Until it's set, credit notes wait in the queue.">

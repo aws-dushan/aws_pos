@@ -179,6 +179,45 @@ public static class Reports
             });
         });
 
+        // Returns: every credit note of the days — a returned bill (the Return button) or an older refund of items or an amount — who did
+        // it and why, the bill, the money back and how, and its FACTS document (PSR51) where it went there.
+        api.MapGet("/reports/returns", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("reports.view");
+            var (f, t) = from <= to ? (from, to) : (to, from);
+            if (t.DayNumber - f.DayNumber > 366) throw new DomainException("Choose at most a year.");
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var ids = branches == "all"
+                    ? (await c.QueryAsync<Guid>("""
+                        select b.id from branch b where @admin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @u)
+                        """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray()
+                    : [scope.Branch];
+                var tz = scope.BranchId is { } b0 ? await c.ExecuteScalarAsync<string>("select time_zone from branch where id = @b0", new { b0 }, tx) ?? "Asia/Dubai" : "Asia/Dubai";
+                return new
+                {
+                    returns = await c.QueryAsync<ReturnRow>("""
+                        select n.id, n.order_id, n.number, o.invoice_no, n.business_date, b.code as branch, n.kind, n.reason, n.total, n.vat,
+                               to_char(n.created_at at time zone @tz, 'YYYY-MM-DD"T"HH24:MI') as at, u.display_name as cashier, r.name as till,
+                               o.total as bill_total, to_char(o.closed_at at time zone @tz, 'YYYY-MM-DD"T"HH24:MI') as bill_at,
+                               (select string_agg(case p.method when 'card' then coalesce(initcap(regexp_replace(p.card_type, '^\S+\s+', '')), 'Card') when 'platform' then 'Platform'
+                                                                 else initcap(p.method) end || ' ' || to_char(p.amount, 'FM999999990.00'), ' · ' order by p.at)
+                                  from payment p where p.credit_note_id = n.id) as back_by,
+                               e.status as facts, e.facts_doc, e.last_error as facts_error
+                        from credit_note n
+                        join pos_order o on o.id = n.order_id
+                        join branch b on b.id = n.branch_id
+                        left join app_user u on u.id = n.created_by
+                        left join register r on r.id = n.register_id
+                        left join erp_post e on e.credit_note_id = n.id and e.kind = 'refund'
+                        where n.branch_id = any(@ids) and n.business_date between @f and @t
+                        order by n.created_at
+                        """, new { ids, f, t, tz }, tx),
+                };
+            });
+        });
+
         // Summary (admin and finance): the days in one report, section by section — sales, money collected, VAT by rate, gross to net,
         // cancelled bills, voided items, categories, each bill by cashier, discounts, and expenses (cash paid out, wastage, give-aways).
         api.MapGet("/reports/summary", async (HttpContext http, Db db, DateOnly from, DateOnly to, string? branches) =>
@@ -358,5 +397,14 @@ public static class Reports
     public sealed class InvoicePayment
     {
         public Guid OrderId { get; set; } public string Type { get; set; } = ""; public decimal Amount { get; set; }
+    }
+
+    public sealed class ReturnRow
+    {
+        public Guid Id { get; set; } public Guid OrderId { get; set; } public string Number { get; set; } = ""; public string? InvoiceNo { get; set; }
+        public DateOnly BusinessDate { get; set; } public string Branch { get; set; } = ""; public string Kind { get; set; } = ""; public string Reason { get; set; } = "";
+        public decimal Total { get; set; } public decimal Vat { get; set; } public string At { get; set; } = ""; public string? Cashier { get; set; } public string? Till { get; set; }
+        public decimal BillTotal { get; set; } public string? BillAt { get; set; } public string? BackBy { get; set; }
+        public string? Facts { get; set; } public string? FactsDoc { get; set; } public string? FactsError { get; set; }
     }
 }
