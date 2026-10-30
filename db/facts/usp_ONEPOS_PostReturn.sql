@@ -1,10 +1,11 @@
-CREATE PROCEDURE dbo.usp_ONEPOS_PostReturn
+CREATE OR ALTER PROCEDURE dbo.usp_ONEPOS_PostReturn
     @ClientID NVARCHAR(20),
     @BodyXML  XML
 AS
 /*
   One POS by AWS Distribution - a whole POS bill returned at the till, into FACTS as a POSTED point of sale return (PSR51).
                                                                                                          Created 30-10-2026 for One POS.
+                         30-10-2026: payments keep the bill's RD_CREATED_BY (FACTS allows 6 characters there).
 
   XML: /data/CreditNote with CreditNoteNo (One POS' credit note number, e.g. CN-EBL-01-000001: the PSR51's number), CreditNoteDate,
   InvoiceNo (the bill's POS51 number), NetAmount and Reason (the rest of One POS' credit note XML is not needed here).
@@ -83,7 +84,7 @@ BEGIN
                       SAL_NARRATION = N'One POS return of ' + @InvoiceNo + ISNULL(N': ' + NULLIF(@Reason, N''), N'');
         UPDATE #d SET SALDET_DOCTYPE = @DocType, SALDET_DOCNO = @DocNo, SALDET_DOCDATE = @DocDate, SALDET_PREVIOUS_FYCODE = SALDET_FYCODE,
                       SALDET_PREVIOUS_DOCTYPE = @FromType, SALDET_PREVIOUS_DOCNO = @InvoiceNo, SALDET_PREVIOUS_DOCSRNO = SALDET_DOCSRNO, SALDET_AFTER_DOC_QTY = 0;
-        UPDATE #r SET RD_DOCTYPE = @DocType, RD_DOCNO = @DocNo, RD_DOCDATE = @DocDate, RD_CREATED_BY = @ClientID, RD_CREATED_TS = GETDATE();
+        UPDATE #r SET RD_DOCTYPE = @DocType, RD_DOCNO = @DocNo, RD_DOCDATE = @DocDate, RD_CREATED_TS = GETDATE();
 
         DECLARE @sql NVARCHAR(MAX), @cols NVARCHAR(MAX);
         SELECT @cols = STRING_AGG(CAST(QUOTENAME(name) AS NVARCHAR(MAX)), N', ') WITHIN GROUP (ORDER BY column_id)
