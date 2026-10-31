@@ -49,8 +49,8 @@ flowchart LR
 
 ## Access
 
-- `aws-app` is reached through the Hyper-V host (`aws-hyperv`, 172.14.110.100:2222) as a jump; `aws-data` through `aws-app`.
-  See `~/.ssh/config` on the development PC.
+- SSH access to `aws-app` and `aws-data` is set up in `~/.ssh/config` on the development PC; ask the system administrator
+  for access.
 - Many SSH connections in a row can get port 22 blocked for a while; combine commands into few calls.
 
 ## Backups
