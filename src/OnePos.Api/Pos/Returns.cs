@@ -127,15 +127,17 @@ public static class Returns
 
         // The Return button: the whole bill back, each payment the way it was paid, its items back on stock. On the bill's own
         // business day anyone at the till does it without approval; a later day needs the return window or a manager, as any refund.
-        // Where the company posts returns to FACTS it goes as a posted PSR51, a copy of the bill's POS51.
+        // Where the company posts returns to FACTS it goes as a posted PSR51, a copy of the bill's POS51. A 0.00 bill comes back too
+        // (its items on stock, its PSR51): a 0.00 return record, no money and no tax credit note.
         api.MapPost("/orders/{id:guid}/return-bill", (Guid id, BillReturnBody body, HttpContext http, Db db, Live live) => Orders.Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
             if (o.Refunded > 0) throw new DomainException("Part of this bill was refunded already, so it can't be returned as a whole bill.");
             var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType)>("""
                 select method, sum(amount), card_type from payment where order_id = @id and kind = 'payment' group by method, card_type order by sum(amount) desc
                 """, new { id }, tx)).ToList();
-            if (pays.Count == 0 || o.Paid <= 0) throw new DomainException("Nothing was paid on this bill.");
-            var (_, reason, _) = await CheckAsync(c, tx, o, scope, pays[0].Method, body.Reason);
+            if (o.Paid <= 0 && o.Total > 0) throw new DomainException("Nothing was paid on this bill.");
+            var method = pays.Count > 0 ? pays[0].Method : "other";
+            var (_, reason, _) = await CheckAsync(c, tx, o, scope, method, body.Reason);
             // An earlier day's bill: only an administrator or a manager (day.manage) returns it, or approves it at the till.
             if (await Days.DateAsync(c, tx, o.BranchId) != o.BusinessDate && !scope.IsAdmin && !scope.Can("day.manage"))
                 await Approvals.RequireAsync(c, tx, http, scope, "refund", o.Paid, "Only a manager returns a bill from an earlier day. A manager can approve it.", late: true, orderId: o.Id);
@@ -148,7 +150,7 @@ public static class Returns
                                         Amount: subtotal > 0 ? Money.Round(o.Paid * (l.LineTotal - l.Discount) / subtotal) : 0m,
                                         Vat: subtotal > 0 ? Money.Round(o.Vat * (l.LineTotal - l.Discount) / subtotal) : 0m)).ToList();
             parts[^1] = parts[^1] with { Amount = o.Paid - parts.Take(parts.Count - 1).Sum(p => p.Amount), Vat = o.Vat - parts.Take(parts.Count - 1).Sum(p => p.Vat) };
-            var noteId = await WriteAsync(c, tx, o, scope, "bill", reason, pays[0].Method, o.Paid, o.Vat, pays);
+            var noteId = await WriteAsync(c, tx, o, scope, "bill", reason, method, o.Paid, o.Vat, pays);
             foreach (var p in parts)
             {
                 await c.ExecuteAsync("""
@@ -161,7 +163,8 @@ public static class Returns
             await Recipes.RestockAsync(c, tx, o, parts.Select(p => (p.Line, p.Qty)), scope.UserId);
             await Erp.FactsPosting.EnqueueRefundAsync(c, tx, noteId, o.Id);
             await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "return-bill",
-                $"Order #{o.Number}: whole bill returned, {o.Paid:N2} refunded ({string.Join(", ", pays.Select(p => $"{p.CardType ?? p.Method} {p.Amount:N2}"))})", note: reason);
+                pays.Count == 0 ? $"Order #{o.Number}: whole 0.00 bill returned, items back on stock"
+                    : $"Order #{o.Number}: whole bill returned, {o.Paid:N2} refunded ({string.Join(", ", pays.Select(p => $"{p.CardType ?? p.Method} {p.Amount:N2}"))})", note: reason);
         }, allowClosed: true));
 
         // An amount back without items (goodwill, overcharge): still a credit note, its VAT in proportion to the bill.

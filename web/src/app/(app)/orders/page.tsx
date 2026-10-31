@@ -96,7 +96,7 @@ function Orders() {
                   </TableCell>
                   <TableCell><ObjectStatus className={STATUS[o.status].tone}>{STATUS[o.status].label}</ObjectStatus></TableCell>
                   <TableCell className="pr-5 text-right">
-                    {branch?.returnsEnabled && o.status === "paid" && o.paid > 0 && o.refunded === 0 && can("pos.sell") && (
+                    {branch?.returnsEnabled && o.status === "paid" && o.refunded === 0 && can("pos.sell") && (
                       <Button variant="outline" className="h-10" onClick={(e) => { e.stopPropagation(); setRefund(o); }}><RotateCcwIcon /> Return</Button>
                     )}
                   </TableCell>
@@ -107,10 +107,11 @@ function Orders() {
         </TablePanel>
       ) : <EmptyState icon={ReceiptTextIcon} title="No orders here" module="bank">Orders appear as they are taken at the register.</EmptyState>}
       <ReceiptDialog orderId={receipt} onClose={() => setReceipt(null)} />
-      <ReturnDialog order={refund} currency={cur} onClose={() => setRefund(null)} onDone={(orderId, noteId, message) => {
+      <ReturnDialog order={refund} currency={cur} onClose={() => setRefund(null)} onDone={(orderId, noteId, message, zero) => {
         setRefund(null); list.reload();
         // Not printed by itself: the credit note opens from the message to print when wanted.
-        toast.success(message, { action: { label: "Credit note", onClick: () => setNote({ orderId, noteId }) } });
+        // A 0.00 bill's return isn't a tax credit note: nothing to open.
+        toast.success(message, zero ? undefined : { action: { label: "Credit note", onClick: () => setNote({ orderId, noteId }) } });
       }} />
       <CreditNoteDialog orderId={note?.orderId ?? null} noteId={note?.noteId ?? null} onClose={() => setNote(null)} />
     </div>
@@ -121,10 +122,10 @@ const REASONS = ["Wrong payment method", "Wrong item", "Wrong quantity", "Wrong 
 
 /**
  * Return (REQ PAY-04): the whole bill comes back, each payment refunded the way it was paid, the items back on stock, with a reason.
- * It's a numbered tax credit note (and, where the company posts returns, a PSR51 in FACTS). A mistake is put right by ringing up
+ * It's a numbered tax credit note (and, where the company posts returns, a PSR51 in FACTS); a 0.00 bill's is only a return record. A mistake is put right by ringing up
  * the bill again.
  */
-function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | null; currency: string; onClose: () => void; onDone: (orderId: string, noteId: string, message: string) => void }) {
+function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | null; currency: string; onClose: () => void; onDone: (orderId: string, noteId: string, message: string, zero: boolean) => void }) {
   const detail = useApi<OrderDetail>(order ? `/orders/${order.id}` : null);
   const d = detail.data;
   const [reason, setReason] = useState("");
@@ -143,7 +144,7 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
       const note = r.creditNotes.at(-1)!;
       // Cash back to the customer: the drawer opens now.
       if (pays.some((p) => p.method === "cash")) void openDrawerForCash();
-      onDone(order.id, note.id, `Credit note ${note.number}: ${currency} ${money(note.total)} back the way it was paid.`);
+      onDone(order.id, note.id, note.total > 0 ? `Credit note ${note.number}: ${currency} ${money(note.total)} back the way it was paid.` : "Bill returned: items back on stock.", note.total <= 0);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -156,7 +157,9 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
       <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Return · {order?.invoiceNo ?? (order ? orderNo(order) : "")} {order ? orderLabel(order) : ""}</DialogTitle>
-          <DialogDescription>The whole bill comes back and the items go back on stock. A tax credit note is made (print it from the message if needed).</DialogDescription>
+          <DialogDescription>{amount > 0
+            ? "The whole bill comes back and the items go back on stock. A tax credit note is made (print it from the message if needed)."
+            : "Nothing was paid on this bill: its items go back on stock. No money and no credit note."}</DialogDescription>
         </DialogHeader>
         <div className="divide-y rounded-xl border text-sm">
           {!d ? <div className="h-24 skeleton-shimmer" /> : (
@@ -190,7 +193,7 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
         <DialogFooter>
           <Button variant="outline" className="h-12" onClick={onClose}>Cancel</Button>
           <Button className="h-12 min-w-52 bg-danger text-white hover:bg-danger/90" disabled={busy || !d || !reason.trim()} onClick={go}>
-            <RotateCcwIcon /> Return {currency} {money(amount)}
+            <RotateCcwIcon /> {amount > 0 ? `Return ${currency} ${money(amount)}` : "Return bill"}
           </Button>
         </DialogFooter>
       </DialogContent>
