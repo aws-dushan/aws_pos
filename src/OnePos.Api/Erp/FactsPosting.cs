@@ -245,8 +245,10 @@ public static partial class FactsPosting
             // The bill's own number (INV-EBL-01-000123), the same on the receipt and in FACTS (20 characters at most).
             new XElement("InvoiceNo", o.FactsNo ?? ""), new XElement("InvoiceDate", o.BusinessDate.ToString("yyyy-MM-dd", Inv)),
             new XElement("CurrCode", o.Currency), new XElement("ExchangeRate", "1"), new XElement("LocationCode", o.Location ?? ""),
-            new XElement("GrossAmount", N(o.Subtotal)), new XElement("OtherAmount", N(o.ServiceCharge)), new XElement("DiscountPercentage", N(o.DiscountPct)),
-            new XElement("DiscountAmount", N(o.DiscountTotal)), new XElement("NetAmount", N(o.Total)), new XElement("TotalVATAmount", N(o.Vat)),
+            // Every discount is on the lines (each line's own, or its share of the bill discount): the header has none, or FACTS takes
+            // it off twice (it books the lines' discounts and the header's). Its gross is the lines' after their discounts.
+            new XElement("GrossAmount", N(o.Subtotal - o.DiscountTotal)), new XElement("OtherAmount", N(o.ServiceCharge)), new XElement("DiscountPercentage", N(0)),
+            new XElement("DiscountAmount", N(0)), new XElement("NetAmount", N(o.Total)), new XElement("TotalVATAmount", N(o.Vat)),
             new XElement("VATRateType", "-1"), new XElement("VATCategory", "SR"),
             new XElement("CreatedBy", (o.Cashier ?? "One POS").Length > 20 ? o.Cashier![..20] : o.Cashier ?? "One POS"),
             new XElement("CreatedTs", at), new XElement("ModifiedTs", at), new XElement("Status", "Open"),
