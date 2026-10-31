@@ -39,3 +39,13 @@ deploy/releases/
 
 # Python
 __pycache__/
+
+# Generated docs PDF (tools/docs/build-docs.mjs)
+docs/out/
+
+# Manual screenshot tooling output
+tools/docs/demo/shots/
+tools/docs/demo/ids.json
+tools/docs/demo/ctx.json
+tools/docs/demo/node_modules/
+tools/docs/demo/ids-facts.json
