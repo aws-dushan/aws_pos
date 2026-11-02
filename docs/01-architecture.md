@@ -209,7 +209,6 @@ delete an entry. Only administrators and users with the `audit.view` permission 
 
 ## Decisions that shape the design
 
-- Online only. No offline mode or branch hubs (decided 15 Oct 2026); numbers are allocated by the server.
 - Table service and the kitchen are per-branch switches; optional features each have a switch, mostly off by default.
 - Every page follows the branch chosen in the header; customers belong to one branch.
 - Items and prices come from FACTS: an item without a FACTS price cannot be sold. One POS adds combos and options; BOMs are read from FACTS outlet BOMs (BOMO50).
