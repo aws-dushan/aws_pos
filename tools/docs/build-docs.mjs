@@ -1,6 +1,8 @@
 // One POS documents as PDFs, printed with Edge or Chrome.
 //   node tools/docs/build-docs.mjs            technical docs: regenerates docs/reference/api.md, then docs/out/One-POS-Technical-Docs-<date>.pdf
 //   node tools/docs/build-docs.mjs --no-pdf   API reference only
+//   (docs/reference/data-dictionary.md and query-speed.md are made by tools/docs/data-dictionary.mjs and db-benchmark.mjs, which need
+//   Docker; run them after a migration)
 //   node tools/docs/build-docs.mjs --manual   user manual: docs/manual/user-manual.md (+ images/) → docs/out/One-POS-User-Manual-<date>.pdf
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, rmSync, copyFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
@@ -60,10 +62,10 @@ const browser = [
 ].find(existsSync);
 if (!browser) throw new Error("No Edge or Chrome found to print the PDF.");
 
-const pages = manual ? ["manual/user-manual.md"] : ["README.md", ...readdirSync(docs).filter((f) => /^\d\d-.*\.md$/.test(f)).sort(), "reference/api.md"];
+const pages = manual ? ["manual/user-manual.md"] : ["README.md", ...readdirSync(docs).filter((f) => /^\d\d-.*\.md$/.test(f)).sort(), "reference/api.md", "reference/query-speed.md", "reference/data-dictionary.md"];
 const markdown = manual
   ? readFileSync(join(docs, "manual", "user-manual.md"), "utf8").replace(/\]\(images\//g, `](${pathToFileURL(join(docs, "manual", "images")).href}/`)
-  : pages.map((p) => `<a id="${p.replace(/^.*\//, "").replace(/\.md$/, "")}"></a>\n\n` + readFileSync(join(docs, p), "utf8")
+  : pages.map((p) => `<div id="${p.replace(/^.*\//, "").replace(/\.md$/, "")}"></div>\n\n` + readFileSync(join(docs, p), "utf8")
   .replace(/\]\(manual\/images\//g, `](${pathToFileURL(join(docs, "manual", "images")).href}/`)
   .replace(/\]\((?:\.\.\/)?(?:reference\/)?([\w-]+)\.md\)/g, "](#$1)")).join("\n\n<div class=\"page-break\"></div>\n\n");
 const today = new Date().toISOString().slice(0, 10);
@@ -104,6 +106,15 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>${doc.foot
   code { font: 9pt Consolas, monospace; background: #f4f4f4; padding: 0 3px; } pre { background: #f4f4f4; padding: 8px; white-space: pre-wrap; }
   h1, h2, h3 { break-after: avoid; } .mermaid { break-inside: avoid; text-align: center; }
   pre code { padding: 0; } .page-break { page-break-after: always; }
+  /* Database chapter: code such as numeric(14,2) breaks only at spaces, never mid-word. Data dictionary (the last page): fixed columns, smaller type. */
+  #\\30 3-database ~ table:not(#\\30 4-facts-integration ~ table) td code { overflow-wrap: normal; word-break: keep-all; }
+  #data-dictionary ~ table { table-layout: fixed; font-size: 8pt; }
+  #data-dictionary ~ table th, #data-dictionary ~ table td { padding: 3px 4px; overflow-wrap: normal; word-break: normal; }
+  #data-dictionary ~ table td code { font-size: 7.6pt; overflow-wrap: anywhere; }
+  #data-dictionary ~ table th:nth-child(1) { width: 23%; } #data-dictionary ~ table th:nth-child(2) { width: 13%; }
+  #data-dictionary ~ table th:nth-child(3) { width: 12%; } #data-dictionary ~ table th:nth-child(4) { width: 6%; }
+  #data-dictionary ~ table th:nth-child(5) { width: 12%; } #data-dictionary ~ table th:nth-child(6) { width: 13%; }
+  #data-dictionary ~ ul code { white-space: pre-wrap; }
   .cover { position: relative; width: 210mm; height: 297mm; overflow: hidden; color: #fff; font-family: Outfit, "Segoe UI", sans-serif;
     background: radial-gradient(circle at 85% 12%, #7A68F2 0, rgba(122,104,242,0) 45%), linear-gradient(160deg, #4634B8 0%, #2B1E78 50%, #170F45 100%);
     -webkit-print-color-adjust: exact; print-color-adjust: exact; page-break-after: always; }

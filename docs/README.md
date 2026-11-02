@@ -9,9 +9,11 @@ document: [docs/manual/user-manual.md](manual/user-manual.md), printed as its ow
 | --- | --- | --- |
 | 1 | [Architecture](01-architecture.md) | The parts, how a sale flows through them, background jobs, security |
 | 2 | [Development](02-development.md) | Repository layout, conventions, adding a database change or a screen |
-| 3 | [Database](03-database.md) | PostgreSQL, row-level security, main tables, numbering, posting queue |
+| 3 | [Database](03-database.md) | PostgreSQL, row-level security, main tables, normalisation, field types and lengths, indexes and speed, numbering, posting queue |
 | 4 | [FACTS integration](04-facts-integration.md) | What is read from FACTS, what is posted, document types, procedures, rehearsals |
 | 5 | [Till devices](05-device-service.md) | Device Service, tray app, printing, cash drawer, updates |
 | 6 | [Servers and releases](06-servers-and-releases.md) | The live system, releasing, rollback, backups, access |
 | 7 | [Operations and support](07-operations.md) | Health checks, logs, common support jobs, what never to do |
 | R | [API reference](reference/api.md) | Generated from the code |
+| S | [Query speed](reference/query-speed.md) | The everyday queries timed on a year of sales, with the indexes each one uses. Generated |
+| D | [Data dictionary](reference/data-dictionary.md) | Every table and column: type, length, null, default, keys, allowed values. Generated from the migrations |
