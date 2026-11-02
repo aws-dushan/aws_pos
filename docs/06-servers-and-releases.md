@@ -15,6 +15,67 @@ It runs on the SFA servers behind the shared gateway `aws-edge-nginx-1` (port 10
 `/opt/aws/edge/apps/onepos.conf`. Everything else is One POS' own: containers, databases, folders under `/opt/aws/onepos`,
 ports and limits. Settings and passwords are in `/opt/aws/onepos/live/.env` (mode 600); never print or copy them.
 
+## Docker: what runs in it and why
+
+Every part of One POS on the servers runs in a **Docker container**: a sealed package holding the program and exactly the
+software it needs, started from an **image** built once on the development PC. Docker itself is the only software One POS
+needs on the servers.
+
+### What runs where
+
+| Server | Container | Image | What it does |
+| --- | --- | --- | --- |
+| AWS-App | `onepos-live-api` | `onepos-api:<version>` | The API (.NET 10, self-contained, on Debian slim) |
+| AWS-App | `onepos-live-web` | `onepos-web-live:<version>` | The web app (Next.js on Node 22) |
+| AWS-App | `onepos-live-backup` | `onepos-postgres:17-…` | Nightly database dump and files archive, copied to AWS-Data |
+| AWS-Data | `onepos-live-db` | `onepos-postgres:17-…` | PostgreSQL 17 with pgBackRest point-in-time recovery |
+
+Test is the same set with `test` in the names. The images are defined in `deploy/api.Dockerfile`, `web.Dockerfile` and
+`postgres.Dockerfile`; how they run together is in `deploy/app/compose.yml` (AWS-App) and `deploy/data/compose.yml`
+(AWS-Data).
+
+```mermaid
+flowchart LR
+  B[Browser / till] -- HTTPS :1000 --> G[aws-edge-nginx-1<br/>shared gateway]
+  subgraph APP[AWS-App]
+    G -- edge network --> W[onepos-live-web]
+    W -- internal network --> A[onepos-live-api]
+    K[onepos-live-backup]
+  end
+  subgraph DATA[AWS-Data]
+    D[(onepos-live-db<br/>PostgreSQL 17)]
+  end
+  A -- 172.30.0.20:5444 --> D
+  K -- nightly dump --> D
+  K -- copy offsite --> DATA
+```
+
+### Why Docker
+
+| Reason | What it gives One POS |
+| --- | --- |
+| **The same image on test and live** | A release is tested on test and the identical image goes to live; only the settings file (`.env`) differs. "It worked on test" means it will work on live |
+| **Repeatable builds** | Each image is built from a file in the repository with fixed versions (.NET 10 SDK, Node 22, PostgreSQL 17), so any release can be rebuilt the same way |
+| **Separate from SFA on shared servers** | One POS has its own containers, networks, data folders, ports and database roles, so it can't disturb the SFA system on the same servers, or be disturbed by it |
+| **Resource limits** | API 1.5 GB / 2 CPUs, web 768 MB / 1 CPU, database 4 GB: one part running away can't starve the server |
+| **Safe deploys and rollback** | Every version stays on the server as its own image. `deploy live` takes a backup, starts the new containers, and goes back to the old image by itself if the health checks fail; `onepos rollback live` is one command |
+| **Health checks** | Each image checks itself (`/health` for the API, the sign-in page for the web app); Docker restarts a container that stops (`restart: unless-stopped`) |
+| **Least privilege** | The API and web containers run as an unprivileged user, not root. Only the web app is on the gateway's network; the API and database are not reachable from outside |
+| **Nothing installed on the servers** | No .NET, Node or PostgreSQL installed on the host, so server updates can't break One POS and One POS can't break the server |
+| **Easy to move** | Everything a container keeps lives in one data folder per environment, and the database address is a setting, so moving to a new server is "copy the folder, start the containers" or a restore from backup |
+| **Logs kept in bounds** | Container logs rotate at 5 × 20 MB, so they never fill the disk |
+
+### On the development PC
+
+Docker Desktop runs the local database for development (`start-dev.ps1`), builds the release images
+(`deploy/release.sh`), and starts throwaway databases for the data dictionary and the query timings
+(`tools/docs/data-dictionary.mjs`, `db-benchmark.mjs`).
+
+Docker Desktop keeps its data in one disk file, which grows with every release build and never shrinks by itself. Clear the
+build cache now and then (`docker builder prune -af`) and remove old release images; the space only comes back on the
+drive after the disk file is compacted (administrator, Docker stopped, `diskpart` → `compact vdisk`). If Docker's disk runs
+full, Docker turns read-only and running databases crash.
+
 ## Releasing
 
 From the development PC, in **Git Bash** (on Windows, PowerShell's `bash` is WSL and fails):
@@ -62,7 +123,3 @@ flowchart LR
 | Before every live deploy | Dump named in `deploy.log` | With the nightly ones |
 
 `onepos status` (AWS-App) and `onepos-db status` (AWS-Data) show versions, health and the last backups.
-
-## Source code
-
-GitHub `aws-dushan/aws_pos`, pushed over the SSH alias `github-work`.

@@ -2,7 +2,7 @@
 
 This manual covers every One POS user, from cashier to administrator, and is organised by task: find the job you want to do, then follow the steps.
 
-One POS is the restaurant point of sale for the group's companies and branches. It runs in a web browser, on the till and in the back office, and posts sales to FACTS. What you see depends on your role and on the branch chosen in the header.
+One POS is the restaurant point of sale for the group's companies and branches. It runs in a web browser, on the till and in the back office, and posts sales to FACTS. What you see depends on your role and on the branch chosen in the header. Each company sees only its own data: the database itself keeps companies apart, not just the screens.
 
 | Role (as set up for a new company) | Mostly uses |
 | --- | --- |
@@ -26,7 +26,9 @@ There are two ways in: back-office staff sign in with a user name and password, 
 
 1. Open One POS in the browser (live: `https://ralsnahashho.dyndns.org:1000/onepos`).
 2. Type your user name and password, then **Sign in**. User names are not case-sensitive.
-3. The first time, you are asked to choose a new password: at least 8 characters, letters and digits.
+3. The first time, you are asked to choose a new password: at least 8 characters, letters and digits, not containing your user name.
+
+One POS never stores your password itself, only a scrambled form of it that can't be turned back into the password. Five wrong passwords lock the account for 15 minutes.
 
 ![The back-office sign-in page](images/login.jpg)
 
@@ -42,7 +44,7 @@ A till is a PC that a manager has set up for one register (user menu → **Use t
 
 ![The till's PIN pad](images/till-pin.jpg)
 
-Too many wrong PINs lock the pad for a few minutes; a manager can reset a PIN under Users.
+Your PIN is yours alone: no two people in the company can have the same PIN, so everything done at the till is recorded under your name. Never share it. Five wrong PINs pause PIN sign-in for 5 minutes; a manager can reset a PIN under Users.
 
 ## The header
 
@@ -170,7 +172,11 @@ A customer is optional except for own delivery. In **Customer (optional): name o
 - **Split payment** adds several parts (e.g. cash and card) and takes them together.
 - A 0.00 bill (e.g. 100% complimentary) shows **Complete · nothing to pay**.
 
+One POS never sees or keeps card numbers: the bank's terminal takes the card, and One POS records only the card type and amount. If the network drops while you pay, just tap again: One POS recognises the repeat and never takes the payment twice.
+
 After payment the receipt prints and a message says **Paid. Give AED x change.** with a **Receipt** button. Without a receipt printer, the receipt opens on screen with **Print**.
+
+The tax invoice number (e.g. INV-EBL-01-000123) is given at the moment the bill is fully paid, one unbroken sequence per branch, and the same number goes to FACTS. The receipt shows TAX INVOICE in English and Arabic, the company's TRN, the amount before VAT and the VAT. A paid bill can't be changed or deleted by anyone; a mistake is corrected with **Return**, which makes a credit note referring to it.
 
 ## More options (⋯)
 
@@ -183,6 +189,8 @@ After payment the receipt prints and a message says **Paid. Give AED x change.**
 | Void order | Cancel an unpaid order. Needs a supervisor once items were sent. |
 
 Only one till edits an order at a time. Another till sees **Open on …** and can tap **Take over**.
+
+Every void, no sale and discount is recorded with your name and reason, counted in the day's Z report, and listed in the day-end email to managers.
 
 ## Manager approval
 
@@ -543,7 +551,7 @@ When a branch closes its day, a summary goes to the newspaper icon (and by email
 
 ## Audit log and problem reports
 
-**Audit log** lists every sign-in and change, newest first; tap a row for details. **Problem reports** is the inbox for **Report a problem**: set the **Status**, **Priority**, **Assigned to** and a **Resolution** the reporter sees.
+**Audit log** lists every sign-in and change, newest first, with who did it, when, at which branch, and the values before and after; tap a row for details. Entries can't be changed or deleted from One POS. **Problem reports** is the inbox for **Report a problem**: set the **Status**, **Priority**, **Assigned to** and a **Resolution** the reporter sees.
 
 ![The audit log](images/audit.jpg)
 

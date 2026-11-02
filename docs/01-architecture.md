@@ -148,19 +148,64 @@ Events carry ids, never data. A lost connection shows a "reconnecting" banner an
 
 ## Security
 
-- **Sign-in:** back-office password (same hasher as AWS One) or till PIN. PINs are HMAC(server secret, company + PIN), unique
-  per company, with lockout after failed tries. Separate sign-in cookie per environment.
-- **Data separation:** Postgres row-level security on every company-owned table; the API sets `app.company_id` per
-  transaction, so a missing `WHERE` cannot leak another company's rows. The API runs as `onepos_app`, migrations as the owner.
-- **Permissions:** role-based keys plus limits (largest discount %, refund and cash-out without approval). Over a limit, a
-  manager approves by PIN on the same till or remotely; an approval covers one action, once, within 15 minutes.
-- **Secrets:** the FACTS connection string is encrypted with ASP.NET Data Protection and never shown again; server settings
-  and passwords live only in `/opt/aws/onepos/<env>/.env`.
-- **Audit:** every change of settings, prices, roles, voids, refunds and approvals is written to the audit log.
+- **Passwords:** stored only as salted hashes made by ASP.NET Core Identity's `PasswordHasher` (PBKDF2 with HMAC-SHA512,
+  100,000 rounds; old hashes are upgraded at the next sign-in). Sign-in takes the same time for a user who doesn't exist, so
+  usernames can't be guessed from the response. Passwords need 8–128 characters with letters and digits and may not contain
+  the username. Five wrong passwords lock the account for 15 minutes. A password set by someone else, and the first
+  administrator's, must be changed at the next sign-in: until then the API refuses everything else.
+- **Till PINs:** 4–6 digits; repeated or running digits (1111, 1234) are refused. Stored as HMAC-SHA256(server secret,
+  company + PIN), never as the PIN, and unique per company, so a PIN identifies exactly one person. Five wrong PINs pause PIN
+  sign-in for 5 minutes.
+- **Sessions:** a sign-in cookie per environment, `HttpOnly` (scripts can't read it) and `SameSite=Lax`, valid 16 hours and
+  renewed while in use.
+- **Data separation:** PostgreSQL row-level security on every company-owned table (64 of 75). The API connects as
+  `onepos_app` (`NOSUPERUSER NOBYPASSRLS`) and sets `app.company_id` for each transaction, so even a query missing its
+  `WHERE` can't return another company's rows. Migrations run as the separate owner role.
+- **Permissions:** 22 permission keys grouped into roles per company, checked on the server by every endpoint (about 160
+  checks), never only in the screen. Users see only the branches they are given. Limits per role: the largest discount %,
+  refund and cash-out without approval. Over a limit, a manager approves by PIN on the same till or remotely; an approval
+  covers one action, once, within 15 minutes, and both the request and the decision are logged.
+- **Voids and drawer:** a void after items went to the kitchen needs the void permission and a reason; a paid bill can't be
+  voided, only returned. Opening the drawer without a sale needs its own permission and a reason, and every one is counted in
+  the day's Z report.
+- **SQL:** every query is parameterised (Dapper `@parameters`); values typed by users never become part of SQL text.
+- **Secrets:** the FACTS connection string and the SMTP password are encrypted with ASP.NET Data Protection and never shown
+  again. Server settings and passwords live only in `/opt/aws/onepos/<env>/.env` (readable by its owner only), created with
+  random passwords at installation; nothing secret is in the repository.
+- **Containers:** the API and web app run as unprivileged users with memory and CPU limits; only the web app is reachable
+  through the gateway (see [Servers and releases](06-servers-and-releases.md)).
+- **Card data:** One POS never sees card numbers. Cards are taken on the bank's own terminal; One POS records only the method,
+  the card type and the amount, which keeps it outside the scope of card-data (PCI DSS) storage rules.
 
+## Audit trail
+
+The audit log records who did what, when, at which branch, with the values before and after each change (about 140 places in
+the code write to it): sign-ins, voids and line voids, discounts, refunds and returns, splits and merges, taking over
+another till's order, paper bills, drawer openings without a sale, day and shift opening, closing, reopening and bank
+deposits, item and price changes, users, roles, passwords, the FACTS connection, and every approval requested, given and
+used. The API's database role may only add to the audit log and read it (`GRANT SELECT, INSERT`): it can't change or
+delete an entry. Only administrators and users with the `audit.view` permission can see it.
+
+## Money, numbers and simultaneous use
+
+- **Exact money:** every amount is `numeric` (never floating point), and the build fails if code uses banker's rounding or
+  converts money to `double` (`BannedSymbols.txt`); rounding is always half away from zero, as on the receipt and in FACTS.
+  Local time comes from the branch's time zone, never from the server's clock settings.
+- **Tax invoice numbers:** `INV-<branch>-000001` is given in the same transaction that records the last payment, so a
+  failure leaves no gap and a number is never given twice. A paid bill can't be changed or deleted; it is corrected only by
+  a credit note (`CN-<branch>-…`) that refers to it. The receipt carries the words TAX INVOICE / فاتورة ضريبية, the
+  company's TRN, legal name and address in English and Arabic, the invoice number, date and time, the amount before VAT and
+  the VAT.
+- **One device per order:** an order being edited is locked to that device (others see who has it and can take it over,
+  which is logged), and each change locks the order's row in the database (`SELECT … FOR UPDATE`), so two tills can't
+  overwrite each other.
+- **No double charges on bad networks:** every write carries an `Idempotency-Key`; the app retries a dropped request up to
+  three times with the same key, and the API returns the first result instead of doing it again.
+- **Day end:** each shift closes with a blind cash count, the variance against expected cash, and manager approval above the
+  branch's tolerance; the day closes with a Z report and an email to managers listing variances, voids, refunds, drawer
+  openings and discounts over limits.
 
 ![Roles: permission keys and limits as administrators see them](manual/images/roles.jpg)
-- **Retries:** writes carry an `Idempotency-Key`; a retry after a dropped connection returns the first result and changes nothing.
 
 ## Decisions that shape the design
 
