@@ -207,7 +207,7 @@ delete an entry. Only administrators and users with the `audit.view` permission 
 
 ![Roles: permission keys and limits as administrators see them](manual/images/roles.jpg)
 
-## Decisions that shape the design
+## Design rules
 
 - Table service and the kitchen are per-branch switches; optional features each have a switch, mostly off by default.
 - Every page follows the branch chosen in the header; customers belong to one branch.
