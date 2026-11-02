@@ -1,6 +1,6 @@
 # 1. Architecture
 
-One POS is an online-only, browser-based point of sale: a Next.js web app and an ASP.NET Core API over one PostgreSQL
+One POS is a browser-based point of sale: a Next.js web app and an ASP.NET Core API over one PostgreSQL
 database, with a small Windows service on each till for the printer and cash drawer, and an optional link to FACTS (the ERP).
 
 ```mermaid
