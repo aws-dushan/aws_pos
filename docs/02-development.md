@@ -48,6 +48,14 @@ must run against a scratch company, or snapshot and restore what they touch, nev
 3. Use `CREATE OR REPLACE` / `IF NOT EXISTS` where a rerun could happen; each file runs in its own transaction.
 4. Start the API: it applies the file, or stops with the file name and the error.
 5. Never edit a migration that has been released; add a new one.
+6. Use the column types in [Database → Field types and lengths](03-database.md) and keep to third normal form; a copy
+   of a value from another table needs a reason, as in the list of copies kept on purpose there.
+7. A new table or a new way of searching gets its index in the same migration: lead with the column the query always
+   filters on (usually `branch_id`), and index a foreign key when the app deletes the parent or finds child rows from it
+   (see [Database → Indexes and speed](03-database.md)).
+8. Regenerate the data dictionary with `node tools/docs/data-dictionary.mjs` and the timings with
+   `node tools/docs/db-benchmark.mjs` (both need Docker and build a throwaway database from the migrations; the timing
+   takes about 5 minutes), then rebuild the PDF with `node tools/docs/build-docs.mjs`.
 
 ## Adding a screen
 
