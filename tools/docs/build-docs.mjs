@@ -69,7 +69,10 @@ const markdown = manual
   .replace(/\]\(manual\/images\//g, `](${pathToFileURL(join(docs, "manual", "images")).href}/`)
   .replace(/\]\((?:\.\.\/)?(?:reference\/)?([\w-]+)\.md\)/g, "](#$1)")).join("\n\n<div class=\"page-break\"></div>\n\n");
 const today = new Date().toISOString().slice(0, 10);
-const dateText = new Date(today).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+// Cover date as "2nd November 2026".
+const day = Number(today.slice(8, 10));
+const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
+const dateText = `${day}${suffix} ${new Date(today).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
 // Cover: the One POS logo (white lockup) and the brand font from tools/brand.
 // The lockup without its signature line: the "One POS" wordmark moved down to sit level with the symbol.
 const logoSvg = readFileSync(join(root, "web", "public", "brand", "one-pos-horizontal-dark.svg"), "utf8")
