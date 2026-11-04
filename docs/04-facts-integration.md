@@ -42,10 +42,9 @@ in `item_unit`, the stock unit with `per_unit` 1):
 
 | Item | Sold as |
 | --- | --- |
-| Chosen on the item (Menu → item → **Sold as**) | That unit, while FACTS still has it |
 | Made from a FACTS BOM | The BOM's unit (the bill's repacking counts in it) |
-| Kept in another unit, with a PCS unit in FACTS (drinks in LTR, chocolates in KG) | **PCS**, as the outlet POS sells them |
-| Any other | FACTS' stock unit |
+| Chosen on the item (Menu → item → **Sold as**) | That unit, while FACTS still has it |
+| Any other | FACTS' stock unit. Nothing is picked by itself. |
 
 - Bills, returns and wastage go to FACTS in that unit, and FACTS converts to its stock unit: 1 PCS of Sprite takes
   0.33 LTR off stock. Each bill line keeps the unit it was sold in (`order_line.erp_unit`), so a later return goes in the same unit.
