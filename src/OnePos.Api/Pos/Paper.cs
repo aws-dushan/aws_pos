@@ -70,8 +70,8 @@ public static class Paper
                         ? l.UnitPrice is > 0 ? Money.Round(l.UnitPrice.Value) : throw new DomainException($"{item.Name} has no price yet: enter the price written on the slip.")
                         : item.BranchPrice ?? item.Price;
                     await c.ExecuteAsync("""
-                        insert into order_line (company_id, order_id, item_id, name, name_ar, unit_price, qty, modifiers, station, sent_qty, sort, added_by)
-                        values (@co, @id, @itemId, @name, @nameAr, @unit, @qty, '[]'::jsonb, @station, @qty, @sort, @userId)
+                        insert into order_line (company_id, order_id, item_id, name, name_ar, unit_price, qty, modifiers, station, sent_qty, sort, added_by, erp_unit)
+                        values (@co, @id, @itemId, @name, @nameAr, @unit, @qty, '[]'::jsonb, @station, @qty, @sort, @userId, (select erp_unit from menu_item where id = @itemId))
                         """, new { co = scope.CompanyId, id, itemId = item.Id, name = item.Name, nameAr = item.NameAr, unit, qty = l.Qty, station = item.Station, sort = ++sort, userId = scope.UserId }, tx);
                 }
                 await Orders.RecalcAsync(c, tx, id);

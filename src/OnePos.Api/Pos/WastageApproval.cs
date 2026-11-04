@@ -175,7 +175,7 @@ public static class WastageApproval
             var short_ = new List<string>();
             await using (var f = await facts.OpenAsync(scope.CompanyId))
             {
-                foreach (var g in list.GroupBy(r => (r.BranchId, r.ItemCode, Unit: r.ErpUnit ?? r.Unit)))
+                foreach (var g in list.GroupBy(r => (r.BranchId, r.ItemCode, Unit: r.Unit ?? r.ErpUnit)))
                     if (await ShortAsync(f, g.Key.ItemCode!, setups[g.Key.BranchId].Loc!, g.Max(r => r.BusinessDate), g.Key.Unit, g.Sum(Qty), g.First().Name) is { } s)
                         short_.Add(s);
             }
@@ -214,7 +214,7 @@ public static class WastageApproval
                     var marketing = g.Key.Kind == "marketing";
                     var reference = $"One POS {(marketing ? "marketing" : "wastage")} {s.Code} {g.Key.BusinessDate:yyyy-MM-dd} {(marketing ? "M" : "W")}-{postId.ToString("N")[..8].ToUpperInvariant()}";
                     var lines = g.Select(r => new XElement("Line", new XElement("ItemType", r.ItemType ?? "SMBK"), new XElement("ItemCode", r.ItemCode), new XElement("ItemName", r.Name),
-                        new XElement("Qty", Qty(r).ToString("0.###", Inv)), new XElement("Unit", r.ErpUnit ?? r.Unit ?? "PCS")));
+                        new XElement("Qty", Qty(r).ToString("0.###", Inv)), new XElement("Unit", r.Unit ?? r.ErpUnit ?? "PCS")));
                     var xml = marketing
                         ? new XElement("data", new XElement("Consumption",
                             new XElement("DocDate", g.Key.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("Location", s.Loc), new XElement("Account", s.MarketingAccount),

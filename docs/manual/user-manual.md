@@ -347,6 +347,8 @@ Items, their codes and their prices come from FACTS. One POS decides what each b
 
 Prices cannot be typed for FACTS items: **Price at (branch)** comes from the branch's FACTS price type. To change a price, change it in FACTS. An item with no FACTS price cannot be sold. **Price history** shows every change.
 
+**Sold as** is the unit an item is sold in at the till. FACTS keeps some items in litres or kilos but sells them by the piece: Sprite is kept in LTR, and one can (PCS) is 0.33 LTR. The list shows the item's units from FACTS with what one of each is, e.g. **PCS – 1 = 0.33 LTR**, and below it what one sale takes off FACTS stock. One POS picks PCS by itself where FACTS has it, so 1 can sold takes 0.33 LTR off stock and the stock shows in cans. Choose another unit only if the item is sold differently; an item made from a FACTS BOM stays in the BOM's unit.
+
 ![An item: name, Arabic name, price, where it is prepared and its option groups](images/menu-item.jpg)
 
 ## Combos and option groups

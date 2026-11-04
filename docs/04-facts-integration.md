@@ -21,7 +21,7 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 
 | Data | FACTS source | How often |
 | --- | --- | --- |
-| Items | `STOCK_MASTER` of the branch's item types / master / division; sub-category (`STK_GRP2`) as menu category; unit and decimals | Hourly, or **Sync items** |
+| Items | `STOCK_MASTER` of the branch's item types / master / division; sub-category (`STK_GRP2`) as menu category; stock unit, its other units (`STOCK_UNIT`) and their decimals (`UNIT_MASTER`) | Hourly, or **Sync items** |
 | Outlet prices | `STOCK_PRICE` of the branch's price type (`PRICE_TYPE_MASTER`), VAT added where the branch's prices are before VAT | Every 5 min, or **Sync prices** |
 | Platform prices | The platform customer's price list (CPL50), newest valid list wins | With prices |
 | Stock | `STOCK_LOCATION_MASTER` of the branch's location | Every 5 min, or **Sync stock** |
@@ -33,6 +33,28 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 Rules: new items arrive switched off ("New from FACTS"); items inactive or sale-blocked in FACTS switch off; a renamed item
 keeps its One POS name; **FACTS prices always win** and an item without a FACTS price cannot be sold; every price change is
 kept in `item_price_history` and rung-up bills keep their prices. Every run is logged in `erp_sync`.
+
+### Units: "Sold as" (`Pos/SoldAs.cs`)
+
+FACTS keeps an item's stock in one unit and can convert others to it (`STOCK_UNIT`): Sprite is kept in LTR, and
+1 PCS = 0.33 LTR. Each FACTS item is sold in one of its units, its **Sold as** unit (`menu_item.erp_unit`; all its units are
+in `item_unit`, the stock unit with `per_unit` 1):
+
+| Item | Sold as |
+| --- | --- |
+| Chosen on the item (Menu → item → **Sold as**) | That unit, while FACTS still has it |
+| Made from a FACTS BOM | The BOM's unit (the bill's repacking counts in it) |
+| Kept in another unit, with a PCS unit in FACTS (drinks in LTR, chocolates in KG) | **PCS**, as the outlet POS sells them |
+| Any other | FACTS' stock unit |
+
+- Bills, returns and wastage go to FACTS in that unit, and FACTS converts to its stock unit: 1 PCS of Sprite takes
+  0.33 LTR off stock. Each bill line keeps the unit it was sold in (`order_line.erp_unit`), so a later return goes in the same unit.
+- Prices are not converted: the outlet price in FACTS (Sprite 7.00 in price type OP1) is the price of one sold item.
+- Stock read from FACTS is counted in the sold unit (7.92 LTR of Sprite = 24 PCS), so the till's stock left, short-stock
+  blocking and the stock report all count cans. Wastage and stock returns recorded in another unit are converted
+  (`sold_qty()`).
+- `usp_ONEPOS_SaveInvoice` gives a line its batch by the line's quantity in the stock unit (its `STOCK_TRANSACTION`
+  row, which FACTS converted), as the batch holds it.
 
 ## What is posted (`Erp/FactsPosting.cs`)
 
@@ -74,7 +96,7 @@ refuses, the procedure removes what it saved, so nothing half-done stays.
 The same XML the old outlet POS (Polaris) sends: `/data/Invoice` with invoice number and date, currency, location, gross,
 net and VAT, `Party` (walk-in customer AR C0006; `BillToAddress` is required), `ReceiptDetails` per payment (ReceiptMode =
 the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the cashier) and `InvoiceDetails` per line
-(item code, qty, unit, rate, discount, VAT). Notes:
+(item code, qty, unit, rate, discount, VAT). The unit is the line's **Sold as** unit (see Units above). Notes:
 
 - **Discounts go on the lines only**; the header discount is 0 and header gross is the lines' total after discount. FACTS
   books header and line discounts both, so sending both took discounts off twice (fixed 31 Oct 2026, 124 bills re-sent).

@@ -21,6 +21,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     public sealed record SettingsBody(string? Division, string? ItemType, string? ItemMaster = null);
 
     private sealed record FactsItem(string Code, string Name, string? NameAr, string? Unit, string? Group, string? GroupName, bool Blocked, int Decimals, string? DocType, string? StockType, string? Division);
+    private sealed record FactsUnit(string DocType, string Code, string Unit, decimal Per, int Decimals);
 
     private static readonly string[] Tones = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -76,6 +77,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             from branch where company_id = @companyId
             """, new { companyId }, tx));
         List<FactsItem> facts;
+        List<FactsUnit> conversions;
         await using (var f = await OpenAsync(companyId))
         {
             facts = (await f.QueryAsync<FactsItem>("""
@@ -92,6 +94,18 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                     and (@div is null or ltrim(rtrim(m.STKMST_GRP11)) in (select value from string_split(@div, ',')))
                     and (@master is null or ltrim(rtrim(m.STKMST_DOCTYPE)) in (select value from string_split(@master, ',')))
                 ) x where rn = 1
+                """, new { type = settings.ItemType, div = settings.Division, master = settings.Master }, commandTimeout: 120)).ToList();
+            // Each item's other FACTS units (STOCK_UNIT: 1 PCS of Sprite = 0.33 LTR), for "Sold as" (Pos.SoldAs).
+            conversions = (await f.QueryAsync<FactsUnit>("""
+                select ltrim(rtrim(u.STKU_DOCTYPE)) as DocType, ltrim(rtrim(u.STKU_DOCNO)) as Code, ltrim(rtrim(u.STKU_UNIT_DOCNO)) as Unit,
+                       cast(u.STKU_FROM_QTY / u.STKU_TO_QTY as numeric(18, 6)) as Per,
+                       cast(case when isnull(um.UNIT_DECIMAL, 0) > 3 then 3 when isnull(um.UNIT_DECIMAL, 0) < 0 then 0 else isnull(um.UNIT_DECIMAL, 0) end as int) as Decimals
+                from STOCK_UNIT u join STOCK_MASTER m on m.STKMST_DOCTYPE = u.STKU_DOCTYPE and m.STKMST_DOCNO = u.STKU_DOCNO
+                left join UNIT_MASTER um on um.UNIT_DOCNO = u.STKU_UNIT_DOCNO
+                where u.STKU_FROM_QTY > 0 and u.STKU_TO_QTY > 0 and ltrim(rtrim(u.STKU_UNIT_DOCNO)) <> ltrim(rtrim(m.STKMST_UNIT_DOCNO))
+                  and ltrim(rtrim(m.STKMST_STTYPE)) in (select value from string_split(@type, ',')) and m.STKMST_ACTIVE_STATUS = 0
+                  and (@div is null or ltrim(rtrim(m.STKMST_GRP11)) in (select value from string_split(@div, ',')))
+                  and (@master is null or ltrim(rtrim(m.STKMST_DOCTYPE)) in (select value from string_split(@master, ',')))
                 """, new { type = settings.ItemType, div = settings.Division, master = settings.Master }, commandTimeout: 120)).ToList();
         }
         if (facts.Count == 0) throw new DomainException($"FACTS has no active items of type {settings.ItemType}{(settings.Master is null ? "" : $" in item master {settings.Master}")}{(settings.Division is null ? "" : $" in division {settings.Division}")} (the branches' settings, Companies & branches).");
@@ -128,8 +142,8 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             if (fresh.Count > 0)
             {
                 await c.ExecuteAsync("""
-                    insert into menu_item (company_id, category_id, name, name_ar, price, station, erp_item_code, erp_name, erp_unit, qty_decimals, needs_price, erp_new, erp_synced_at)
-                    select @companyId, cat, name, name_ar, 0, 'none', code, name, unit, decimals, true, true, now()
+                    insert into menu_item (company_id, category_id, name, name_ar, price, station, erp_item_code, erp_name, erp_unit, erp_stock_unit, qty_decimals, needs_price, erp_new, erp_synced_at)
+                    select @companyId, cat, name, name_ar, 0, 'none', code, name, unit, unit, decimals, true, true, now()
                     from unnest(@cats, @names, @namesAr, @codes, @units, @decimals) as t(cat, name, name_ar, code, unit, decimals)
                     """, new
                     {
@@ -144,7 +158,8 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                     """, new { companyId, codes = fresh.Select(x => x.Code).ToArray() }, tx);
             }
 
-            // Known items: FACTS name, unit and sub-category follow FACTS unless changed in One POS; back in FACTS = back on.
+            // Known items: FACTS name, stock unit and sub-category follow FACTS unless changed in One POS; back in FACTS = back on.
+            // The unit it's sold in (erp_unit) and its decimals follow from its FACTS units below (Pos.SoldAs).
             var known = facts.Where(x => existing.ContainsKey(x.Code)).ToList();
             var renamed = 0;
             foreach (var x in known)
@@ -154,13 +169,13 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                 var n = await c.ExecuteAsync("""
                     update menu_item set
                       name = case when name = coalesce(erp_name, name) then @name else name end,
-                      name_ar = coalesce(name_ar, @nameAr), erp_name = @name, erp_unit = @unit, qty_decimals = @decimals, erp_synced_at = now(),
+                      name_ar = coalesce(name_ar, @nameAr), erp_name = @name, erp_stock_unit = @unit, erp_synced_at = now(),
                       category_id = case when @erpCategory then @cat else category_id end,
                       is_active = case when @blocked then false when erp_removed then true else is_active end,
                       erp_removed = @blocked
-                    where id = @id and (erp_name is distinct from @name or erp_unit is distinct from @unit or qty_decimals <> @decimals or erp_removed <> @blocked
+                    where id = @id and (erp_name is distinct from @name or erp_stock_unit is distinct from @unit or erp_removed <> @blocked
                                         or (@erpCategory and category_id <> @cat) or (name_ar is null and @nameAr is not null))
-                    """, new { e.Id, name, nameAr = x.NameAr, unit = x.Unit, decimals = x.Decimals, cat = byCode[x.Group ?? ""], erpCategory = e.ErpCategory, blocked = x.Blocked }, tx);
+                    """, new { e.Id, name, nameAr = x.NameAr, unit = x.Unit, cat = byCode[x.Group ?? ""], erpCategory = e.ErpCategory, blocked = x.Blocked }, tx);
                 renamed += n;
             }
             await c.ExecuteAsync("update menu_item set erp_synced_at = now() where erp_item_code = any(@codes)", new { codes = known.Select(x => x.Code).ToArray() }, tx);
@@ -171,12 +186,28 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                 """, new { codes = facts.Select(x => x.Code).ToArray(), types = facts.Select(x => x.DocType).ToArray(), stocks = facts.Select(x => x.StockType).ToArray(),
                            divs = facts.Select(x => x.Division).ToArray() }, tx);
 
+            // Every FACTS unit of each item (its stock unit and its conversions, of its own item type), then the unit it's sold in.
+            var ids = (await c.QueryAsync<(string Code, Guid Id)>("select erp_item_code, id from menu_item where erp_item_code = any(@codes)",
+                new { codes = facts.Select(x => x.Code).ToArray() }, tx)).ToDictionary(x => x.Code, x => x.Id);
+            var byItem = conversions.ToLookup(u => (u.DocType, u.Code));
+            var units = facts.Where(x => ids.ContainsKey(x.Code) && !string.IsNullOrEmpty(x.Unit))
+                .SelectMany(x => byItem[(x.DocType ?? "", x.Code)].Prepend(new FactsUnit(x.DocType ?? "", x.Code, x.Unit!, 1, x.Decimals))
+                    .DistinctBy(u => u.Unit.ToUpperInvariant()).Select(u => (Id: ids[x.Code], u.Unit, Per: Math.Round(u.Per, 6, MidpointRounding.AwayFromZero), u.Decimals)))
+                .Where(u => u.Per > 0).ToList();
+            await c.ExecuteAsync("delete from item_unit where item_id = any(@ids)", new { ids = ids.Values.ToArray() }, tx);
+            await c.ExecuteAsync("""
+                insert into item_unit (company_id, item_id, unit, per_unit, decimals)
+                select @companyId, t.id, t.unit, t.per, t.decimals from unnest(@items, @names, @pers, @decimals) as t(id, unit, per, decimals)
+                """, new { companyId, items = units.Select(u => u.Id).ToArray(), names = units.Select(u => u.Unit).ToArray(), pers = units.Select(u => u.Per).ToArray(),
+                           decimals = units.Select(u => u.Decimals).ToArray() }, tx);
+            var soldAs = await Pos.SoldAs.ApplyAsync(c, tx);
+
             // Gone from FACTS (inactive, another type or division): switched off, kept for history.
             var codes = facts.Select(x => x.Code).ToHashSet();
             var gone = existing.Values.Where(e => !codes.Contains(e.Code) && !e.Removed).Select(e => e.Id).ToArray();
             if (gone.Length > 0) await c.ExecuteAsync("update menu_item set is_active = false, erp_removed = true where id = any(@gone)", new { gone }, tx);
 
-            var result = new { inFacts = facts.Count, added = fresh.Count, updated = renamed, removed = gone.Length, newCategories = newCats };
+            var result = new { inFacts = facts.Count, added = fresh.Count, updated = renamed, removed = gone.Length, newCategories = newCats, unitsChanged = soldAs };
             await Audit.RecordAsync(c, tx, companyId, null, Guid.Empty, "erp", "items", "synced",
                 $"FACTS items synced: {fresh.Count} new, {renamed} changed, {gone.Length} switched off ({facts.Count} in FACTS)");
             return result;
@@ -226,8 +257,14 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         var branches = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Location)>(
             "select id, erp_location_code from branch where erp_location_code is not null and is_active", transaction: tx))).ToList();
         if (branches.Count == 0) return new { branches = 0, items = 0 };
-        var items = await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, Guid Id)>("select erp_item_code, id from menu_item where erp_item_code is not null", transaction: tx));
+        var items = await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, Guid Id, decimal Per)>("select erp_item_code, id, unit_per from menu_item where erp_item_code is not null", transaction: tx));
         var byCode = items.ToDictionary(x => x.Code, x => x.Id);
+        // FACTS counts stock in its stock unit; One POS in the unit the item is sold in (Pos.SoldAs): 7.92 LTR of Sprite is 24 PCS.
+        var per = items.ToDictionary(x => x.Code, x => x.Per);
+        var unitPer = (await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, string Unit, decimal Per)>(
+            "select i.erp_item_code, upper(u.unit), u.per_unit from item_unit u join menu_item i on i.id = u.item_id", transaction: tx)))
+            .ToDictionary(x => (x.Code, x.Unit), x => x.Per);
+        decimal Sold(string code, decimal stockQty) => Math.Round(stockQty / per[code], 3, MidpointRounding.AwayFromZero);
         var updated = 0;
         await using var f = await OpenAsync(companyId);
         foreach (var b in branches)
@@ -246,22 +283,22 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             var arrived = new Dictionary<string, decimal>();
             if (waiting.Count > 0)
             {
-                var lines = await f.QueryAsync<(string Code, DateTime PostedAt, decimal Qty)>("""
-                    select ltrim(rtrim(d.TSFDET_STOCK_DOCNO)), h.TSF_POSTED_TS, isnull(d.TSFDET_QTY, 0)
+                var lines = await f.QueryAsync<(string Code, DateTime PostedAt, decimal Qty, string? Unit)>("""
+                    select ltrim(rtrim(d.TSFDET_STOCK_DOCNO)), h.TSF_POSTED_TS, isnull(d.TSFDET_QTY, 0), upper(ltrim(rtrim(d.TSFDET_UNIT_DOCNO)))
                     from TRANSFER_DETAILS d join TRANSFER_HEADER h on h.TSF_FYCODE = d.TSFDET_FYCODE and h.TSF_DOCTYPE = d.TSFDET_DOCTYPE and h.TSF_DOCNO = d.TSFDET_DOCNO
                     join DOCUMENT_MASTER dm on dm.DM_DOCNO = h.TSF_DOCTYPE
                     where h.TSF_LOCATION_TO_DOCNO = @loc and isnull(dm.DM_UPDATE_STOCK, 0) = 1 and h.TSF_POSTED_TS > @since
                       and ltrim(rtrim(d.TSFDET_STOCK_DOCNO)) in @codes
                     """, new { loc = b.Location, since = waiting.Values.Min(), codes = waiting.Keys.ToArray() }, commandTimeout: 120);
                 foreach (var l in lines.Where(l => l.PostedAt > waiting[l.Code]))
-                    arrived[l.Code] = arrived.GetValueOrDefault(l.Code) + l.Qty;
+                    arrived[l.Code] = arrived.GetValueOrDefault(l.Code) + l.Qty * unitPer.GetValueOrDefault((l.Code, l.Unit ?? ""), 1);
             }
             updated += await db.Company(companyId, (c, tx) => c.ExecuteAsync("""
                 insert into branch_item (company_id, branch_id, item_id, is_sold, erp_stock, erp_stock_at, erp_in_since_waste)
                 select @companyId, @branchId, item, false, qty, now(), arrived from unnest(@itemIds, @qtys, @arrived) as t(item, qty, arrived)
                 on conflict (branch_id, item_id) do update set erp_stock = excluded.erp_stock, erp_stock_at = excluded.erp_stock_at, erp_in_since_waste = excluded.erp_in_since_waste
-                """, new { companyId, branchId = b.Id, itemIds = rows.Select(r => byCode[r.Code]).ToArray(), qtys = rows.Select(r => r.Qty).ToArray(),
-                           arrived = rows.Select(r => waiting.ContainsKey(r.Code) ? arrived.GetValueOrDefault(r.Code) : (decimal?)null).ToArray() }, tx));
+                """, new { companyId, branchId = b.Id, itemIds = rows.Select(r => byCode[r.Code]).ToArray(), qtys = rows.Select(r => Sold(r.Code, r.Qty)).ToArray(),
+                           arrived = rows.Select(r => waiting.ContainsKey(r.Code) ? Sold(r.Code, arrived.GetValueOrDefault(r.Code)) : (decimal?)null).ToArray() }, tx));
             await live.ToBranch(b.Id, "menu.changed");
         }
         return new { branches = branches.Count, items = updated };

@@ -19,7 +19,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Area | Tables |
 | --- | --- |
 | Platform | `company`, `branch`, `currency`, `app_user`, `role`, `user_company`, `user_branch`, `audit_log`, `number_series`, `idempotency_key`, `feedback*` |
-| Menu | `menu_category`, `menu_item`, `modifier_group`, `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
+| Menu | `menu_category`, `menu_item`, `item_unit`, `modifier_group`, `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
 | Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` |
@@ -67,11 +67,11 @@ kept on purpose. The full list of tables and columns is the [Data dictionary](re
 - **Surrogate keys.** Nearly every table's primary key is `id uuid DEFAULT gen_random_uuid()`. Business numbers (invoice
   number, FACTS item code, branch code) are kept as **unique** columns, not keys, so they can be corrected without
   rewriting every reference.
-- **Composite keys** (14 tables) are used where a row is exactly "one A with one B": `user_company`, `user_branch`,
+- **Composite keys** (15 tables) are used where a row is exactly "one A with one B": `user_company`, `user_branch`,
   `branch_item`, `branch_ingredient`, `menu_item_modifier`, `platform_item_price`, `order_table`, `reservation_table`,
   `notice_read`, `number_series (branch_id, series)`, `erp_payment_mode (branch_id, code)`,
-  `material_unit (company_id, item_code, unit)`, `approval_reminder`, `sales_day_built`.
-- **Foreign keys** (236) tie every reference to its parent, so a row can't point at something that isn't there.
+  `material_unit (company_id, item_code, unit)`, `item_unit (item_id, unit)`, `approval_reminder`, `sales_day_built`.
+- **Foreign keys** (237) tie every reference to its parent, so a row can't point at something that isn't there.
 - **Natural rules as unique keys**, often partial, e.g. one invoice number per company
   `UNIQUE (company_id, invoice_no) WHERE invoice_no IS NOT NULL`, one order number per branch and day, and one FACTS
   posting per bill `UNIQUE (order_id) WHERE kind = 'invoice'` on `erp_post`.
@@ -134,7 +134,7 @@ When adding a column, follow the same types: money `numeric(14,2)`, quantities `
 
 ## Indexes and speed
 
-The database has **194 indexes** on 75 tables: 117 unique (they also enforce a business rule) and 45 partial. Every index
+The database has **195 indexes** on 76 tables: 118 unique (they also enforce a business rule) and 45 partial. Every index
 is listed under its table in the [Data dictionary](reference/data-dictionary.md). The everyday queries are timed in
 [Query speed](reference/query-speed.md).
 
@@ -157,11 +157,11 @@ PostgreSQL indexes a primary key automatically, but not the column that points a
 matters in two cases: when the app finds the child rows from the parent (a bill's lines), and when it **deletes a
 parent**, because PostgreSQL then checks every table that points at it.
 
-- **100 of the 235 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
+- **101 of the 237 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
   payments, returns, shifts, days, customers, vouchers, option groups, floors and tables.
-- **The other 135 are left without an index on purpose.** Each extra index slows every insert a little, and these give
+- **The other 136 are left without an index on purpose.** Each extra index slows every insert a little, and these give
   nothing back:
-  - **48 `company_id`**: companies are never deleted, and queries always filter on a narrower column first.
+  - **49 `company_id`**: companies are never deleted, and queries always filter on a narrower column first.
   - **50 "who did it"** columns pointing at users (`opened_by`, `taken_by`, `decided_by`, …): users are switched off,
     never deleted, and no screen searches by them.
   - **37 links to rows the app never deletes** (it switches them off instead) and never searches from: branch, till,

@@ -16,6 +16,10 @@ export type MenuItem = {
   hasImage: boolean; imageAt: string | null; isCombo: boolean;
   /** From FACTS: name and unit there, not reviewed yet, gone from FACTS, waiting for a price, stock at this branch's location. */
   erpName: string | null; erpUnit: string | null; qtyDecimals: number; erpNew: boolean; erpRemoved: boolean; needsPrice: boolean; erpStock: number | null; erpStockAt: string | null;
+  /** "Sold as": erpUnit is the FACTS unit it's sold in, one of which is unitPer of FACTS' stock unit (Sprite: PCS = 0.33 LTR). */
+  erpStockUnit?: string | null; unitPer?: number;
+  /** Back office only: its FACTS units to choose "Sold as" from, the stock unit first. */
+  units?: { name: string; perUnit: number; decimals: number }[];
   /** This branch takes the price from its FACTS price type: branchPrice is FACTS' price (null = none there) and can't be changed here. */
   erpPriced: boolean;
   /** How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); groups not listed use their own. */
@@ -35,6 +39,10 @@ export const orderNo = (o: { number: number | null }) => (o.number ? `#${o.numbe
 
 /** A quantity as people write it: 2, 1.5, 0.35 (up to 3 decimals, no trailing zeros). */
 export const fmtQty = (n: number) => (Number.isInteger(n) ? String(n) : String(Number(n.toFixed(3))));
+
+/** A FACTS unit with what one of it is in the stock unit: "PCS – 1 = 0.33 LTR", or just "LTR" for the stock unit itself. */
+export const unitText = (unit: string, perUnit: number, stockUnit: string | null | undefined) =>
+  !stockUnit || unit.toUpperCase() === stockUnit.toUpperCase() ? unit : `${unit} – 1 = ${Number(perUnit.toFixed(4))} ${stockUnit}`;
 
 /** Sold by weight or volume (FACTS unit with decimals): the till asks for the amount when it's tapped. */
 const WEIGHT_UNITS = ["KG", "GM", "100GM", "LTR", "ML"];

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { api, apiUpload, shrinkImage, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { fmtIn } from "@/lib/num";
-import { imageUrl, initials, noPrice, type Menu, type MenuCategory, type MenuItem, type ModifierGroup, type Tone } from "@/lib/pos";
+import { imageUrl, initials, noPrice, unitText, type Menu, type MenuCategory, type MenuItem, type ModifierGroup, type Tone } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { confirmDialog } from "@/components/confirm";
 import { useLiveEvent } from "@/components/live";
@@ -157,7 +157,7 @@ export default function MenuPage() {
                           {!i.isSold && <Pill className={TONE.warn}>Not sold here</Pill>}
                           {i.soldOut && <Pill className={TONE.danger} dot>Sold out today</Pill>}
                           {i.erpPriced ? <Pill className={TONE.info}>FACTS price</Pill> : i.branchPrice !== null && <Pill className={TONE.info}>Branch price</Pill>}
-                          {i.erpItemCode && <Pill>FACTS {i.erpItemCode}{i.erpUnit ? ` · ${i.erpUnit}` : ""}</Pill>}
+                          {i.erpItemCode && <Pill>FACTS {i.erpItemCode}{i.erpUnit ? ` · ${unitText(i.erpUnit, i.unitPer ?? 1, i.erpStockUnit)}` : ""}</Pill>}
                           {i.erpNew && i.isActive && <Pill className={TONE.info} dot>New from FACTS</Pill>}
                           {i.erpRemoved && <Pill className={TONE.danger}>Gone from FACTS</Pill>}
                           {fromFacts && !i.isCombo && !i.erpItemCode && <Pill className={TONE.danger}>Not in FACTS</Pill>}
@@ -245,7 +245,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
   value: MenuItem | "new" | "combo" | null; menu: Menu; companyId?: string; fromFacts?: boolean; defaultCategory: string | null; currency: string; branchName?: string; onClose: () => void; onSaved: () => void;
 }) {
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | "remove" | null>(null);
-  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false, counts: {} as Record<string, string>, bomContents: false, contentsMax: "" };
+  const blank = { categoryId: defaultCategory ?? "", name: "", nameAr: "", description: "", price: "", station: "kitchen", erpItemCode: "", isActive: true, groupIds: [] as string[], branchPrice: "", isCombo: false, counts: {} as Record<string, string>, bomContents: false, contentsMax: "", soldAs: "" };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
@@ -254,10 +254,13 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
     setF(value && value !== "new" && value !== "combo" ? { categoryId: value.categoryId, name: value.name, nameAr: value.nameAr ?? "", description: value.description ?? "", price: String(value.price), station: value.station,
       erpItemCode: value.erpItemCode ?? "", isActive: value.isActive, groupIds: value.groupIds, branchPrice: value.branchPrice === null ? "" : String(value.branchPrice), isCombo: value.isCombo,
       counts: Object.fromEntries((value.groupCounts ?? []).filter((x) => x.max != null).map((x) => [x.groupId, String(x.max)])),
-      bomContents: !!value.bomContents, contentsMax: value.contentsMax == null ? "" : String(value.contentsMax) }
+      bomContents: !!value.bomContents, contentsMax: value.contentsMax == null ? "" : String(value.contentsMax), soldAs: value.erpUnit ?? "" }
       : value === "combo" ? { ...blank, isCombo: true, station: "none" } : blank);
   }
   const existing = value && value !== "new" && value !== "combo" ? value : null;
+  // "Sold as": the FACTS unit the till sells it in and FACTS gets; only worth showing when FACTS has more than one unit for it.
+  const units = existing?.erpItemCode ? existing.units ?? [] : [];
+  const soldAs = units.find((u) => u.name === f.soldAs);
   // This branch takes the item's price from FACTS (its price type): no price is typed here, the item shows FACTS' price.
   const factsPriced = !!existing?.erpPriced && !f.isCombo;
   const recipe = useApi<Recipe>(existing ? `/recipes/item/${existing.id}` : null);
@@ -383,6 +386,16 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
             {!f.isCombo && (fromFacts
               ? <Field label="FACTS item" hint="From FACTS; it links the item there."><Input value={f.erpItemCode || "Not in FACTS"} readOnly disabled /></Field>
               : <Field label="ERP item code" hint="Links to the AWS One / FACTS item (phase 3)."><Input value={f.erpItemCode} onChange={(e) => setF({ ...f, erpItemCode: e.target.value })} /></Field>)}
+            {existing && !f.isCombo && units.length > 1 && (
+              <Field label="Sold as" hint={existing.madeToOrder ? "Made from a FACTS BOM: sold in the BOM's unit."
+                : soldAs && existing.erpStockUnit && soldAs.name.toUpperCase() !== existing.erpStockUnit.toUpperCase()
+                ? `1 ${soldAs.name} takes ${Number(soldAs.perUnit.toFixed(4))} ${existing.erpStockUnit} off FACTS stock.` : "FACTS' stock unit."}>
+                <select className="h-8 w-full rounded-lg border border-input bg-card px-2.5 text-sm disabled:opacity-60 dark:bg-input/30" value={f.soldAs}
+                  disabled={existing.madeToOrder} onChange={(e) => setF({ ...f, soldAs: e.target.value })}>
+                  {units.map((u) => <option key={u.name} value={u.name}>{unitText(u.name, u.perUnit, existing.erpStockUnit)}{u.name === existing.erpStockUnit ? " (stock unit)" : ""}</option>)}
+                </select>
+              </Field>
+            )}
             {existing && !f.isCombo && !factsPriced && (
               <Field label={`Price at ${branchName ?? "this branch"}`} hint="Empty = the company price."><Input inputMode="decimal" value={f.branchPrice} onChange={(e) => setF({ ...f, branchPrice: e.target.value })} placeholder={String(existing.price)} /></Field>
             )}

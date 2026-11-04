@@ -169,8 +169,8 @@ public static class OrderTables
                         var sentMoving = Math.Min(l.SentQty, w.Qty);
                         await c.ExecuteAsync("update order_line set qty = qty - @q, sent_qty = sent_qty - @s where id = @lid", new { q = w.Qty, s = sentMoving, lid = l.Id }, tx);
                         await c.ExecuteAsync("""
-                            insert into order_line (company_id, order_id, item_id, name, name_ar, unit_price, qty, modifiers, note, station, sent_qty, sort, added_by)
-                            select company_id, @newId, item_id, name, name_ar, unit_price, @q, modifiers, note, station, @s, sort, added_by from order_line where id = @lid
+                            insert into order_line (company_id, order_id, item_id, name, name_ar, unit_price, qty, modifiers, note, station, sent_qty, sort, added_by, erp_unit)
+                            select company_id, @newId, item_id, name, name_ar, unit_price, @q, modifiers, note, station, @s, sort, added_by, erp_unit from order_line where id = @lid
                             """, new { newId, q = w.Qty, s = sentMoving, lid = l.Id }, tx);
                     }
                 }

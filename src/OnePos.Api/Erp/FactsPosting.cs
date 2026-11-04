@@ -179,7 +179,7 @@ public static partial class FactsPosting
         if (o.InvoiceNo is null) problems.Add("The bill has no invoice number (not paid).");
         else if (o.FactsNo is null) problems.Add($"Invoice {o.InvoiceNo} is longer than the {FactsNoLength} characters FACTS takes.");
         var lines = (await c.QueryAsync<LineInfo>("""
-            select l.name, l.qty, l.unit_price, l.line_total, l.discount, l.vat, l.modifiers::text as modifiers, i.erp_item_code as code, i.erp_item_type as type, i.erp_unit as unit,
+            select l.name, l.qty, l.unit_price, l.line_total, l.discount, l.vat, l.modifiers::text as modifiers, i.erp_item_code as code, i.erp_item_type as type, coalesce(l.erp_unit, i.erp_unit) as unit,
                    coalesce(i.is_combo, false) as is_combo
             from order_line l left join menu_item i on i.id = l.item_id where l.order_id = @orderId and not l.is_void order by l.sort
             """, new { orderId }, tx)).ToList();
@@ -277,7 +277,7 @@ public static partial class FactsPosting
             """, new { creditNoteId }, tx);
         var o = await c.QuerySingleAsync<OrderInfo>($"{OrderSql} where o.id = @OrderId", new { n.OrderId }, tx);
         var refunded = (await c.QueryAsync<(string? Code, string? Type, string? Unit, decimal Qty, decimal Amount, decimal Vat, bool Restock, string Name, bool IsCombo, string Modifiers, decimal UnitPrice)>("""
-            select i.erp_item_code, i.erp_item_type, i.erp_unit, cl.qty, cl.amount, cl.vat, cl.restock, l.name, coalesce(i.is_combo, false), l.modifiers::text, l.unit_price
+            select i.erp_item_code, i.erp_item_type, coalesce(l.erp_unit, i.erp_unit), cl.qty, cl.amount, cl.vat, cl.restock, l.name, coalesce(i.is_combo, false), l.modifiers::text, l.unit_price
             from credit_note_line cl join order_line l on l.id = cl.order_line_id left join menu_item i on i.id = l.item_id where cl.credit_note_id = @creditNoteId
             """, new { creditNoteId }, tx)).ToList();
         // A combo comes back as its items, as it was sold: the amount and VAT shared by their rates.
@@ -332,7 +332,7 @@ public static partial class FactsPosting
             """, new { branchId }, tx);
         if (b.Mode != "draft" || b.Connector != "facts" || b.Loc is null || b.Waste is null) return 0;
         var lines = (await c.QueryAsync<(Guid Id, string? Code, string? Type, string Name, decimal Qty, string? Unit, decimal? Cost)>("""
-            select w.id, i.erp_item_code, i.erp_item_type, w.name, w.qty, coalesce(i.erp_unit, w.unit), w.cost_value
+            select w.id, i.erp_item_code, i.erp_item_type, w.name, w.qty, coalesce(w.unit, i.erp_unit), w.cost_value
             from wastage w left join menu_item i on i.id = w.item_id
             where w.branch_id = @branchId and w.business_date = @day and w.kind = 'wastage' and w.voided_at is null and w.erp_status = 'pending' and w.erp_post_id is null and w.approval = 'none'
             order by w.recorded_at for update of w
