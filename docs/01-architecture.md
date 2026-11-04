@@ -158,7 +158,7 @@ Events carry ids, never data. A lost connection shows a "reconnecting" banner an
   sign-in for 5 minutes.
 - **Sessions:** a sign-in cookie per environment, `HttpOnly` (scripts can't read it) and `SameSite=Lax`, valid 16 hours and
   renewed while in use.
-- **Data separation:** PostgreSQL row-level security on every company-owned table (64 of 75). The API connects as
+- **Data separation:** PostgreSQL row-level security on every company-owned table (65 of 76). The API connects as
   `onepos_app` (`NOSUPERUSER NOBYPASSRLS`) and sets `app.company_id` for each transaction, so even a query missing its
   `WHERE` can't return another company's rows. Migrations run as the separate owner role.
 - **Permissions:** 22 permission keys grouped into roles per company, checked on the server by every endpoint (about 160

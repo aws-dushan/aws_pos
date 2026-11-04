@@ -14,6 +14,8 @@ AS
      The batch is written the way the batch update (BUDTE) approval writes it: SALES_DETAILS.SALDET_BATCH_DOCNO and
      STOCK_TRANSACTION.STTRN_BATCH_DOCNO of the same line. Lines are taken in order, so two lines of one bill share a batch
      only while it has enough for both.
+     A line sold in another unit than the stock unit (1 PCS of Sprite, kept in LTR) needs its quantity in the stock unit, as the
+     batch holds it: the line's own stock transaction (STOCK_TRANSACTION.STTRN_QTY, 0.33 LTR), which FACTS converted.  (04-11-2026)
      A made-to-order item (a BOM item) takes the batch its own bill's repacking voucher made: the posted RPO50 with Reference
      "One POS repacking <invoice no>" (usp_ONEPOS_PostRepacking, sent just before the bill) brought it in as RPO50-<number>-<line>;
      the sale takes that batch out again. Only when that batch hasn't enough left does the line go FIFO.          (20-10-2026)
@@ -56,7 +58,10 @@ BEGIN
         BEGIN TRANSACTION;
 
         DECLARE lines CURSOR LOCAL FAST_FORWARD FOR
-            SELECT d.SALDET_DOCSRNO, d.SALDET_STOCK_DOCNO, d.SALDET_QTY
+            SELECT d.SALDET_DOCSRNO, d.SALDET_STOCK_DOCNO,
+                   ISNULL((SELECT ABS(SUM(t.STTRN_QTY)) FROM dbo.STOCK_TRANSACTION t
+                           WHERE t.STTRN_FYCODE = d.SALDET_FYCODE AND t.STTRN_DOCTYPE = d.SALDET_DOCTYPE AND t.STTRN_DOCNO = d.SALDET_DOCNO
+                             AND t.STTRN_DOCSRNO = d.SALDET_DOCSRNO), d.SALDET_QTY)
             FROM dbo.SALES_DETAILS d
             JOIN dbo.STOCK_MASTER m ON m.STKMST_DOCNO = d.SALDET_STOCK_DOCNO AND m.STKMST_ASK_BATCH_NO = 1
             WHERE d.SALDET_FYCODE = @FyCode AND d.SALDET_DOCTYPE = 'POS51' AND d.SALDET_DOCNO = @InvoiceNo

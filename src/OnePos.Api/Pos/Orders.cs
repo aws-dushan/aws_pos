@@ -149,7 +149,7 @@ public static class Orders
                                             where l.item_id = i.id and po.branch_id = b.id and not l.is_void
                                               and po.status in ('paid','refunded') and po.closed_at > bi.erp_stock_at), 0)
                               - wastage_held(b.id, i.id, bi.erp_stock, bi.erp_stock_at, bi.erp_in_since_waste)
-                              - coalesce((select sum(r.qty) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = b.id and r.approval in ('waiting','approved')
+                              - coalesce((select sum(sold_qty(i.id, r.qty, r.unit)) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = b.id and r.approval in ('waiting','approved')
                                             and (r.erp_status <> 'posted' or r.erp_posted_at > bi.erp_stock_at)), 0),
                    bi.erp_stock_at,
                    (select coalesce(sum(qty), 0) from order_line where order_id = @Id and item_id = i.id and not is_void)
@@ -416,6 +416,7 @@ public static class Orders
             var same = await c.ExecuteScalarAsync<Guid?>("""
                 select id from order_line where order_id = @id and item_id = @itemId and not is_void and sent_qty = 0 and note is null and modifiers = cast(@modsJson as jsonb) and @note is null
                   and disc_id is not distinct from @promoId and coalesce(disc_source, 'promotion') = 'promotion'
+                  and erp_unit is not distinct from (select erp_unit from menu_item where id = @itemId)
                 limit 1
                 """, new { id, body.ItemId, modsJson, note, promoId = promo?.Id }, tx);
             if (same is { } lineId)
@@ -423,10 +424,11 @@ public static class Orders
             else
                 await c.ExecuteAsync("""
                     insert into order_line (company_id, order_id, item_id, name, name_ar, unit_price, qty, modifiers, note, station, sort, added_by,
-                                            disc_source, disc_id, disc_name, disc_type, disc_value)
+                                            disc_source, disc_id, disc_name, disc_type, disc_value, erp_unit)
                     values (@co, @id, @itemId, @name, @nameAr, @unit, @qty, cast(@modsJson as jsonb), @note, @station,
                             (select coalesce(max(sort), 0) + 1 from order_line where order_id = @id), @userId,
-                            case when @promoId is not null then 'promotion' end, @promoId, @promoName, @promoType, @promoValue)
+                            case when @promoId is not null then 'promotion' end, @promoId, @promoName, @promoType, @promoValue,
+                            (select erp_unit from menu_item where id = @itemId))
                     """, new { co = o.CompanyId, id, body.ItemId, name = item.Name, nameAr = item.NameAr, unit, qty, modsJson, note, station = item.Station, userId = scope.UserId,
                                promoId = promo?.Id, promoName = promo?.Name, promoType = promo?.Type, promoValue = promo?.Value }, tx);
             await Recipes.EnforceAsync(c, tx, o, [(body.ItemId, modsJson)]);

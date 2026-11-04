@@ -14,7 +14,8 @@ public static class Menu
 {
     public sealed record CategoryBody(string Name, string? NameAr, string? Tone, int? Sort, bool? IsActive);
     public sealed record ItemBody(Guid CategoryId, string Name, string? NameAr, string? Description, decimal Price, string? Station, string? ErpItemCode,
-        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo, GroupCount[]? GroupCounts = null, bool? BomContents = null, decimal? ContentsMax = null);
+        int? Sort, bool? IsActive, Guid[]? GroupIds, bool? IsCombo, GroupCount[]? GroupCounts = null, bool? BomContents = null, decimal? ContentsMax = null,
+        string? SoldAs = null);
     /// <summary>How many to choose from an attached group on this item (e.g. 12 chocolates in the box of 12); null = the group's own.</summary>
     public sealed record GroupCount(Guid GroupId, int? Min, int? Max);
     /// <summary>An option; with ItemId it is a menu item offered inside a combo ("Shish tawook" in "Choose a main").</summary>
@@ -65,7 +66,13 @@ public static class Menu
         public bool Short { get; set; }
         // FACTS (REQ ERP-02 … ERP-05): code, name and unit there, new / gone, waiting for a price, stock at this branch's location.
         public string? ErpName { get; set; }
+        /// <summary>The FACTS unit it's sold in and sent to FACTS ("Sold as", Pos.SoldAs); stock and quantities are counted in it.</summary>
         public string? ErpUnit { get; set; }
+        /// <summary>FACTS' stock unit, and how much of it ONE ErpUnit is (Sprite: PCS, 0.33 LTR).</summary>
+        public string? ErpStockUnit { get; set; }
+        public decimal UnitPer { get; set; } = 1;
+        /// <summary>Its FACTS units to choose "Sold as" from: the stock unit first, then its conversions.</summary>
+        public List<SoldAs.Unit> Units { get; set; } = [];
         public bool NeedsPrice { get; set; }
         /// <summary>This branch takes the item's price from FACTS (its price type): BranchPrice is FACTS' price, null = none there.</summary>
         public bool ErpPriced { get; set; }
@@ -226,6 +233,19 @@ public static class Menu
                         throw new DomainException($"{old.Name} has no BOM from FACTS, so its contents can't be chosen at the till.");
                 }
                 await c.ExecuteAsync("update menu_item set bom_contents = @contents, contents_max = @most where id = @id", new { id, contents, most }, tx);
+                // "Sold as": one of its FACTS units. An item made from a FACTS BOM is sold in the BOM's unit (its repacking counts in it).
+                var soldAs = old.ErpUnit;
+                if (old.ErpItemCode is not null && b.SoldAs?.Trim() is { Length: > 0 } wanted && !string.Equals(wanted, old.ErpUnit, StringComparison.OrdinalIgnoreCase))
+                {
+                    soldAs = await c.ExecuteScalarAsync<string?>("select unit from item_unit where item_id = @id and upper(unit) = upper(@wanted)", new { id, wanted }, tx)
+                        ?? throw new DomainException($"FACTS has no unit {wanted} for {old.Name}.");
+                    var bomUnit = await c.ExecuteScalarAsync<string?>("""
+                        select unit from bom where item_code = @ErpItemCode and item_type = @ErpItemType and (ended_from is null or ended_from > current_date) limit 1
+                        """, new { old.ErpItemCode, old.ErpItemType }, tx);
+                    if (bomUnit is not null) throw new DomainException($"{old.Name} is made from a FACTS BOM, so it's sold in the BOM's unit ({bomUnit}).");
+                    await c.ExecuteAsync("update menu_item set sale_unit = @soldAs where id = @id", new { id, soldAs }, tx);
+                    await SoldAs.ApplyAsync(c, tx, [id]);
+                }
                 if (old.Price != b.Price)
                     await c.ExecuteAsync("""
                         insert into item_price_history (company_id, item_id, old_price, new_price, source, changed_by) values (@co, @id, @old, @new, 'manual', @userId)
@@ -233,7 +253,8 @@ public static class Menu
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "menu_item", id.ToString(), "changed", $"Menu item {old.Name} changed",
                     [new("Name", old.Name, b.Name), new("Price", old.Price, b.Price), new("Station", old.Station, b.Station),
                      new("Category", old.CategoryId, b.CategoryId), new("Active", old.IsActive, b.IsActive ?? old.IsActive),
-                     new("Contents chosen at the till", old.BomContents, b.BomContents ?? old.BomContents), new("Holds at most", old.ContentsMax, b.BomContents is null ? old.ContentsMax : b.ContentsMax)]);
+                     new("Contents chosen at the till", old.BomContents, b.BomContents ?? old.BomContents), new("Holds at most", old.ContentsMax, b.BomContents is null ? old.ContentsMax : b.ContentsMax),
+                     new("Sold as", old.ErpUnit, soldAs)]);
                 return 0;
             });
             // Switched on: FACTS' PCS units for its materials now (the BOM sync keeps them after), so KG chocolates count in pieces.
@@ -379,7 +400,7 @@ public static class Menu
                    case when bi.erp_stock is null or mto.yes then null else
                      bi.erp_stock - coalesce((select sum(s.qty) from sold s where s.item_id = i.id and s.closed_at > bi.erp_stock_at), 0)
                                   - wastage_held(@branchId, i.id, bi.erp_stock, bi.erp_stock_at, bi.erp_in_since_waste)
-                                  - coalesce((select sum(r.qty) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = @branchId and r.approval in ('waiting','approved')
+                                  - coalesce((select sum(sold_qty(i.id, r.qty, r.unit)) from stock_return r where r.item_code = i.erp_item_code and r.branch_id = @branchId and r.approval in ('waiting','approved')
                                                 and (r.erp_status <> 'posted' or r.erp_posted_at > bi.erp_stock_at)), 0) end as stock_left,
                    coalesce(br.short_stock <> 'allow' and exists (
                      select 1 from recipe_line r left join branch_ingredient bg on bg.ingredient_id = r.ingredient_id and bg.branch_id = @branchId
@@ -419,6 +440,12 @@ public static class Menu
         var counts = (await c.QueryAsync<(Guid ItemId, Guid GroupId, int? Min, int? Max)>(
             "select item_id, group_id, min_select, max_select from menu_item_modifier where min_select is not null or max_select is not null", transaction: tx)).ToLookup(x => x.ItemId);
         foreach (var it in items) it.GroupCounts = counts[it.Id].Select(x => new GroupCount(x.GroupId, x.Min, x.Max)).ToList();
+        // The back office chooses "Sold as" from an item's FACTS units; the register only needs the unit it's sold in.
+        if (!activeOnly)
+        {
+            var units = await SoldAs.LoadAsync(c, tx);
+            foreach (var it in items) it.Units = units[it.Id].ToList();
+        }
         foreach (var it in items.Where(x => x.BomContents))
             it.Contents = await Boms.ContentsAsync(c, tx, it.ErpItemType, it.ErpItemCode, today ?? DateOnly.FromDateTime(DateTime.UtcNow));
         var shortStock = branchId is { } b2 ? await c.ExecuteScalarAsync<string>("select short_stock from branch where id = @b2", new { b2 }, tx) : "allow";
