@@ -20,9 +20,9 @@ public static class SoldAs
     }
 
     /// <summary>
-    /// Sets each FACTS item's unit (all of them, or just these): the one chosen in One POS where FACTS still has it; else, made from a
-    /// live FACTS BOM, the BOM's unit; else PCS where FACTS has a PCS unit for an item kept in another unit (as the outlet POS sells
-    /// it); else the stock unit. Stock already read is turned into the new unit. Returns how many items changed unit.
+    /// Sets each FACTS item's unit (all of them, or just these): made from a live FACTS BOM, the BOM's unit; else the one chosen on
+    /// the item (Menu → Sold as) where FACTS still has it; else the stock unit. Nothing is picked by itself. Stock already read is
+    /// turned into the new unit. Returns how many items changed unit.
     /// </summary>
     public static async Task<int> ApplyAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid[]? ids = null)
     {
@@ -36,8 +36,7 @@ public static class SoldAs
                 select u.unit, u.per_unit, u.decimals from item_unit u where u.item_id = i.id
                 order by case when bom.unit is null and upper(u.unit) = upper(i.sale_unit) then 0
                               when upper(u.unit) = upper(bom.unit) then 1
-                              when bom.unit is null and upper(u.unit) = 'PCS' and upper(coalesce(i.erp_stock_unit, '')) <> 'PCS' then 2
-                              when upper(u.unit) = upper(i.erp_stock_unit) then 3 else 4 end, u.unit
+                              when upper(u.unit) = upper(i.erp_stock_unit) then 2 else 3 end, u.unit
                 limit 1) u
               where i.erp_item_code is not null and (cast(@ids as uuid[]) is null or i.id = any(@ids))
             ), changed as (
