@@ -384,66 +384,77 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     });
 
     /// <summary>
-    /// Delivery platform prices: each platform linked to its FACTS customer takes that customer's price list (CPL50): posted, valid
-    /// today, in the item's base unit; where lists overlap the newest wins (latest from-date, then latest posted). VAT is added per
-    /// branch when a bill is rung up, where that branch's FACTS prices are before VAT. An item not on the list has no price on that
-    /// platform. Every change is kept in item_price_history.
+    /// Delivery platform prices: each platform linked to its FACTS customer takes that customer's price lists (CPL50) per FACTS
+    /// location, for the locations branches take their platform prices from (branch "Platform prices from"): posted, valid today,
+    /// in the item's base unit; where lists overlap the newest wins (latest from-date, then latest posted). VAT is added per branch
+    /// when a bill is rung up, where that branch's FACTS prices are before VAT. An item not on the location's lists has no price on
+    /// that platform there. Every change is kept in item_price_history.
     /// </summary>
     private async Task<object> SyncPlatformPricesAsync(SqlConnection f, Guid companyId, Guid? userId, List<(Guid Id, string Name, string Customer)> platforms)
     {
         var done = new List<object>();
+        var locations = (await db.Company(companyId, (c, tx) => c.QueryAsync<string>(
+            "select distinct upper(facts_platform_location) from branch where facts_platform_location is not null and is_active", transaction: tx))).ToArray();
         foreach (var p in platforms)
         {
             var cust = await f.QuerySingleOrDefaultAsync<(string? Name, string? Account, string? Subledger)>(
                 "select top 1 ltrim(rtrim(ACMST_DESC)), ltrim(rtrim(ACMST_DOCNO)), ltrim(rtrim(ACMST_SUBLEDGER_DOCNO)) from ACMST_POPULATED where ACMST_ACCODE = @code", new { code = p.Customer });
             if (cust.Name is null) { done.Add(new { platform = p.Name, error = $"FACTS has no customer {p.Customer}." }); continue; }
-            var rows = (await f.QueryAsync<(string Code, string DocType, decimal Price)>("""
-                select Code, DocType, Price from (
-                  select ltrim(rtrim(d.SALDET_STOCK_DOCNO)) as Code, ltrim(rtrim(d.SALDET_STOCK_DOCTYPE)) as DocType, isnull(d.SALDET_RATE, 0) as Price,
-                         row_number() over (partition by d.SALDET_STOCK_DOCTYPE, d.SALDET_STOCK_DOCNO order by h.SAL_DOCDATE desc, h.SAL_POSTED_TS desc, d.SALDET_DOCSRNO desc) as rn
-                  from SALES_HEADER h
-                  join SALES_DETAILS d on d.SALDET_FYCODE = h.SAL_FYCODE and d.SALDET_DOCTYPE = h.SAL_DOCTYPE and d.SALDET_DOCNO = h.SAL_DOCNO
-                  join STOCK_MASTER m on m.STKMST_DOCTYPE = d.SALDET_STOCK_DOCTYPE and m.STKMST_DOCNO = d.SALDET_STOCK_DOCNO and m.STKMST_UNIT_DOCNO = d.SALDET_UNIT_DOCNO
-                  where h.SAL_DOCTYPE = 'CPL50' and h.SAL_POSTED_BY is not null and h.SAL_AC_DOCNO = @ac and h.SAL_SUBLEDGER_DOCNO = @sl
-                    and cast(h.SAL_DOCDATE as date) <= cast(getdate() as date) and cast(h.SAL_REFDATE as date) >= cast(getdate() as date)
-                ) x where rn = 1
-                """, new { ac = cust.Account, sl = cust.Subledger }, commandTimeout: 120)).ToList();
+            var rows = new List<(string Location, string Code, string DocType, decimal Price)>();
+            foreach (var loc in locations)
+                rows.AddRange((await f.QueryAsync<(string Code, string DocType, decimal Price)>("""
+                    select Code, DocType, Price from (
+                      select ltrim(rtrim(d.SALDET_STOCK_DOCNO)) as Code, ltrim(rtrim(d.SALDET_STOCK_DOCTYPE)) as DocType, isnull(d.SALDET_RATE, 0) as Price,
+                             row_number() over (partition by d.SALDET_STOCK_DOCTYPE, d.SALDET_STOCK_DOCNO order by h.SAL_DOCDATE desc, h.SAL_POSTED_TS desc, d.SALDET_DOCSRNO desc) as rn
+                      from SALES_HEADER h
+                      join SALES_DETAILS d on d.SALDET_FYCODE = h.SAL_FYCODE and d.SALDET_DOCTYPE = h.SAL_DOCTYPE and d.SALDET_DOCNO = h.SAL_DOCNO
+                      join STOCK_MASTER m on m.STKMST_DOCTYPE = d.SALDET_STOCK_DOCTYPE and m.STKMST_DOCNO = d.SALDET_STOCK_DOCNO and m.STKMST_UNIT_DOCNO = d.SALDET_UNIT_DOCNO
+                      where h.SAL_DOCTYPE = 'CPL50' and h.SAL_POSTED_BY is not null and h.SAL_AC_DOCNO = @ac and h.SAL_SUBLEDGER_DOCNO = @sl
+                        and ltrim(rtrim(h.SAL_LOCATION_DOCNO)) = @loc
+                        and cast(h.SAL_DOCDATE as date) <= cast(getdate() as date) and cast(h.SAL_REFDATE as date) >= cast(getdate() as date)
+                    ) x where rn = 1
+                    """, new { ac = cust.Account, sl = cust.Subledger, loc }, commandTimeout: 120)).Select(r => (loc, r.Code, r.DocType, r.Price)));
             var n = await db.Company(companyId, async (c, tx) =>
             {
                 var items = (await c.QueryAsync<(Guid Id, string Code, string? DocType)>(
                     "select id, erp_item_code, erp_item_type from menu_item where erp_item_code is not null", transaction: tx)).ToList();
-                var byCode = rows.ToLookup(r => r.Code, StringComparer.OrdinalIgnoreCase);
-                var ids = new List<Guid>(); var prices = new List<decimal?>();
-                foreach (var i in items)
-                {
-                    var r = byCode[i.Code].Where(x => i.DocType is null || string.Equals(x.DocType, i.DocType, StringComparison.OrdinalIgnoreCase)).Select(x => (decimal?)x.Price).FirstOrDefault();
-                    ids.Add(i.Id); prices.Add(r is > 0 ? r : null);
-                }
-                var args = new { co = companyId, pid = p.Id, ids = ids.ToArray(), prices = prices.ToArray(), userId };
+                var byCode = rows.ToLookup(r => (r.Location, r.Code.ToUpperInvariant()));
+                var locs = new List<string>(); var ids = new List<Guid>(); var prices = new List<decimal?>();
+                foreach (var loc in locations)
+                    foreach (var i in items)
+                    {
+                        var r = byCode[(loc, i.Code.ToUpperInvariant())].Where(x => i.DocType is null || string.Equals(x.DocType, i.DocType, StringComparison.OrdinalIgnoreCase)).Select(x => (decimal?)x.Price).FirstOrDefault();
+                        locs.Add(loc); ids.Add(i.Id); prices.Add(r is > 0 ? r : null);
+                    }
+                var args = new { co = companyId, pid = p.Id, locs = locs.ToArray(), ids = ids.ToArray(), prices = prices.ToArray(), locations, userId };
                 var changed = await c.ExecuteAsync("""
-                    insert into item_price_history (company_id, branch_id, platform_id, item_id, old_price, new_price, source, facts_price, changed_by)
-                    select @co, null, @pid, t.id, round(pp.facts_price, 2), round(t.price, 2), 'facts', t.price, @userId
-                    from unnest(@ids, @prices) as t(id, price) left join platform_item_price pp on pp.platform_id = @pid and pp.item_id = t.id
+                    insert into item_price_history (company_id, branch_id, platform_id, location, item_id, old_price, new_price, source, facts_price, changed_by)
+                    select @co, null, @pid, t.loc, t.id, round(pp.facts_price, 2), round(t.price, 2), 'facts', t.price, @userId
+                    from unnest(@locs, @ids, @prices) as t(loc, id, price)
+                    left join platform_item_price pp on pp.platform_id = @pid and pp.location = t.loc and pp.item_id = t.id
                     where pp.facts_price is distinct from t.price
                     """, args, tx);
+                // Prices of locations no branch takes them from any more, and of items no longer on the lists, go.
+                await c.ExecuteAsync("delete from platform_item_price where platform_id = @pid and not (location = any(@locations))", args, tx);
                 await c.ExecuteAsync("""
-                    delete from platform_item_price pp using unnest(@ids, @prices) as t(id, price) where pp.platform_id = @pid and pp.item_id = t.id and t.price is null
+                    delete from platform_item_price pp using unnest(@locs, @ids, @prices) as t(loc, id, price)
+                    where pp.platform_id = @pid and pp.location = t.loc and pp.item_id = t.id and t.price is null
                     """, args, tx);
                 await c.ExecuteAsync("""
-                    insert into platform_item_price (company_id, platform_id, item_id, facts_price)
-                    select @co, @pid, t.id, t.price from unnest(@ids, @prices) as t(id, price) where t.price is not null
-                    on conflict (platform_id, item_id) do update set facts_price = excluded.facts_price,
+                    insert into platform_item_price (company_id, platform_id, location, item_id, facts_price)
+                    select @co, @pid, t.loc, t.id, t.price from unnest(@locs, @ids, @prices) as t(loc, id, price) where t.price is not null
+                    on conflict (platform_id, location, item_id) do update set facts_price = excluded.facts_price,
                       updated_at = case when platform_item_price.facts_price = excluded.facts_price then platform_item_price.updated_at else now() end
                     """, args, tx);
                 await c.ExecuteAsync("update delivery_platform set facts_customer_name = @name, facts_price_type = @pt, facts_price_at = now() where id = @pid",
                     new { pid = p.Id, name = cust.Name, pt = "CPL50" }, tx);
                 if (changed > 0)
                     await Audit.RecordAsync(c, tx, companyId, null, userId ?? Guid.Empty, "erp", "prices", "synced",
-                        $"FACTS prices for {p.Name} ({p.Customer}, customer price list CPL50): {changed} changed");
+                        $"FACTS prices for {p.Name} ({p.Customer}, customer price lists CPL50 of {string.Join(", ", locations)}): {changed} changed");
                 return (Priced: prices.Count(x => x is not null), Changed: changed);
             });
             if (n.Changed > 0) await live.ToCompany(companyId, "menu.changed");
-            done.Add(new { platform = p.Name, customer = p.Customer, priceList = "CPL50", priced = n.Priced, changed = n.Changed });
+            done.Add(new { platform = p.Name, customer = p.Customer, priceList = "CPL50", locations, priced = n.Priced, changed = n.Changed });
         }
         return done;
     }

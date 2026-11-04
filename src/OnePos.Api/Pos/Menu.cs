@@ -314,15 +314,19 @@ public static class Menu
             return Results.Ok(new { id });
         });
 
-        // An item's price changes at this branch and its company price, newest first: from FACTS or set in One POS.
+        // An item's price changes at this branch, its company price and its platform prices (of the branch's "Platform prices from"
+        // location), newest first: from FACTS or set in One POS.
         api.MapGet("/menu/items/{id:guid}/price-history", async (Guid id, HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("menu.manage");
             return await db.Company(scope.CompanyId, async (c, tx) => (await c.QueryAsync<(DateTime ChangedAt, bool Branch, decimal? OldPrice, decimal? NewPrice, string Source, decimal? FactsPrice, string? By, string? Platform)>("""
-                select h.changed_at, h.branch_id is not null, h.old_price, h.new_price, h.source, h.facts_price, u.display_name, dp.name
+                select h.changed_at, h.branch_id is not null, h.old_price, h.new_price, h.source, h.facts_price, u.display_name,
+                       dp.name || coalesce(' (' || h.location || ')', '')
                 from item_price_history h left join app_user u on u.id = h.changed_by left join delivery_platform dp on dp.id = h.platform_id
-                where h.item_id = @id and (h.branch_id = @b or h.branch_id is null) order by h.changed_at desc limit 100
+                where h.item_id = @id and (h.branch_id = @b or h.branch_id is null)
+                  and (h.location is null or h.location = (select upper(facts_platform_location) from branch where id = @b))
+                order by h.changed_at desc limit 100
                 """, new { id, b = scope.BranchId }, tx)).Select(x => new { x.ChangedAt, x.Branch, x.OldPrice, x.NewPrice, x.Source, x.FactsPrice, x.By, x.Platform }).ToList());
         });
 

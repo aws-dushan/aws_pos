@@ -45,30 +45,30 @@
 | --- | --- | --- | --- |
 | GET | `/api/branches/{branchId:guid}/registers` |  | src/OnePos.Api/Pos/Registers.cs:25 |
 | POST | `/api/branches/{branchId:guid}/registers` | branch.manage | src/OnePos.Api/Pos/Registers.cs:33 |
-| PUT | `/api/branches/{id:guid}` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:322 |
-| PUT | `/api/branches/{id:guid}/discount-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:303 |
+| PUT | `/api/branches/{id:guid}` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:324 |
+| PUT | `/api/branches/{id:guid}/discount-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:305 |
 | DELETE | `/api/branches/{id:guid}/logo` | branch.manage | src/OnePos.Api/Pos/Branding.cs:139 |
 | GET | `/api/branches/{id:guid}/logo` |  | src/OnePos.Api/Pos/Branding.cs:150 |
 | POST | `/api/branches/{id:guid}/logo` | branch.manage | src/OnePos.Api/Pos/Branding.cs:123 |
-| PUT | `/api/branches/{id:guid}/marketing` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:263 |
+| PUT | `/api/branches/{id:guid}/marketing` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:265 |
 | GET | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:174 |
 | PUT | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:189 |
 | PUT | `/api/branches/{id:guid}/request-approval` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:509 |
-| PUT | `/api/branches/{id:guid}/wastage-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:229 |
+| PUT | `/api/branches/{id:guid}/wastage-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:231 |
 
 ## companies
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/companies` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:114 |
-| POST | `/api/companies` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:126 |
-| GET | `/api/companies/{companyId:guid}/branches` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:178 |
-| POST | `/api/companies/{companyId:guid}/branches` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:188 |
+| GET | `/api/companies` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:116 |
+| POST | `/api/companies` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:128 |
+| GET | `/api/companies/{companyId:guid}/branches` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:180 |
+| POST | `/api/companies/{companyId:guid}/branches` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:190 |
 | DELETE | `/api/companies/{companyId:guid}/erp` |  | src/OnePos.Api/Erp/ErpConnections.cs:125 |
 | GET | `/api/companies/{companyId:guid}/erp` |  | src/OnePos.Api/Erp/ErpConnections.cs:74 |
 | PUT | `/api/companies/{companyId:guid}/erp` |  | src/OnePos.Api/Erp/ErpConnections.cs:105 |
-| GET | `/api/companies/{companyId:guid}/erp/items` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:548 |
-| PUT | `/api/companies/{companyId:guid}/erp/items` |  | src/OnePos.Api/Erp/FactsSync.cs:560 |
+| GET | `/api/companies/{companyId:guid}/erp/items` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:559 |
+| PUT | `/api/companies/{companyId:guid}/erp/items` |  | src/OnePos.Api/Erp/FactsSync.cs:571 |
 | POST | `/api/companies/{companyId:guid}/erp/test` |  | src/OnePos.Api/Erp/ErpConnections.cs:93 |
 | GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:472 |
 | PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:482 |
@@ -80,7 +80,7 @@
 | POST | `/api/companies/{companyId:guid}/users` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:71 |
 | DELETE | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:160 |
 | PUT | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:110 |
-| PUT | `/api/companies/{id:guid}` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:153 |
+| PUT | `/api/companies/{id:guid}` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:155 |
 
 ## customers
 
@@ -146,8 +146,8 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| POST | `/api/erp/enable-sold` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:642 |
-| GET | `/api/erp/payment-modes` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:584 |
+| POST | `/api/erp/enable-sold` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:653 |
+| GET | `/api/erp/payment-modes` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:595 |
 | GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:385 |
 | POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:506 |
 | POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:546 |
@@ -157,16 +157,16 @@
 | GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:486 |
 | GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:463 |
 | POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:525 |
-| PUT | `/api/erp/settings` |  | src/OnePos.Api/Erp/FactsSync.cs:540 |
-| GET | `/api/erp/status` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:506 |
+| PUT | `/api/erp/settings` |  | src/OnePos.Api/Erp/FactsSync.cs:551 |
+| GET | `/api/erp/status` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:517 |
 | GET | `/api/erp/stock-items` |  | src/OnePos.Api/Pos/Boms.cs:186 |
-| POST | `/api/erp/sync/boms` | menu.manage, facts.post | src/OnePos.Api/Erp/FactsSync.cs:600 |
-| POST | `/api/erp/sync/items` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:569 |
-| GET | `/api/erp/sync/last` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:616 |
-| POST | `/api/erp/sync/payment-modes` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:576 |
-| POST | `/api/erp/sync/prices` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:607 |
-| POST | `/api/erp/sync/refresh` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:623 |
-| POST | `/api/erp/sync/stock` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:593 |
+| POST | `/api/erp/sync/boms` | menu.manage, facts.post | src/OnePos.Api/Erp/FactsSync.cs:611 |
+| POST | `/api/erp/sync/items` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:580 |
+| GET | `/api/erp/sync/last` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:627 |
+| POST | `/api/erp/sync/payment-modes` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:587 |
+| POST | `/api/erp/sync/prices` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:618 |
+| POST | `/api/erp/sync/refresh` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:634 |
+| POST | `/api/erp/sync/stock` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:604 |
 
 ## feedback
 
@@ -236,10 +236,10 @@
 | PUT | `/api/menu/items/{id:guid}/branch` | pos.sell, menu.manage | src/OnePos.Api/Pos/Menu.cs:277 |
 | DELETE | `/api/menu/items/{id:guid}/image` | menu.manage | src/OnePos.Api/Pos/ItemImages.cs:47 |
 | POST | `/api/menu/items/{id:guid}/image` | menu.manage | src/OnePos.Api/Pos/ItemImages.cs:20 |
-| GET | `/api/menu/items/{id:guid}/price-history` | menu.manage | src/OnePos.Api/Pos/Menu.cs:318 |
-| POST | `/api/menu/modifier-groups` | menu.manage | src/OnePos.Api/Pos/Menu.cs:329 |
-| DELETE | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:366 |
-| PUT | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:346 |
+| GET | `/api/menu/items/{id:guid}/price-history` | menu.manage | src/OnePos.Api/Pos/Menu.cs:319 |
+| POST | `/api/menu/modifier-groups` | menu.manage | src/OnePos.Api/Pos/Menu.cs:333 |
+| DELETE | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:370 |
+| PUT | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:350 |
 
 ## notices
 

@@ -68,7 +68,7 @@ kept on purpose. The full list of tables and columns is the [Data dictionary](re
   number, FACTS item code, branch code) are kept as **unique** columns, not keys, so they can be corrected without
   rewriting every reference.
 - **Composite keys** (15 tables) are used where a row is exactly "one A with one B": `user_company`, `user_branch`,
-  `branch_item`, `branch_ingredient`, `menu_item_modifier`, `platform_item_price`, `order_table`, `reservation_table`,
+  `branch_item`, `branch_ingredient`, `menu_item_modifier`, `platform_item_price (platform_id, location, item_id)`, `order_table`, `reservation_table`,
   `notice_read`, `number_series (branch_id, series)`, `erp_payment_mode (branch_id, code)`,
   `material_unit (company_id, item_code, unit)`, `item_unit (item_id, unit)`, `approval_reminder`, `sales_day_built`.
 - **Foreign keys** (237) tie every reference to its parent, so a row can't point at something that isn't there.

@@ -457,7 +457,7 @@ Administrators set up companies, branches, people and the link to FACTS. Most se
 
 1. **Companies & branches** → **Add branch**: name, address, phone, Arabic name and address.
 2. Set **Table service** or **Quick service**, the **Kitchen** switch, and **Day open and close** (Manual, Automatic or Cashier-run) with the usual float and the accepted variance.
-3. FACTS companies: fill **FACTS stock location** (location code, wastage location, item types, price type) and the approvers for wastage, marketing and stock requests.
+3. FACTS companies: fill **FACTS stock location** (location code, wastage location, item types, price type, platform prices from) and the approvers for wastage, marketing and stock requests.
 4. **Users**: give staff this branch under **Branches** and a **Till PIN**.
 5. **Devices** on each till PC: install the Device Service, choose the receipt printer, **Test print**.
 6. On each till, user menu → **Use this device as a till for (branch)**.
@@ -523,7 +523,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 
 ## Delivery platforms
 
-**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. **Track platform payouts in One POS** adds payouts to the platform report.
+**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in One POS** adds payouts to the platform report.
 
 ![Delivery platforms](images/platforms.jpg)
 
@@ -618,3 +618,4 @@ Still stuck? Use **Report a problem** in the header: describe what happened and 
 | RPO50 | FACTS repacking voucher: raw materials into made items (BOM). |
 | MCV50 | FACTS material consumption: marketing give-aways. |
 | Price type (PTM) | The FACTS price list a branch sells at. |
+| Platform prices from | The FACTS location whose delivery platform price lists a branch sells at. |
