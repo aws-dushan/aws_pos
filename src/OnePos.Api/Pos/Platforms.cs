@@ -90,7 +90,7 @@ public static class Platforms
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("pos.sell") && !scope.Can("reports.view")) scope.Require("branch.manage");
             return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<Row>("""
-                select dp.*, (select count(*) from platform_item_price pp where pp.platform_id = dp.id)::int as facts_priced
+                select dp.*, (select count(distinct pp.item_id) from platform_item_price pp where pp.platform_id = dp.id)::int as facts_priced
                 from delivery_platform dp order by dp.is_active desc, dp.sort, dp.name
                 """, transaction: tx));
         });

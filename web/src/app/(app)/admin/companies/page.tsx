@@ -24,7 +24,7 @@ type Branch = {
   id: string; companyId: string; code: string; name: string; address: string | null; phone: string | null; timeZone: string; tableService: boolean; askGuests: boolean;
   serviceChargePct: number; receiptHeader: string | null; receiptFooter: string | null; dayControl: DayControl; isActive: boolean; returnDays: number;
   kitchenEnabled: boolean; autoOpenTime: string; autoCloseTime: string; varianceTolerance: number; defaultFloat: number; openOrdersAtClose: "carry" | "void_unsent";
-  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; returnsEnabled: boolean; factsItemTypes: string | null; factsItemMaster: string | null; factsDivision: string | null;
+  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; factsPlatformLocation: string | null; returnsEnabled: boolean; factsItemTypes: string | null; factsItemMaster: string | null; factsDivision: string | null;
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
@@ -283,7 +283,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
 }) {
   const isNew = !!value && !value.branch;
   const blank = { code: "", name: "", address: "", phone: "", timeZone: "Asia/Dubai", tableService: true, askGuests: true, serviceChargePct: "0", receiptHeader: "", receiptFooter: "", dayControl: "manual" as DayControl, isActive: true, returnDays: "0",
-    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, returnsEnabled: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
+    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, factsPlatformLocation: "", returnsEnabled: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -293,7 +293,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
     setF(b ? { code: b.code, name: b.name, address: b.address ?? "", phone: b.phone ?? "", timeZone: b.timeZone, tableService: b.tableService, askGuests: b.askGuests,
       serviceChargePct: String(b.serviceChargePct), receiptHeader: b.receiptHeader ?? "", receiptFooter: b.receiptFooter ?? "", dayControl: b.dayControl, isActive: b.isActive, returnDays: String(b.returnDays),
       kitchenEnabled: b.kitchenEnabled, autoOpenTime: b.autoOpenTime.slice(0, 5), autoCloseTime: b.autoCloseTime.slice(0, 5), varianceTolerance: String(b.varianceTolerance),
-      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, returnsEnabled: b.returnsEnabled, factsItemTypes: (b.factsItemTypes ?? "FG").replace(/,/g, ", "), factsItemMaster: b.factsItemMaster ?? "", factsDivision: b.factsDivision ?? "",
+      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, factsPlatformLocation: b.factsPlatformLocation ?? "", returnsEnabled: b.returnsEnabled, factsItemTypes: (b.factsItemTypes ?? "FG").replace(/,/g, ", "), factsItemMaster: b.factsItemMaster ?? "", factsDivision: b.factsDivision ?? "",
       nameAr: b.nameAr ?? "", addressAr: b.addressAr ?? "", receiptLanguage: b.receiptLanguage, shortStock: b.shortStock, pickupMode: b.pickupMode, pickupMinutes: String(b.pickupMinutes),
       closeDelayMinutes: String(b.closeDelayMinutes ?? 15), closeDelayMaxMinutes: String(b.closeDelayMaxMinutes ?? 120) } : blank);
   }
@@ -366,7 +366,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><WarehouseIcon className="size-5" /></span>
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">FACTS stock location</div>
-                  <p className="text-xs text-muted-foreground">Stock on the register comes from this location, and this branch&apos;s returns go to it as STV documents. Its prices come from its price type.</p>
+                  <p className="text-xs text-muted-foreground">Stock on the register comes from this location, and this branch&apos;s returns go to it as STV documents. Its prices come from its price type, and delivery platform prices from the price lists of the location under Platform prices from.</p>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -390,6 +390,9 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                     <Switch on={f.factsPricesIncludeVat} onChange={(v) => set("factsPricesIncludeVat", v)} label="FACTS prices include VAT" />
                   </div>
                 )}
+                <Field label="Platform prices from" hint={f.factsPlatformLocation.trim() ? "Delivery platforms sell at their FACTS price lists (CPL50) of this location." : "Empty = no delivery platform prices at this branch."}>
+                  <Input value={f.factsPlatformLocation} maxLength={20} onChange={(e) => set("factsPlatformLocation", e.target.value.toUpperCase())} placeholder="FACTS location, e.g. ERBQS" />
+                </Field>
               </div>
               <p className="mt-2 text-xs text-muted-foreground">Picking it from the FACTS list arrives with the FACTS link; until then, type the code as it is in FACTS.</p>
 

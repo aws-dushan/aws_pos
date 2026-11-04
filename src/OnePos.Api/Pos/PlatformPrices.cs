@@ -7,8 +7,9 @@ namespace OnePos.Api.Pos;
 
 /// <summary>
 /// Delivery platform prices: a platform linked to its FACTS customer sells FACTS items at that customer's FACTS prices (read by the
-/// price sync into platform_item_price), VAT added where the branch's FACTS prices are before VAT. An item without a price there
-/// can't be sold on that platform. Items without a FACTS code, and unlinked platforms, keep the outlet's prices.
+/// price sync into platform_item_price per FACTS location), the lists of the branch's "Platform prices from" location, VAT added
+/// where the branch's FACTS prices are before VAT. An item without a price there (or a branch without that location) can't be sold
+/// on that platform. Items without a FACTS code, and unlinked platforms, keep the outlet's prices.
 /// </summary>
 public static class PlatformPrices
 {
@@ -22,7 +23,7 @@ public static class PlatformPrices
             select dp.name as Platform, dp.facts_customer is not null as Linked, i.erp_item_code is not null as FactsItem, pp.facts_price as FactsPrice,
                    b.facts_prices_include_vat as InclVat, co.vat_rate as VatRate
             from delivery_platform dp join menu_item i on i.id = @itemId join branch b on b.id = @branchId join company co on co.id = b.company_id
-            left join platform_item_price pp on pp.platform_id = dp.id and pp.item_id = i.id
+            left join platform_item_price pp on pp.platform_id = dp.id and pp.location = upper(b.facts_platform_location) and pp.item_id = i.id
             where dp.id = @platformId
             """, new { branchId, platformId, itemId }, tx);
         if (r is null || !r.Linked || !r.FactsItem) return (false, null, r?.Platform ?? "");
@@ -92,9 +93,10 @@ public static class PlatformPrices
         var vat = await c.QuerySingleAsync<(bool InclVat, decimal Rate)>(
             "select b.facts_prices_include_vat, co.vat_rate from branch b join company co on co.id = b.company_id where b.id = @branchId", new { branchId }, tx);
         var rows = (await c.QueryAsync<(Guid PlatformId, string Name, Guid? ItemId, decimal? FactsPrice)>("""
-            select dp.id, dp.name, pp.item_id, pp.facts_price from delivery_platform dp left join platform_item_price pp on pp.platform_id = dp.id
+            select dp.id, dp.name, pp.item_id, pp.facts_price from delivery_platform dp
+            left join platform_item_price pp on pp.platform_id = dp.id and pp.location = (select upper(facts_platform_location) from branch where id = @branchId)
             where dp.facts_customer is not null and dp.is_active
-            """, transaction: tx)).ToList();
+            """, new { branchId }, tx)).ToList();
         return rows.GroupBy(r => (r.PlatformId, r.Name)).OrderBy(g => g.Key.Name).Select(g => new
         {
             platformId = g.Key.PlatformId,

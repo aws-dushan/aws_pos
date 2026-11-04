@@ -17,7 +17,7 @@ public static class CompanyEndpoints
         string? NameAr = null, string? AddressAr = null, string? ReceiptLanguage = null, string? ShortStock = null,
         string? PickupMode = null, int? PickupMinutes = null, int? CloseDelayMinutes = null, int? CloseDelayMaxMinutes = null, string? FactsDocPrefix = null, string? ErpWasteLocation = null,
         string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null, string? FactsItemMaster = null,
-        string? FactsDivision = null);
+        string? FactsDivision = null, string? FactsPlatformLocation = null);
 
     public sealed class CompanyRow
     {
@@ -77,6 +77,8 @@ public static class CompanyEndpoints
         public string? FactsDocPrefix { get; set; }
         public string? ErpWasteLocation { get; set; }
         public string? FactsPriceType { get; set; }
+        /// <summary>The FACTS location whose delivery platform price lists (CPL50) this branch takes; null = no platform prices.</summary>
+        public string? FactsPlatformLocation { get; set; }
         public bool FactsPricesIncludeVat { get; set; } = true;
         public int CloseDelayMaxMinutes { get; set; } = 120;
         /// <summary>Wastage approval: the One POS user who approves, where requests are emailed, the FACTS username it is posted as.</summary>
@@ -209,8 +211,8 @@ public static class CompanyEndpoints
                       pickup_mode = @pickupMode, pickup_minutes = @pickupMinutes,
                       close_delay_minutes = @delayStep, close_delay_max_minutes = @delayMax, facts_doc_prefix = @docPrefix, erp_waste_location = @wasteLoc,
                       facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn,
-                      facts_item_types = @itemTypes, facts_item_master = @itemMaster, facts_division = @division where id = @id
-                    """, new { itemTypes = ItemTypes(body.FactsItemTypes ?? "") ?? "FG", itemMaster = Opt(body.FactsItemMaster)?.ToUpperInvariant(), division = Opt(body.FactsDivision),
+                      facts_item_types = @itemTypes, facts_item_master = @itemMaster, facts_division = @division, facts_platform_location = @platformLoc where id = @id
+                    """, new { platformLoc = Opt(body.FactsPlatformLocation)?.ToUpperInvariant(), itemTypes = ItemTypes(body.FactsItemTypes ?? "") ?? "FG", itemMaster = Opt(body.FactsItemMaster)?.ToUpperInvariant(), division = Opt(body.FactsDivision),
                                priceType = Opt(body.FactsPriceType), priceInclVat = body.FactsPricesIncludeVat ?? true, returnsOn = body.ReturnsEnabled ?? false, wasteLoc = Opt(body.ErpWasteLocation)?.ToUpperInvariant(), docPrefix = string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await AutoPrefixAsync(c, tx, companyId, id, b.Code) : await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix), delayStep = Math.Clamp(body.CloseDelayMinutes ?? 15, 5, 60), delayMax = Math.Clamp(body.CloseDelayMaxMinutes ?? 120, 0, 480), pickupMode = Pickup(body.PickupMode, "off"), pickupMinutes = Minutes(body.PickupMinutes, 10), nameAr = Opt(body.NameAr), addressAr = Opt(body.AddressAr), receiptLang = Lang(body.ReceiptLanguage, "bilingual"), shortStock = Short(body.ShortStock, "allow"), id, locCode = Opt(body.ErpLocationCode), locName = Opt(body.ErpLocationCode) is null ? null : Opt(body.ErpLocationName), days = Math.Clamp(body.ReturnDays ?? 0, 0, 365), kitchen = body.KitchenEnabled ?? true, autoOpen = Time(body.AutoOpenTime, d.AutoOpenTime),
                                autoClose = Time(body.AutoCloseTime, d.AutoCloseTime), tolerance = NonNegative(body.VarianceTolerance, d.VarianceTolerance, "variance tolerance"),
                                @float = NonNegative(body.DefaultFloat, d.DefaultFloat, "float"), atClose = AtClose(body.OpenOrdersAtClose, d.OpenOrdersAtClose) }, tx);
@@ -219,7 +221,7 @@ public static class CompanyEndpoints
                 return id;
             });
             if (Opt(body.ErpLocationCode) is not null) ReadPaymentModesSoon(facts, logs, companyId);
-            if (Opt(body.FactsPriceType) is not null) ReadPricesSoon(facts, logs, companyId);
+            if (Opt(body.FactsPriceType) is not null || Opt(body.FactsPlatformLocation) is not null) ReadPricesSoon(facts, logs, companyId);
             await live.ToCompany(companyId, "branches.changed");
             return Results.Ok(new { id });
         });
@@ -346,8 +348,9 @@ public static class CompanyEndpoints
                       pickup_mode = @pickupMode, pickup_minutes = @pickupMinutes,
                       close_delay_minutes = @delayStep, close_delay_max_minutes = @delayMax, facts_doc_prefix = @docPrefix, erp_waste_location = @wasteLoc,
                       facts_price_type = @priceType, facts_prices_include_vat = @priceInclVat, returns_enabled = @returnsOn, facts_item_types = @itemTypes,
-                      facts_item_master = @itemMaster, facts_division = @division where id = @id
-                    """, new { itemTypes = body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes),
+                      facts_item_master = @itemMaster, facts_division = @division, facts_platform_location = @platformLoc where id = @id
+                    """, new { platformLoc = body.FactsPlatformLocation is null ? old.FactsPlatformLocation : Opt(body.FactsPlatformLocation)?.ToUpperInvariant(),
+                               itemTypes = body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes),
                                itemMaster = body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant(),
                                division = body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision), priceType = body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType),
                                priceInclVat = body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat, returnsOn = body.ReturnsEnabled ?? old.ReturnsEnabled,
@@ -384,13 +387,15 @@ public static class CompanyEndpoints
                     new("ERP stock location", old.ErpLocationCode, body.ErpLocationCode is null ? old.ErpLocationCode : Opt(body.ErpLocationCode)),
                     new("FACTS price type", old.FactsPriceType, body.FactsPriceType is null ? old.FactsPriceType : Opt(body.FactsPriceType)),
                     new("FACTS prices include VAT", old.FactsPricesIncludeVat, body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat),
+                    new("Platform prices from", old.FactsPlatformLocation, body.FactsPlatformLocation is null ? old.FactsPlatformLocation : Opt(body.FactsPlatformLocation)?.ToUpperInvariant()),
                     new("Returns", old.ReturnsEnabled, body.ReturnsEnabled ?? old.ReturnsEnabled),
                     new("FACTS item types", old.FactsItemTypes, body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes)),
                     new("FACTS item master", old.FactsItemMaster, body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant()),
                     new("FACTS division", old.FactsDivision, body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision)),
                 ]);
                 var prices = (body.FactsPriceType is not null && Opt(body.FactsPriceType) != old.FactsPriceType)
-                             || (body.FactsPricesIncludeVat is { } v && v != old.FactsPricesIncludeVat);
+                             || (body.FactsPricesIncludeVat is { } v && v != old.FactsPricesIncludeVat)
+                             || (body.FactsPlatformLocation is not null && Opt(body.FactsPlatformLocation)?.ToUpperInvariant() != old.FactsPlatformLocation);
                 return (Location: body.ErpLocationCode is not null && Opt(body.ErpLocationCode) is not null && Opt(body.ErpLocationCode) != old.ErpLocationCode, Prices: prices,
                         Items: (body.FactsItemTypes is not null && ItemTypes(body.FactsItemTypes) != old.FactsItemTypes)
                                || (body.FactsItemMaster is not null && Opt(body.FactsItemMaster)?.ToUpperInvariant() != old.FactsItemMaster)

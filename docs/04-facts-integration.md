@@ -11,7 +11,9 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 - Reads open the connection with `ApplicationIntent=ReadOnly` and run SELECTs only.
 - Posting uses the same connection with `ApplicationName = "One POS posting"` and calls procedures only.
 - Each branch maps to a FACTS **location** (e.g. ERBQS Al Qusais), a **wastage location** (e.g. WEBQS), the item types /
-  item master / division on its menu, and a **price type** (PTM). Set under Companies & branches → branch → FACTS stock location.
+  item master / division on its menu, a **price type** (PTM) and **Platform prices from**: the FACTS location whose delivery
+  platform price lists (CPL50) it sells at, e.g. ERBQS (one branch can use another's lists). Set under Companies & branches →
+  branch → FACTS stock location.
 
 ![The FACTS connection dialog: tested, encrypted, never shown again](manual/images/tech-facts-connection.jpg)
 
@@ -23,7 +25,7 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 | --- | --- | --- |
 | Items | `STOCK_MASTER` of the branch's item types / master / division; sub-category (`STK_GRP2`) as menu category; stock unit, its other units (`STOCK_UNIT`) and their decimals (`UNIT_MASTER`) | Hourly, or **Sync items** |
 | Outlet prices | `STOCK_PRICE` of the branch's price type (`PRICE_TYPE_MASTER`), VAT added where the branch's prices are before VAT | Every 5 min, or **Sync prices** |
-| Platform prices | The platform customer's price list (CPL50), newest valid list wins | With prices |
+| Platform prices | The platform customer's price lists (CPL50) of the location set as the branch's **Platform prices from** (e.g. ERBQS); newest valid list wins. A branch without it has no platform prices | With prices |
 | Stock | `STOCK_LOCATION_MASTER` of the branch's location | Every 5 min, or **Sync stock** |
 | Payment methods | `PAYMENT_METHOD` names starting with the location code (e.g. "ERBQS VISA CARD", "ERBQS Talabat") | Hourly, and when a location is set |
 | BOMs | Outlet bills of materials (BOMO50) | With the regular sync, or **Sync from FACTS** |

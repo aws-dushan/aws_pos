@@ -68,8 +68,8 @@ public static class StockReport
                     "select id, name from delivery_platform where facts_customer is not null and is_active order by sort, name", transaction: tx)).ToList();
                 var prices = (await c.QueryAsync<(Guid PlatformId, Guid ItemId, decimal FactsPrice)>("""
                     select pp.platform_id, pp.item_id, pp.facts_price from platform_item_price pp join delivery_platform dp on dp.id = pp.platform_id
-                    where dp.facts_customer is not null and dp.is_active
-                    """, transaction: tx)).ToDictionary(p => (p.PlatformId, p.ItemId), p => Money.Round(vat.InclVat ? p.FactsPrice : p.FactsPrice * (1 + vat.Rate / 100m)));
+                    where dp.facts_customer is not null and dp.is_active and pp.location = (select upper(facts_platform_location) from branch where id = @branchId)
+                    """, new { branchId }, tx)).ToDictionary(p => (p.PlatformId, p.ItemId), p => Money.Round(vat.InclVat ? p.FactsPrice : p.FactsPrice * (1 + vat.Rate / 100m)));
                 foreach (var r in rows)
                     foreach (var p in platforms)
                         // Items without a FACTS code sell at the outlet's price on every platform.
