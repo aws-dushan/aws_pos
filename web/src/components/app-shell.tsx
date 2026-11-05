@@ -243,7 +243,7 @@ function ScopeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<button type="button" className="min-w-0">{chip}</button>} />
-      <DropdownMenuContent className="max-h-[70vh] w-72" align="start">
+      <DropdownMenuContent className="max-h-[70vh] w-max max-w-[calc(100vw-2rem)] min-w-72" align="start">
         {me.companies.map((c, i) => (
           <DropdownMenuGroup key={c.id}>
             {i > 0 && <DropdownMenuSeparator />}
@@ -252,7 +252,7 @@ function ScopeSwitcher() {
             </DropdownMenuLabel>
             {c.branches.length ? c.branches.map((b) => (
               <DropdownMenuItem key={b.id} onClick={() => switchTo(c.id, b.id)} className={b.isActive ? "" : "text-muted-foreground"}>
-                <span className="flex-1 pl-7">{b.name} <span className="font-mono text-[0.7rem] text-muted-foreground">{b.code}</span></span>
+                <span className="flex-1 pl-7 whitespace-nowrap">{b.name} <span className="font-mono text-[0.7rem] text-muted-foreground">{b.code}</span></span>
                 {b.id === branch?.id && <CheckIcon className="size-4 text-primary" />}
               </DropdownMenuItem>
             )) : (
