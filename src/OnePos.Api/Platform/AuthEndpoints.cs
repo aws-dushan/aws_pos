@@ -164,7 +164,7 @@ public static class AuthEndpoints
                     where b.company_id = any(@companyIds) and (b.is_active or @isAdmin)
                       and (@isAdmin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @id))
                       and (@tillBranch is null or b.id = @tillBranch)
-                    order by b.name
+                    order by b.code
                     """, new { me.Id, isAdmin = user.IsAdmin, companyIds = companies.Select(x => x.Id).ToArray(), tillBranch = me.TillBranchId }, tx)).ToList();
                 return new
                 {
