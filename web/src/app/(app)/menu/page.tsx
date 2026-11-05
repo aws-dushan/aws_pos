@@ -137,7 +137,7 @@ export default function MenuPage() {
                             <div className="font-medium">{i.name} {i.nameAr && <span className="text-sm text-muted-foreground" dir="rtl">· {i.nameAr}</span>}</div>
                             <div className="text-xs text-muted-foreground">{i.station === "bar" ? "Bar" : i.station === "kitchen" ? "Kitchen" : "No station"}{i.groupIds.length ? ` · ${i.groupIds.map((g) => m.groups.find((x) => x.id === g)?.name).filter(Boolean).join(", ")}` : ""}</div>
                           </div>
-                          <div className="text-right">
+                          <div className="shrink-0 whitespace-nowrap text-right">
                             {noPrice(i) ? <div className="text-sm font-medium text-warning">{i.erpPriced ? "No FACTS price" : "No price"}</div> : <div className="font-heading font-semibold tabular-nums">{fmtIn(i.branchPrice ?? i.price, 2)}</div>}
                             {i.branchPrice !== null && !i.erpPriced && <div className="text-xs text-muted-foreground line-through tabular-nums">{fmtIn(i.price, 2)}</div>}
                           </div>
