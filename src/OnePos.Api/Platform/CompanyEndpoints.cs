@@ -183,7 +183,7 @@ public static class CompanyEndpoints
             return await db.Company(companyId, async (c, tx) => (await c.QueryAsync<BranchRow>("""
                 select * from branch b
                 where @all or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @userId)
-                order by b.name
+                order by b.code
                 """, new { all = scope.IsAdmin || scope.Can("branch.manage"), scope.UserId }, tx)).ToList());
         });
 
