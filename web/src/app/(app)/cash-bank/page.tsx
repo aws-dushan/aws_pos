@@ -9,7 +9,7 @@ import { useLiveEvent } from "@/components/live";
 import { EmptyState, ErrorNote, LoadingRows, PageHeader, StatTile, TablePanel } from "@/components/kit";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type Day = { date: string; broughtForward: number; cashSales: number; refunds: number; deposited: number; carriedForward: number };
+type Day = { date: string; broughtForward: number; cashSales: number; refunds: number; added: number; remarks: string | null; deposited: number; carriedForward: number };
 type Deposit = { date: string; amount: number; bagNo: string | null; takenBy: string; register: string | null; at: string };
 type BranchOwed = { id: string; code: string; name: string; owed: number; oldest: string | null };
 type CashBank = { from: string; owed: number; oldest: string | null; depositedThisMonth: number; days: Day[]; deposits: Deposit[]; branches: BranchOwed[] };
@@ -26,6 +26,8 @@ export default function CashBankPage() {
   useLiveEvent(["day.changed", "order.changed"], () => data.reload());
   const d = data.data;
   const late = d?.oldest ? daysSince(d.oldest) : 0;
+  // Amounts added by hand (e.g. cash held from before One POS): their own column, only when there are any.
+  const anyAdded = !!d?.days.some((r) => r.added);
 
   return (
     <div>
@@ -69,7 +71,7 @@ export default function CashBankPage() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead className="pl-5">Day</TableHead><TableHead className="text-right">Brought forward</TableHead><TableHead className="text-right">Cash sales</TableHead>
-                  <TableHead className="text-right">Cash refunds</TableHead><TableHead className="text-right">Deposited</TableHead><TableHead className="pr-5 text-right">Carried forward</TableHead>
+                  <TableHead className="text-right">Cash refunds</TableHead>{anyAdded && <TableHead>Added to owed</TableHead>}<TableHead className="text-right">Deposited</TableHead><TableHead className="pr-5 text-right">Carried forward</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {d.days.map((r) => (
@@ -78,6 +80,11 @@ export default function CashBankPage() {
                       <TableCell className="text-right tabular-nums text-muted-foreground">{money(r.broughtForward)}</TableCell>
                       <TableCell className="text-right tabular-nums">{money(r.cashSales)}</TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">{r.refunds ? `−${money(r.refunds)}` : "—"}</TableCell>
+                      {anyAdded && (
+                        <TableCell className="max-w-64">
+                          {r.added ? <><span className="tabular-nums">{r.added > 0 ? "+" : "−"}{money(Math.abs(r.added))}</span>{r.remarks && <div className="text-xs text-muted-foreground">{r.remarks}</div>}</> : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
+                      )}
                       <TableCell className="text-right tabular-nums">{r.deposited ? `−${money(r.deposited)}` : "—"}</TableCell>
                       <TableCell className={cn("pr-5 text-right font-medium tabular-nums", r.carriedForward > 0 && "text-warning")}>{money(r.carriedForward)}</TableCell>
                     </TableRow>

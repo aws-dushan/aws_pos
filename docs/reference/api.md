@@ -60,7 +60,7 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/cash-bank` | reports.view, day.manage | src/OnePos.Api/Pos/CashToBank.cs:21 |
+| GET | `/api/cash-bank` | reports.view, day.manage | src/OnePos.Api/Pos/CashToBank.cs:26 |
 
 ## companies
 
