@@ -190,7 +190,8 @@ public static class Platforms
             if (to < from || to.DayNumber - from.DayNumber > 366) throw new DomainException("Choose up to a year, from before to.");
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                Guid[] ids = all == true ? (await c.QueryAsync<Guid>("select id from branch", transaction: tx)).ToArray() : [scope.Branch];
+                // All branches = the ones this user works in (every branch for an administrator).
+                Guid[] ids = all == true ? await Reports.MyBranchesAsync(c, tx, scope) : [scope.Branch];
                 var rows = (await c.QueryAsync<SummaryRow>("""
                     select p.id, p.name, p.commission_pct, p.bank_fee_pct, count(o.id)::int as orders, coalesce(sum(o.total), 0) as sales, coalesce(sum(o.refunded), 0) as refunded,
                            coalesce(sum((o.total - o.refunded) * coalesce(o.platform_commission, 0) / 100), 0) as commission,
@@ -260,11 +261,14 @@ public static class Platforms
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("reports.view")) scope.Require("branch.manage");
-            var b = all == true ? (Guid?)null : scope.Branch;
-            return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<PayoutRow>($"""
-                {PayoutSql} where x.voided_at is null and x.received_on between @from and @to and (@b::uuid is null or x.branch_id = @b)
-                order by x.received_on desc, x.recorded_at desc
-                """, new { from, to, b }, tx));
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                Guid[] ids = all == true ? await Reports.MyBranchesAsync(c, tx, scope) : [scope.Branch];
+                return await c.QueryAsync<PayoutRow>($"""
+                    {PayoutSql} where x.voided_at is null and x.received_on between @from and @to and x.branch_id = any(@ids)
+                    order by x.received_on desc, x.recorded_at desc
+                    """, new { from, to, ids }, tx);
+            });
         });
 
         // A payout recorded against the wrong branch (or assigned wrongly when payouts became per branch): moved to another.
