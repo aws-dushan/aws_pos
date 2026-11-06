@@ -79,26 +79,50 @@ export default function MenuPage() {
       )}
       {menu.loading && !m ? <LoadingRows /> : !m ? null : tab === "groups" ? (
         m.groups.length ? (
-          <Stagger className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {m.groups.map((g) => (
-              <StaggerItem key={g.id} className="h-full">
-                <button type="button" onClick={() => setEditGroup(g)} data-module="inv" className="group surface card-lift flex h-full w-full flex-col p-5 text-left">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="font-heading text-base font-semibold">{g.name}</div>
-                      <div className="text-xs text-muted-foreground">{g.minSelect ? `Required · choose ${g.minSelect === g.maxSelect ? g.minSelect : `${g.minSelect}–${g.maxSelect}`}` : `Optional · up to ${g.maxSelect}`}</div>
+          <>
+            <p className="mb-3 text-sm text-muted-foreground">{branch?.name ?? "This branch"}&apos;s option groups, at its prices. Each branch makes its own; other branches don&apos;t see these.</p>
+            <Stagger className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {m.groups.map((g) => (
+                <StaggerItem key={g.id} className="h-full">
+                  <button type="button" onClick={() => setEditGroup(g)} data-module="inv" className="group surface card-lift flex h-full w-full flex-col p-5 text-left">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="font-heading text-base font-semibold">{g.name}</div>
+                        <div className="text-xs text-muted-foreground">{g.minSelect ? `Required · choose ${g.minSelect === g.maxSelect ? g.minSelect : `${g.minSelect}–${g.maxSelect}`}` : `Optional · up to ${g.maxSelect}`}</div>
+                      </div>
+                      <span className="hover-hop flex size-10 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><LayersIcon className="size-[1.1rem]" /></span>
                     </div>
-                    <span className="hover-hop flex size-10 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><LayersIcon className="size-[1.1rem]" /></span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {g.options.filter((o) => o.isActive).map((o) => <Pill key={o.id}>{o.name}{o.noPrice ? " · no FACTS price" : o.price ? ` +${fmtIn(o.price, 2)}` : ""}{o.factsPrice && !o.noPrice ? " (FACTS)" : ""}</Pill>)}
-                  </div>
-                  <div className="mt-3 text-xs text-muted-foreground">Used by {m.items.filter((i) => i.groupIds.includes(g.id)).length} items</div>
-                </button>
-              </StaggerItem>
-            ))}
-          </Stagger>
-        ) : <EmptyState icon={LayersIcon} title="No option groups yet" module="inv" action={<Button size="lg" onClick={() => setEditGroup("new")}><PlusIcon /> New group</Button>}>Groups like Size, Spice level or Extras, with a price per option.</EmptyState>
+                    <div className="mt-3 divide-y text-sm">
+                      {g.options.filter((o) => o.isActive).map((o) => {
+                        const it = o.itemId ? m.items.find((x) => x.id === o.itemId) : null;
+                        return (
+                          <div key={o.id} className="py-1.5">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <span className="min-w-0 truncate">{o.name}{it?.erpItemCode ? <span className="ml-1.5 font-mono text-[0.7rem] text-muted-foreground">{it.erpItemCode}</span> : null}</span>
+                              <span className={cn("shrink-0 whitespace-nowrap tabular-nums", o.noPrice ? "text-xs font-medium text-warning" : "font-medium")}>
+                                {o.noPrice ? "No FACTS price" : o.factsPrice ? `${cur} ${fmtIn(o.price, 2)}` : o.price ? `+ ${cur} ${fmtIn(o.price, 2)}` : "Included"}
+                              </span>
+                            </div>
+                            {/* A FACTS-priced option charges its item's platform price on a platform's bill; none = it can't be chosen there. */}
+                            {o.factsPrice && o.itemId && !!m.platformPrices?.length && (
+                              <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                                {m.platformPrices.map((p) => {
+                                  const pp = p.prices[o.itemId!];
+                                  return <span key={p.platformId}>{p.name} {pp === undefined ? <span className="text-warning">no price</span> : <span className="tabular-nums">{fmtIn(pp, 2)}</span>}</span>;
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-auto pt-3 text-xs text-muted-foreground">Used by {m.items.filter((i) => i.groupIds.includes(g.id)).length} items here</div>
+                  </button>
+                </StaggerItem>
+              ))}
+            </Stagger>
+          </>
+        ) : <EmptyState icon={LayersIcon} title={`No option groups at ${branch?.name ?? "this branch"} yet`} module="inv" action={<Button size="lg" onClick={() => setEditGroup("new")}><PlusIcon /> New group</Button>}>Groups like Size, Spice level or Extras, with a price per option. Each branch makes its own.</EmptyState>
       ) : (
         <div className="grid gap-4 md:grid-cols-[210px_minmax(0,1fr)] lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-5">
           <aside className="surface h-fit overflow-hidden">
@@ -287,7 +311,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
         <form onSubmit={save} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{existing ? existing.name : f.isCombo ? "New combo" : "New item"}</DialogTitle>
-            <DialogDescription>Shown on every branch&apos;s register in its category.</DialogDescription>
+            <DialogDescription>{f.isCombo ? `Sold only at ${branchName ?? "this branch"}: each branch makes its own combos.` : "Shown on every branch's register in its category."}</DialogDescription>
           </DialogHeader>
           <PhotoPicker current={photo === "remove" ? null : photo ? photo.url : existing && companyId ? imageUrl(companyId, existing) : null} name={f.name || "New item"}
             onPick={async (file) => { try { const blob = await shrinkImage(file); setPhoto({ blob, url: URL.createObjectURL(blob) }); } catch (e) { toast.error((e as Error).message || "Couldn't read the photo."); } }}
@@ -311,11 +335,11 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
             <Segmented id="station" value={f.station} onChange={(v) => setF({ ...f, station: v })} className="w-full"
               options={[{ value: "kitchen", label: "Kitchen" }, { value: "bar", label: "Bar" }, { value: "none", label: "Nowhere (ready to sell)" }]} />
           </Field>
-          {!fromFacts && <div data-module="appr" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
+          {!fromFacts && !existing && <div data-module="appr" className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
             <span className="text-sm"><span className="font-medium">This is a combo</span> <span className="text-muted-foreground">· one price for a set of items the customer chooses, e.g. a main + a drink</span></span>
             <Switch on={f.isCombo} onChange={(v) => setF({ ...f, isCombo: v, station: v ? "none" : f.station })} label="Combo" />
           </div>}
-          <Field label={f.isCombo ? "Combo choices" : "Option groups"} hint={f.isCombo ? "Tap the choice groups this combo offers, e.g. Choose a main, Choose a drink. Make them in the Option groups tab, linking each option to a menu item. Every choice must be a menu item; FACTS gets each chosen item with its own code, at the price set on the choice." : "Tap to attach. Required groups must be chosen at the register."}>
+          <Field label={f.isCombo ? "Combo choices" : "Option groups"} hint={f.isCombo ? "Tap the choice groups this combo offers, e.g. Choose a main, Choose a drink. Make them in the Option groups tab, linking each option to a menu item. Every choice must be a menu item; FACTS gets each chosen item with its own code, at the price set on the choice." : `Tap to attach. Required groups must be chosen at the register. These are ${branchName ?? "this branch"}'s groups: other branches attach their own.`}>
             <div className="flex flex-wrap gap-2">
               {menu.groups.map((g) => {
                 const on = f.groupIds.includes(g.id);
@@ -326,7 +350,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
                   </button>
                 );
               })}
-              {!menu.groups.length && <span className="text-sm text-muted-foreground">No groups yet (Option groups tab).</span>}
+              {!menu.groups.length && <span className="text-sm text-muted-foreground">No groups at {branchName ?? "this branch"} yet (Option groups tab).</span>}
             </div>
           </Field>
           {f.groupIds.some((id) => menu.groups.find((g) => g.id === id && g.maxSelect > 1)) && (
@@ -517,7 +541,7 @@ function GroupDialog({ value, items, currency, onClose, onSaved }: { value: Modi
         <form onSubmit={save} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{value === "new" ? "New option group" : `Options · ${name}`}</DialogTitle>
-            <DialogDescription>e.g. Size (required, one), Extras (optional, up to 3).</DialogDescription>
+            <DialogDescription>e.g. Size (required, one), Extras (optional, up to 3). It belongs to this branch: other branches make their own.</DialogDescription>
           </DialogHeader>
           <Field label="Name" required><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
           <div className="grid gap-4 sm:grid-cols-2">

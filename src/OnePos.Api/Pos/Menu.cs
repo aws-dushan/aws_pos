@@ -37,6 +37,8 @@ public static class Menu
     {
         public Guid Id { get; set; }
         public Guid CategoryId { get; set; }
+        /// <summary>A combo's branch (it belongs to the branch it was made at); null on shared items.</summary>
+        public Guid? BranchId { get; set; }
         public string Name { get; set; } = "";
         public string? NameAr { get; set; }
         public string? Description { get; set; }
@@ -91,10 +93,18 @@ public static class Menu
     public sealed class Group
     {
         public Guid Id { get; set; }
+        /// <summary>The branch it belongs to (made there); only that branch sees it.</summary>
+        public Guid BranchId { get; set; }
         public string Name { get; set; } = "";
         public int MinSelect { get; set; }
         public int MaxSelect { get; set; }
         public List<Option> Options { get; set; } = [];
+    }
+
+    /// <summary>A group is changed only with its own branch chosen at the top.</summary>
+    private static void OwnBranch(Group g, Scope scope)
+    {
+        if (g.BranchId != scope.BranchId) throw new DomainException($"{g.Name} is another branch's option group: change it with that branch chosen at the top.");
     }
 
     public sealed class Option
@@ -178,20 +188,26 @@ public static class Menu
                 // A FACTS company's items come from FACTS (the item sync); only combos are made here.
                 if (b.IsCombo != true && await c.ExecuteScalarAsync<bool>("select erp_connector = 'facts' from company", transaction: tx))
                     throw new DomainException("Items come from FACTS (the item sync). Here you can add combos.");
-                await CheckRefsAsync(c, tx, b);
+                // A combo belongs to the branch it is made at: only that branch sees and sells it.
+                var combo = b.IsCombo == true;
+                if (combo && scope.BranchId is null) throw new DomainException("Choose the branch at the top first: a combo belongs to one branch.");
+                var groupBranch = scope.BranchId;
+                await CheckRefsAsync(c, tx, b, groupBranch);
                 var sort = b.Sort ?? await c.ExecuteScalarAsync<int>("select coalesce(max(sort), 0) + 1 from menu_item where category_id = @CategoryId", new { b.CategoryId }, tx);
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into menu_item (company_id, category_id, name, name_ar, description, price, station, erp_item_code, sort, is_combo)
-                    values (@co, @CategoryId, @Name, @NameAr, @Description, @Price, @Station, @ErpItemCode, @sort, @combo) returning id
-                    """, new { co = scope.CompanyId, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, sort, combo = b.IsCombo == true }, tx);
-                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
+                    insert into menu_item (company_id, category_id, name, name_ar, description, price, station, erp_item_code, sort, is_combo, branch_id)
+                    values (@co, @CategoryId, @Name, @NameAr, @Description, @Price, @Station, @ErpItemCode, @sort, @combo, @comboBranch) returning id
+                    """, new { co = scope.CompanyId, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, sort, combo,
+                               comboBranch = combo ? scope.BranchId : null }, tx);
+                await SetGroupsAsync(c, tx, scope.CompanyId, id, groupBranch, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
-                // Sold only at the branch it was made at; the others switch it on (Sell here).
+                // Sold only at the branch it was made at; the others switch it on (Sell here). A combo is never sold elsewhere.
                 if (scope.BranchId is { } here)
                     await c.ExecuteAsync("""
                         insert into branch_item (company_id, branch_id, item_id, is_sold) select @co, br.id, @id, br.id = @here from branch br
+                        where not @combo or br.id = @here
                         on conflict (branch_id, item_id) do update set is_sold = excluded.is_sold
-                        """, new { co = scope.CompanyId, id, here }, tx);
+                        """, new { co = scope.CompanyId, id, here, combo }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.BranchId, scope.UserId, "menu_item", id.ToString(), "created", $"Menu item {b.Name} created",
                     Audit.Created(("Price", b.Price), ("Station", b.Station)));
                 return id;
@@ -214,14 +230,18 @@ public static class Menu
                     if ((b.IsCombo ?? old.IsCombo) != old.IsCombo) throw new DomainException(old.IsCombo ? "A combo stays a combo." : "An item from FACTS can't become a combo: add a new combo instead.");
                     if (!old.IsCombo && b.ErpItemCode != old.ErpItemCode) throw new DomainException("The FACTS item code can't change here: it links the item to FACTS.");
                 }
-                await CheckRefsAsync(c, tx, b);
+                if (old.IsCombo && old.BranchId != scope.BranchId) throw new DomainException($"{old.Name} is another branch's combo: change it with that branch chosen at the top.");
+                if ((b.IsCombo ?? old.IsCombo) != old.IsCombo) throw new DomainException(old.IsCombo ? "A combo stays a combo." : "An item can't become a combo: add a new combo instead.");
+                // The groups asked here: a combo's are its branch's; a shared item's are the chosen branch's (other branches keep theirs).
+                var groupBranch = old.IsCombo ? old.BranchId : scope.BranchId;
+                await CheckRefsAsync(c, tx, b, groupBranch);
                 await c.ExecuteAsync("""
                     update menu_item set category_id = @CategoryId, name = @Name, name_ar = @NameAr, description = @Description, price = @Price,
                       station = @Station, erp_item_code = @ErpItemCode, sort = @Sort, is_active = @IsActive, is_combo = @combo,
                       needs_price = case when @Price > 0 then false else needs_price end, erp_new = false where id = @id
                     """, new { id, b.CategoryId, b.Name, b.NameAr, b.Description, b.Price, b.Station, b.ErpItemCode, Sort = b.Sort ?? old.Sort, IsActive = b.IsActive ?? old.IsActive,
                                combo = b.IsCombo ?? old.IsCombo }, tx);
-                await SetGroupsAsync(c, tx, scope.CompanyId, id, b.GroupIds ?? [], b.GroupCounts);
+                await SetGroupsAsync(c, tx, scope.CompanyId, id, groupBranch, b.GroupIds ?? [], b.GroupCounts);
                 await CheckComboAsync(c, tx, id, null);
                 // Contents chosen at the till: only for an item made from a FACTS BOM.
                 var contents = b.BomContents ?? old.BomContents;
@@ -283,8 +303,9 @@ public static class Menu
             if (body.Price is < 0) throw new DomainException("A price can't be negative.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var (name, isCombo) = await c.QuerySingleOrDefaultAsync<(string? Name, bool IsCombo)>("select name, is_combo from menu_item where id = @id", new { id }, tx);
+                var (name, isCombo, comboBranch) = await c.QuerySingleOrDefaultAsync<(string? Name, bool IsCombo, Guid? Branch)>("select name, is_combo, branch_id from menu_item where id = @id", new { id }, tx);
                 if (name is null) throw new NotFoundException("Item not found.");
+                if (isCombo && comboBranch != branchId) throw new DomainException($"{name} is another branch's combo: each branch makes its own combos.");
                 if (isCombo && body.Price is not null) throw new DomainException($"{name} is a combo: its price is the prices on its choices.");
                 var was = await c.QuerySingleOrDefaultAsync<(decimal? Price, bool ErpPriced)>(
                     "select price, erp_priced from branch_item where branch_id = @branchId and item_id = @id for update", new { branchId, id }, tx);
@@ -335,12 +356,14 @@ public static class Menu
             var scope = await http.ScopeAsync(db);
             scope.Require("menu.manage");
             var b = Clean(body);
+            // A group belongs to the branch it is made at: only that branch sees it and asks it at the till.
+            var branchId = scope.BranchId ?? throw new DomainException("Choose the branch at the top first: an option group belongs to one branch.");
             var id = await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var id = await c.ExecuteScalarAsync<Guid>("insert into modifier_group (company_id, name, min_select, max_select) values (@co, @Name, @MinSelect, @MaxSelect) returning id",
-                    new { co = scope.CompanyId, b.Name, b.MinSelect, b.MaxSelect }, tx);
+                var id = await c.ExecuteScalarAsync<Guid>("insert into modifier_group (company_id, branch_id, name, min_select, max_select) values (@co, @branchId, @Name, @MinSelect, @MaxSelect) returning id",
+                    new { co = scope.CompanyId, branchId, b.Name, b.MinSelect, b.MaxSelect }, tx);
                 await SetOptionsAsync(c, tx, scope.CompanyId, id, b.Options ?? []);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "modifier_group", id.ToString(), "created", $"Modifier group {b.Name} created");
+                await Audit.RecordAsync(c, tx, scope.CompanyId, branchId, scope.UserId, "modifier_group", id.ToString(), "created", $"Modifier group {b.Name} created");
                 return id;
             });
             await live.ToCompany(scope.CompanyId, "menu.changed");
@@ -355,10 +378,11 @@ public static class Menu
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var old = await c.QuerySingleOrDefaultAsync<Group>("select * from modifier_group where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Modifier group not found.");
+                OwnBranch(old, scope);
                 await c.ExecuteAsync("update modifier_group set name = @Name, min_select = @MinSelect, max_select = @MaxSelect where id = @id", new { id, b.Name, b.MinSelect, b.MaxSelect }, tx);
                 await SetOptionsAsync(c, tx, scope.CompanyId, id, b.Options ?? []);
                 await CheckComboAsync(c, tx, null, id);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "modifier_group", id.ToString(), "changed", $"Modifier group {old.Name} changed",
+                await Audit.RecordAsync(c, tx, scope.CompanyId, old.BranchId, scope.UserId, "modifier_group", id.ToString(), "changed", $"Modifier group {old.Name} changed",
                     [new("Name", old.Name, b.Name), new("Min", old.MinSelect, b.MinSelect), new("Max", old.MaxSelect, b.MaxSelect)]);
                 return 0;
             });
@@ -374,9 +398,10 @@ public static class Menu
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var old = await c.QuerySingleOrDefaultAsync<Group>("select * from modifier_group where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Modifier group not found.");
+                OwnBranch(old, scope);
                 var items = (await c.QueryAsync<string>("select i.name from menu_item_modifier m join menu_item i on i.id = m.item_id where m.group_id = @id order by i.name", new { id }, tx)).ToList();
                 await c.ExecuteAsync("delete from modifier_group where id = @id", new { id }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "modifier_group", id.ToString(), "deleted", $"Modifier group {old.Name} deleted",
+                await Audit.RecordAsync(c, tx, scope.CompanyId, old.BranchId, scope.UserId, "modifier_group", id.ToString(), "deleted", $"Modifier group {old.Name} deleted",
                     [new("Items", items.Count == 0 ? "none" : string.Join(", ", items), null)]);
                 return 0;
             });
@@ -396,7 +421,10 @@ public static class Menu
               select l.item_id, po.closed_at, l.qty from pos_order po join order_line l on l.order_id = po.id
               where po.branch_id = @branchId and po.status in ('paid','refunded') and not l.is_void
                 and po.closed_at > greatest((select min(erp_stock_at) from branch_item where branch_id = @branchId and erp_stock is not null), now() - interval '1 day'))
-            select i.*, i.image_file is not null as has_image, coalesce(array(select m.group_id from menu_item_modifier m where m.item_id = i.id order by m.sort), '{}') as group_ids,
+            select i.*, i.image_file is not null as has_image,
+                   -- The groups asked here: only this branch's own (each branch makes its own groups).
+                   coalesce(array(select m.group_id from menu_item_modifier m join modifier_group g on g.id = m.group_id and g.branch_id = @branchId
+                                  where m.item_id = i.id order by m.sort), '{}') as group_ids,
                    coalesce(bi.is_sold, i.erp_item_code is null) as is_sold, bi.price as branch_price, coalesce(bi.sold_out_date = @today, false) as sold_out,
                    coalesce(bi.erp_priced, false) as erp_priced, bi.erp_stock, bi.erp_stock_at,
                    coalesce(mto.yes, false) as made_to_order,
@@ -417,12 +445,17 @@ public static class Menu
                                where b.item_code = i.erp_item_code and b.item_type = i.erp_item_type
                                  and (b.ended_from is null or b.ended_from > coalesce(@today, current_date)) limit 1) mto on true
             where (not @activeOnly or (i.is_active and cat.is_active and coalesce(bi.is_sold, i.erp_item_code is null)))
+              -- A combo belongs to its branch: no other branch sees it.
+              and (not i.is_combo or i.branch_id = @branchId)
               -- A branch shows only FACTS items matching its own settings (item types, item master, division); its own items (no FACTS code) always.
               and (br.id is null or i.erp_item_code is null or ((i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, 'FG'), ','))) and (br.facts_item_master is null or i.erp_item_type is null or i.erp_item_type = br.facts_item_master) and (br.facts_division is null or i.erp_division is null or i.erp_division = br.facts_division)))
             order by i.sort, i.name
             """, new { branchId, today, activeOnly }, tx)).ToList();
-        var groups = (await c.QueryAsync<Group>("select * from modifier_group order by name", transaction: tx)).ToList();
-        var options = (await c.QueryAsync<Option>("select * from modifier_option where (not @activeOnly or is_active) order by sort, name", new { activeOnly }, tx)).ToList();
+        var groups = (await c.QueryAsync<Group>("select * from modifier_group where branch_id = @branchId order by name", new { branchId }, tx)).ToList();
+        var options = (await c.QueryAsync<Option>("""
+            select o.* from modifier_option o join modifier_group g on g.id = o.group_id and g.branch_id = @branchId
+            where (not @activeOnly or o.is_active) order by o.sort, o.name
+            """, new { activeOnly, branchId }, tx)).ToList();
         // A FACTS-priced option costs what its item costs at this branch now (no price there = can't be chosen).
         if (branchId is { } b1 && options.Any(o => o.FactsPrice))
         {
@@ -442,7 +475,10 @@ public static class Menu
         foreach (var g in groups) g.Options = options.Where(o => o.GroupId == g.Id).ToList();
         // Counts set per item (how many from a group on this item).
         var counts = (await c.QueryAsync<(Guid ItemId, Guid GroupId, int? Min, int? Max)>(
-            "select item_id, group_id, min_select, max_select from menu_item_modifier where min_select is not null or max_select is not null", transaction: tx)).ToLookup(x => x.ItemId);
+            """
+            select m.item_id, m.group_id, m.min_select, m.max_select from menu_item_modifier m join modifier_group g on g.id = m.group_id and g.branch_id = @branchId
+            where m.min_select is not null or m.max_select is not null
+            """, new { branchId }, tx)).ToLookup(x => x.ItemId);
         foreach (var it in items) it.GroupCounts = counts[it.Id].Select(x => new GroupCount(x.GroupId, x.Min, x.Max)).ToList();
         // The back office chooses "Sold as" from an item's FACTS units; the register only needs the unit it's sold in.
         if (!activeOnly)
@@ -494,13 +530,14 @@ public static class Menu
         return b with { Name = b.Name.Trim() };
     }
 
-    private static async Task CheckRefsAsync(NpgsqlConnection c, NpgsqlTransaction tx, ItemBody b)
+    private static async Task CheckRefsAsync(NpgsqlConnection c, NpgsqlTransaction tx, ItemBody b, Guid? groupBranch)
     {
         if (!await c.ExecuteScalarAsync<bool>("select exists (select 1 from menu_category where id = @CategoryId)", new { b.CategoryId }, tx))
             throw new DomainException("Choose a category.");
         var ids = (b.GroupIds ?? []).Distinct().ToArray();
-        if (await c.ExecuteScalarAsync<int>("select count(*) from modifier_group where id = any(@ids)", new { ids }, tx) != ids.Length)
-            throw new DomainException("A chosen modifier group no longer exists.");
+        if (ids.Length > 0 && groupBranch is null) throw new DomainException("Choose the branch at the top first: option groups belong to one branch.");
+        if (await c.ExecuteScalarAsync<int>("select count(*) from modifier_group where id = any(@ids) and branch_id = @groupBranch", new { ids, groupBranch }, tx) != ids.Length)
+            throw new DomainException("A chosen option group no longer exists at this branch.");
     }
 
     /// <summary>
@@ -522,11 +559,18 @@ public static class Menu
             throw new DomainException($"Every choice in a combo must be a menu item{(facts ? " with an ERP item code" : "")}. Fix: {string.Join(", ", bad)}.");
     }
 
-    /// <summary>Attaches the groups in order, each with its count on this item (none sent = the counts it had stay).</summary>
-    private static async Task SetGroupsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid itemId, Guid[] groupIds, GroupCount[]? counts = null)
+    /// <summary>
+    /// Attaches this branch's groups in order, each with its count on this item (none sent = the counts it had stay). Other branches'
+    /// groups on the item stay as they are: each branch decides what it asks.
+    /// </summary>
+    private static async Task SetGroupsAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid itemId, Guid? branchId, Guid[] groupIds, GroupCount[]? counts = null)
     {
-        counts ??= (await c.QueryAsync<GroupCount>("select group_id as groupid, min_select as min, max_select as max from menu_item_modifier where item_id = @itemId", new { itemId }, tx)).ToArray();
-        await c.ExecuteAsync("delete from menu_item_modifier where item_id = @itemId", new { itemId }, tx);
+        if (branchId is null) return;
+        counts ??= (await c.QueryAsync<GroupCount>("""
+            select m.group_id as groupid, m.min_select as min, m.max_select as max from menu_item_modifier m join modifier_group g on g.id = m.group_id
+            where m.item_id = @itemId and g.branch_id = @branchId
+            """, new { itemId, branchId }, tx)).ToArray();
+        await c.ExecuteAsync("delete from menu_item_modifier m using modifier_group g where g.id = m.group_id and m.item_id = @itemId and g.branch_id = @branchId", new { itemId, branchId }, tx);
         var i = 0;
         foreach (var g in groupIds.Distinct())
         {

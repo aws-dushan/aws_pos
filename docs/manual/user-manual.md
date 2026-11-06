@@ -353,8 +353,14 @@ Prices cannot be typed for FACTS items: **Price at (branch)** comes from the bra
 
 ## Combos and option groups
 
-1. Under **Option groups**, tap **New group**. Set **Must choose** (Optional or Required) and **At most**, then **Add option** for each choice, linking it to a menu item.
+Option groups and combos belong to the branch chosen in the header when they are made. Only that branch sees them, sells them and can change them; each branch makes its own, and two branches may use the same name.
+
+1. Under **Option groups**, tap **New group**. Set **Must choose** (Optional or Required) and **At most**, then **Add option** for each choice, linking it to a menu item. Switch on **FACTS** to charge the linked item's FACTS price at this branch.
 2. Tap **New combo**, give it a **Name** and **Category**, tap the groups under **Combo choices**, and save.
+
+The **Option groups** tab shows each option with its price at this branch (the linked item's FACTS price, an extra amount, or **Included**) and, for FACTS-priced options, its price on each delivery platform; **No FACTS price** means it can't be chosen here.
+
+A group added to an item from FACTS is asked for only at this branch: other branches sell the same item with their own groups, or none.
 
 A combo is priced by its choices. FACTS receives one line per chosen item, at the price set on the choice.
 

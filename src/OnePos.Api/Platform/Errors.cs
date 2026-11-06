@@ -61,6 +61,7 @@ public static class ErrorHandling
         "branch_erp_location" => "Another branch already uses this ERP stock location.",
         "app_user_username_key" => "This username is already taken.",
         "role_company_id_name_key" => "A role with this name already exists.",
+        "modifier_group_branch_name" => "This branch already has an option group with this name.",
         "user_company_company_id_pin_lookup_key" => "Another user in this company already has this PIN. Choose a different one.",
         _ => "This record already exists.",
     };

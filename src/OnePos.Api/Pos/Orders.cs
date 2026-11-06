@@ -378,10 +378,11 @@ public static class Orders
             // A FACTS-linked delivery platform's bill: the item sells at the platform's FACTS price, or not at all there.
             var plat = await PlatformPrices.ForAsync(c, tx, o.BranchId, o.PlatformId, item.Id);
             if (plat.Applies && plat.Price is null) throw new DomainException($"{item.Name} has no {plat.Platform} price in FACTS.");
-            // Modifiers: options must belong to the item's groups, within each group's least and most choices.
+            // Modifiers: options must belong to the item's groups at this branch (each branch has its own), within each group's least and most choices.
             var groups = (await c.QueryAsync<(Guid Id, string Name, int Min, int Max)>("""
-                select g.id, g.name, coalesce(m.min_select, g.min_select), coalesce(m.max_select, g.max_select) from menu_item_modifier m join modifier_group g on g.id = m.group_id where m.item_id = @itemId order by m.sort
-                """, new { body.ItemId }, tx)).ToList();
+                select g.id, g.name, coalesce(m.min_select, g.min_select), coalesce(m.max_select, g.max_select) from menu_item_modifier m join modifier_group g on g.id = m.group_id
+                where m.item_id = @itemId and g.branch_id = @b order by m.sort
+                """, new { body.ItemId, b = o.BranchId }, tx)).ToList();
             var optionIds = (body.OptionIds ?? []).Distinct().ToArray();
             var opts = (await c.QueryAsync<(Guid Id, Guid GroupId, string Name, decimal Price, Guid? ItemId, string? Station, bool FactsPrice)>("""
                 select o.id, o.group_id, o.name, o.price, o.item_id, i.station, o.facts_price from modifier_option o left join menu_item i on i.id = o.item_id
