@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon } from "lucide-react";
+import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon, LandmarkIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -44,6 +44,7 @@ export const SCREENS: Screen[] = [
   { href: "/reports", label: "Reports", icon: BarChart3Icon, module: "bank", hint: "Sales by day, item, payment, cashier", group: "Back office", perm: "reports.view" },
   { href: "/customers", label: "Customers", icon: ContactRoundIcon, module: "bp", hint: "Regulars, visits and history", group: "Back office", perm: "pos.sell" },
   { href: "/vouchers", label: "Vouchers & loyalty", icon: GiftIcon, module: "sales", hint: "Gift vouchers, store credit, points", group: "Back office", perm: "day.manage|reports.view", rewardsOnly: true },
+  { href: "/cash-bank", label: "Cash to bank", icon: LandmarkIcon, module: "bank", hint: "Cash sales owed to the bank and the deposits", group: "Back office", perm: "reports.view|day.manage" },
   { href: "/platforms", label: "Delivery platform report", icon: BikeIcon, module: "bank", hint: "Platform sales, commission and what they owe", group: "Back office", perm: "reports.view" },
   { href: "/paper", label: "Paper sales", icon: NotebookPenIcon, module: "bank", hint: "Outage pads and keying in slips", group: "Back office", perm: "day.manage" },
   { href: "/orders", label: "Orders", icon: ReceiptTextIcon, module: "bank", hint: "Today's orders, receipts, refunds", group: "Service", perm: "pos.sell" },
