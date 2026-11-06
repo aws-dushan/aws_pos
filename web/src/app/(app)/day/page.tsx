@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarCheck2Icon, CalendarClockIcon, CalendarX2Icon, CheckIcon, FileTextIcon, LandmarkIcon, LockOpenIcon, ReceiptIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
+import { CalendarCheck2Icon, CalendarClockIcon, CalendarX2Icon, CheckIcon, FileTextIcon, LockOpenIcon, ReceiptIcon, ScaleIcon, UsersIcon, WalletIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -17,10 +17,7 @@ import {
   type DayInfo, type ShiftReport, type ShiftStatus,
 } from "@/components/shift";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Field } from "@/components/kit";
 import type { ReceiptLine } from "@/lib/device";
 
 const money = (n: number) => fmtIn(n, 2);
@@ -29,7 +26,7 @@ const CONTROL = { manual: "Manual: a manager opens and closes the day", automati
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
 const fmtTime = (d: string | null) => (d ? new Date(d).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "—");
 
-/** Business day and shifts (REQ DAY-01 … DAY-10): open / close the day, my shift on this till, approvals, deposits, Z reports. */
+/** Business day and shifts (REQ DAY-01 … DAY-10): open / close the day, my shift on this till, approvals, Z reports. A bank deposit is recorded on the till (Cash in / out), so it comes off that drawer. */
 export default function DayPage() {
   const { company, branch } = useSession();
   const cur = company?.currency ?? "AED";
@@ -39,7 +36,6 @@ export default function DayPage() {
   const [moving, setMoving] = useState<string | null>(null);
   const [closing, setClosing] = useState<string | null>(null);
   const [report, setReport] = useState<ReceiptLine[] | null>(null);
-  const [deposit, setDeposit] = useState(false);
   const title = `${company?.name ?? ""} · ${branch?.code ?? ""}`;
   const d = info.data;
 
@@ -143,9 +139,7 @@ export default function DayPage() {
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="font-heading font-semibold">Shifts today</h2>
                 <div className="flex gap-2">
-                  {d.report && <Button variant="outline" className="h-10" onClick={() => setReport(dayReportLines(d.report!, title))}><FileTextIcon /> Day X report</Button>}
-                  {d.canDeposit && <Button variant="outline" className="h-10" onClick={() => setDeposit(true)}><LandmarkIcon /> Bank deposit</Button>}
-                </div>
+                  {d.report && <Button variant="outline" className="h-10" onClick={() => setReport(dayReportLines(d.report!, title))}><FileTextIcon /> Day X report</Button>}                </div>
               </div>
               {d.shifts.length ? (
                 <TablePanel>
@@ -230,36 +224,8 @@ export default function DayPage() {
           else toast.success(v === 0 ? "Shift closed. The drawer balances." : `Shift closed. Variance ${money(v)}.`);
           setReport(shiftReportLines(r, title));
         }} />
-      <DepositDialog open={deposit} currency={cur} onClose={() => setDeposit(false)} onDone={() => { setDeposit(false); info.reload(); }} />
       <ReportDialog lines={report} onClose={() => setReport(null)} />
     </div>
   );
 }
 
-function DepositDialog({ open, currency, onClose, onDone }: { open: boolean; currency: string; onClose: () => void; onDone: () => void }) {
-  const [f, setF] = useState({ amount: "", bagNo: "", takenBy: "" });
-  async function submit() {
-    try {
-      await api("/day/deposits", "POST", { amount: Number(f.amount), bagNo: f.bagNo, takenBy: f.takenBy });
-      toast.success("Deposit recorded");
-      setF({ amount: "", bagNo: "", takenBy: "" });
-      onDone();
-    } catch (e) { toast.error((e as Error).message); }
-  }
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Bank deposit</DialogTitle><DialogDescription>Cash leaving the branch for the bank, with its bag number.</DialogDescription></DialogHeader>
-        <div className="grid gap-3">
-          <Field label={`Amount (${currency})`}><Input value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value.replace(/[^\d.]/g, "") })} inputMode="decimal" className="h-11" /></Field>
-          <Field label="Bag or slip number"><Input value={f.bagNo} onChange={(e) => setF({ ...f, bagNo: e.target.value })} className="h-11" /></Field>
-          <Field label="Taken by"><Input value={f.takenBy} onChange={(e) => setF({ ...f, takenBy: e.target.value })} placeholder="Name or cash-in-transit company" className="h-11" /></Field>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" className="h-11" onClick={onClose}>Cancel</Button>
-          <Button className="h-11" disabled={!(Number(f.amount) > 0) || !f.takenBy.trim()} onClick={() => void submit()}>Record deposit</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}

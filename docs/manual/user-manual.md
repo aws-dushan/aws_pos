@@ -240,6 +240,8 @@ With your shift open, tap **Cash in / out**, pick a tab, a reason, the amount, t
 | Cash out | Supplier paid, petty cash, staff advance. Over your limit needs approval. |
 | Bank deposit | Cash taken to the bank, with the bag or slip number. |
 
+A bank deposit is recorded only here, on the till, before the shift is counted: it comes off the drawer's expected cash, so the count balances. Cash from the safe goes back into a drawer first (**Cash in**, Change from the safe) and is then deposited from it.
+
 ## Close your shift
 
 1. Tap **Close shift** (or your name → **Close my shift**).
