@@ -61,7 +61,8 @@ public static class Paper
                 {
                     var item = await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, decimal? BranchPrice, bool NeedsPrice, int Decimals, string Station, string? NameAr)>("""
                         select i.id, i.name, i.price, bi.price, i.needs_price or coalesce(bi.erp_priced, false), i.qty_decimals, i.station, i.name_ar from menu_item i
-                        left join branch_item bi on bi.item_id = i.id and bi.branch_id = @branchId where i.id = @ItemId
+                        left join branch_item bi on bi.item_id = i.id and bi.branch_id = @branchId
+                        where i.id = @ItemId and (not i.is_combo or i.branch_id = @branchId)   -- another branch's combo isn't on this menu
                         """, new { branchId, l.ItemId }, tx) ;
                     if (item.Id == Guid.Empty) throw new DomainException("An item on the slip isn't on the menu.");
                     Orders.CheckQty(l.Qty, item.Decimals, item.Name);
