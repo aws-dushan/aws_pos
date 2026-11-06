@@ -54,7 +54,7 @@ export type BoxContent = { type: string; code: string; name: string; unit: strin
 export type ModifierOption = { id: string; groupId: string; name: string; price: number; sort: number; isActive: boolean; itemId: string | null;
   /** Charged at its item's live price here (FACTS), not a typed price; noPrice = its item has none here, so it can't be chosen. */
   factsPrice: boolean; noPrice: boolean };
-export type ModifierGroup = { id: string; name: string; minSelect: number; maxSelect: number; options: ModifierOption[] };
+export type ModifierGroup = { id: string; branchId: string; name: string; minSelect: number; maxSelect: number; options: ModifierOption[] };
 export type ShortStock = "allow" | "warn" | "block";
 export type Menu = { categories: MenuCategory[]; items: MenuItem[]; groups: ModifierGroup[]; shortStock?: ShortStock;
   /** Delivery platforms linked to a FACTS customer: their price per item here (FACTS items without one can't be sold on them). */

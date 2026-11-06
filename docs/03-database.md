@@ -19,7 +19,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Area | Tables |
 | --- | --- |
 | Platform | `company`, `branch`, `currency`, `app_user`, `role`, `user_company`, `user_branch`, `audit_log`, `number_series`, `idempotency_key`, `feedback*` |
-| Menu | `menu_category`, `menu_item`, `item_unit`, `modifier_group`, `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
+| Menu | `menu_category`, `menu_item` (a combo: one branch each), `item_unit`, `modifier_group` (one branch each), `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
 | Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` |
@@ -28,6 +28,10 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |
 | FACTS | `company_erp` (encrypted connection), `erp_sync` (sync log), `erp_payment_mode`, `erp_post` (posting queue and log) |
 | Reports and notices | `sales_day_item`, `sales_day_built`, `notice`, `notice_read`, `approval_reminder`, `device_status`, `display_image` |
+
+Option groups (`modifier_group.branch_id`) and combos (`menu_item.branch_id`, set only on combos) belong to the branch
+they were made at: only that branch loads, sells and changes them, and a group name is unique per branch. Items from FACTS
+stay shared; a group attached to one (`menu_item_modifier`) is asked for it only at the group's branch.
 
 ### Core sales tables
 
@@ -157,7 +161,7 @@ PostgreSQL indexes a primary key automatically, but not the column that points a
 matters in two cases: when the app finds the child rows from the parent (a bill's lines), and when it **deletes a
 parent**, because PostgreSQL then checks every table that points at it.
 
-- **101 of the 237 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
+- **102 of the 239 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
   payments, returns, shifts, days, customers, vouchers, option groups, floors and tables.
 - **The other 136 are left without an index on purpose.** Each extra index slows every insert a little, and these give
   nothing back:
