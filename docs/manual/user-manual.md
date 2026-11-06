@@ -441,7 +441,7 @@ Open **Reports**, pick **This branch** or **All my branches** and the dates (**T
 
 ## Delivery platform report
 
-Shows each platform's orders, sales, refunds, commission and bank fee, and what it owes. Where payouts are switched on, **Record payout** enters each payment received, and the report shows what each platform still owes.
+Shows each platform's orders, sales, refunds, commission and bank fee, and what it owes, for this branch or all the branches you work in. Where payouts are switched on, **Record payout** enters each payment received, and the report shows what each platform still owes.
 
 ![The delivery platform report](images/platform-report.jpg)
 
@@ -452,7 +452,7 @@ Every cash sale goes to the bank. **Cash to bank** shows, for the branch chosen 
 - **Owed to bank now**, and the **oldest cash not deposited** (deposits pay off the oldest cash first).
 - **By day**: brought forward, cash sales, cash refunds, deposited and carried forward. An amount owed that isn't a cash sale (e.g. cash held from before One POS started) shows under **Added to owed** with its remark.
 - **Bank deposits**: each deposit with its bag or slip number, who took it and the drawer it came from.
-- **All branches**: what each branch owes and since when.
+- **All branches**: what each of your branches owes and since when (administrators see every branch).
 
 The float, cash in and cash out stay in the drawer and don't change what is owed; a shift's shortage or over stays with the shift. Deposits are recorded on the till (**Cash in / out** → **Bank deposit**).
 

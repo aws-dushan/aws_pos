@@ -312,12 +312,12 @@
 | PUT | `/api/platforms/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Platforms.cs:165 |
 | PUT | `/api/platforms/{id:guid}/facts-customer` | branch.manage | src/OnePos.Api/Pos/Platforms.cs:114 |
 | GET | `/api/platforms/facts-customers` | branch.manage | src/OnePos.Api/Pos/Platforms.cs:99 |
-| GET | `/api/platforms/payouts` | reports.view, branch.manage | src/OnePos.Api/Pos/Platforms.cs:259 |
-| POST | `/api/platforms/payouts` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:289 |
-| PUT | `/api/platforms/payouts/{id:guid}/branch` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:271 |
-| POST | `/api/platforms/payouts/{id:guid}/void` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:317 |
-| GET | `/api/platforms/settings` | reports.view, branch.manage | src/OnePos.Api/Pos/Platforms.cs:235 |
-| PUT | `/api/platforms/settings` | branch.manage | src/OnePos.Api/Pos/Platforms.cs:242 |
+| GET | `/api/platforms/payouts` | reports.view, branch.manage | src/OnePos.Api/Pos/Platforms.cs:260 |
+| POST | `/api/platforms/payouts` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:293 |
+| PUT | `/api/platforms/payouts/{id:guid}/branch` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:275 |
+| POST | `/api/platforms/payouts/{id:guid}/void` | branch.manage, day.manage | src/OnePos.Api/Pos/Platforms.cs:321 |
+| GET | `/api/platforms/settings` | reports.view, branch.manage | src/OnePos.Api/Pos/Platforms.cs:236 |
+| PUT | `/api/platforms/settings` | branch.manage | src/OnePos.Api/Pos/Platforms.cs:243 |
 | GET | `/api/platforms/summary` | reports.view, branch.manage | src/OnePos.Api/Pos/Platforms.cs:186 |
 
 ## pos
@@ -357,15 +357,15 @@
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
 | GET | `/api/reports/branch-comparison` | facts.post | src/OnePos.Api/Pos/BranchComparison.cs:70 |
-| GET | `/api/reports/days` | facts.post | src/OnePos.Api/Pos/Reports.cs:334 |
+| GET | `/api/reports/days` | facts.post | src/OnePos.Api/Pos/Reports.cs:340 |
 | GET | `/api/reports/exceptions` | reports.view | src/OnePos.Api/Pos/Exceptions.cs:45 |
 | GET | `/api/reports/gross-profit` | facts.post | src/OnePos.Api/Pos/GrossProfit.cs:39 |
-| GET | `/api/reports/invoices` | reports.view, facts.post | src/OnePos.Api/Pos/Reports.cs:128 |
-| GET | `/api/reports/returns` | reports.view | src/OnePos.Api/Pos/Reports.cs:184 |
-| GET | `/api/reports/sales` | reports.view | src/OnePos.Api/Pos/Reports.cs:17 |
+| GET | `/api/reports/invoices` | reports.view, facts.post | src/OnePos.Api/Pos/Reports.cs:134 |
+| GET | `/api/reports/returns` | reports.view | src/OnePos.Api/Pos/Reports.cs:190 |
+| GET | `/api/reports/sales` | reports.view | src/OnePos.Api/Pos/Reports.cs:23 |
 | GET | `/api/reports/stock` | reports.view | src/OnePos.Api/Pos/StockReport.cs:30 |
 | GET | `/api/reports/stock-activity` | reports.view, facts.post | src/OnePos.Api/Pos/StockActivity.cs:51 |
-| GET | `/api/reports/summary` | facts.post | src/OnePos.Api/Pos/Reports.cs:223 |
+| GET | `/api/reports/summary` | facts.post | src/OnePos.Api/Pos/Reports.cs:229 |
 
 ## requests
 

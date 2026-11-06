@@ -69,7 +69,8 @@ export default function PlatformReportPage() {
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-xs font-medium text-muted-foreground">From<Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="h-10 w-40" /></label>
         <label className="grid gap-1 text-xs font-medium text-muted-foreground">To<Input type="date" value={to} min={from} max={today} onChange={(e) => setTo(e.target.value)} className="h-10 w-40" /></label>
-        <Segmented id="plat-scope" value={scope} onChange={setScope} options={[{ value: "branch", label: "This branch" }, { value: "all", label: "All branches" }]} />
+        {/* "All branches" = the branches this user works in; with only one, there is nothing to switch. */}
+        {branches.length > 1 && <Segmented id="plat-scope" value={scope} onChange={setScope} options={[{ value: "branch", label: "This branch" }, { value: "all", label: "All branches" }]} />}
       </div>
       <div className="mb-5 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
         <StatTile label="Platform orders" value={t ? t.orders : "…"} icon={ReceiptTextIcon} module="bank" hint={t ? `${cur} ${fmtIn(t.net, 2)} after refunds` : undefined} />

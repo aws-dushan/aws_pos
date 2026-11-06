@@ -12,6 +12,12 @@ namespace OnePos.Api.Pos;
 /// </summary>
 public static class Reports
 {
+    /// <summary>The branches a user's "all branches" covers: every branch for an administrator, else only the ones they are assigned to.</summary>
+    public static async Task<Guid[]> MyBranchesAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Scope scope) =>
+        (await c.QueryAsync<Guid>("""
+            select b.id from branch b where @admin or exists (select 1 from user_branch ub where ub.branch_id = b.id and ub.user_id = @u)
+            """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray();
+
     public static void Map(RouteGroupBuilder api)
     {
         api.MapGet("/reports/sales", async (HttpContext http, Db db, DateOnly? from, DateOnly? to, string? branches) =>

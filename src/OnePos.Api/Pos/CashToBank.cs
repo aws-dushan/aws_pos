@@ -54,7 +54,7 @@ public static class CashToBank
                     from = start, owed = balance, oldest = Oldest(mine, balance),
                     depositedThisMonth = mine.Where(d => d.Date.Year == month.Year && d.Date.Month == month.Month).Sum(d => d.Deposited),
                     days = rows, deposits,
-                    branches = await BranchesAsync(c, tx),
+                    branches = await BranchesAsync(c, tx, await Reports.MyBranchesAsync(c, tx, scope)),
                 };
             });
         });
@@ -105,10 +105,10 @@ public static class CashToBank
         return days.FirstOrDefault()?.Date;
     }
 
-    /// <summary>Every branch of the company: what it owes the bank now and since when.</summary>
-    private static async Task<List<object>> BranchesAsync(NpgsqlConnection c, NpgsqlTransaction tx)
+    /// <summary>The branches this user works in (every branch for an administrator): what each owes the bank now and since when.</summary>
+    private static async Task<List<object>> BranchesAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid[] mine)
     {
-        var branches = (await c.QueryAsync<(Guid Id, string Code, string Name)>("select id, code, name from branch where is_active order by code", transaction: tx)).ToList();
+        var branches = (await c.QueryAsync<(Guid Id, string Code, string Name)>("select id, code, name from branch where is_active and id = any(@mine) order by code", new { mine }, tx)).ToList();
         var days = await DaysAsync(c, tx, branches.Select(b => b.Id).ToArray());
         return branches.Select(b =>
         {
