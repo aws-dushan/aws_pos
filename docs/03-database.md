@@ -22,7 +22,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Menu | `menu_category`, `menu_item` (a combo: one branch each), `item_unit`, `modifier_group` (one branch each), `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
-| Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` (Cash to bank: a branch owes its cash sales less cash refunds less its deposits, from `branch.cash_bank_from`; worked out when asked, nothing stored) |
+| Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` `cash_bank_adjustment` (Cash to bank: a branch owes its cash sales less cash refunds, plus amounts added by hand with a remark, less its deposits, from `branch.cash_bank_from`; worked out when asked) |
 | Customers and rewards | `customer` (one branch each), `voucher`, `voucher_move`, `loyalty_move` |
 | Stock | `wastage` (also marketing give-aways), `delivery_check`, `stock_return`, `request_store`, `stock_request`, `stock_request_line`, `ingredient`, `recipe_line`, `branch_ingredient`, `ingredient_move`, `bom`, `bom_version`, `bom_line`, `material_unit` |
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |

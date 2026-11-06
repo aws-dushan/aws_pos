@@ -450,7 +450,7 @@ Shows each platform's orders, sales, refunds, commission and bank fee, and what 
 Every cash sale goes to the bank. **Cash to bank** shows, for the branch chosen in the header, what is still owed to the bank: cash sales less cash refunds, less the bank deposits. What isn't deposited carries forward to the next day until it is.
 
 - **Owed to bank now**, and the **oldest cash not deposited** (deposits pay off the oldest cash first).
-- **By day**: brought forward, cash sales, cash refunds, deposited and carried forward.
+- **By day**: brought forward, cash sales, cash refunds, deposited and carried forward. An amount owed that isn't a cash sale (e.g. cash held from before One POS started) shows under **Added to owed** with its remark.
 - **Bank deposits**: each deposit with its bag or slip number, who took it and the drawer it came from.
 - **All branches**: what each branch owes and since when.
 
