@@ -573,7 +573,7 @@ public static class Days
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var s = await c.QuerySingleOrDefaultAsync<ShiftRow>($"{ShiftSql} where s.id = @id and s.branch_id = @b", new { id, b = scope.Branch }, tx) ?? throw new NotFoundException("Shift not found.");
-                if (s.Status != "open") throw new DomainException("This shift is closed: record the deposit on Day & shifts instead.");
+                if (s.Status != "open") throw new DomainException("This shift is closed: record a bank deposit on the till before the shift is counted and closed.");
                 if (s.UserId != scope.UserId && !(s.SharedDrawer && scope.Can("day.shift")) && !scope.Can("day.manage")) throw new ForbiddenException("Only the shift's own cashier or a manager can move its cash.");
                 var amount = Money.Round(body.Amount);
                 var bag = string.IsNullOrWhiteSpace(body.BagNo) ? null : body.BagNo.Trim();
@@ -662,25 +662,8 @@ public static class Days
             return Results.Ok(new { id });
         });
 
-        // A bank deposit: a manager, or anyone allowed to record deposits (e.g. the cashier who takes the cash to the bank).
-        api.MapPost("/day/deposits", async (DepositBody body, HttpContext http, Db db, Live live) =>
-        {
-            var scope = await http.ScopeAsync(db);
-            if (!scope.Can("day.manage")) scope.Require("day.deposit");
-            if (body.Amount <= 0) throw new DomainException("Enter the amount deposited.");
-            if (string.IsNullOrWhiteSpace(body.TakenBy)) throw new DomainException("Who takes it to the bank?");
-            await db.Company(scope.CompanyId, async (c, tx) =>
-            {
-                var day = await c.QuerySingleOrDefaultAsync<DayRow>("select * from business_day where branch_id = @b order by date desc limit 1", new { b = scope.Branch }, tx)
-                          ?? throw new DomainException("Open a business day first.");
-                await c.ExecuteAsync("insert into bank_deposit (company_id, branch_id, business_day_id, amount, bag_no, taken_by, recorded_by) values (@co, @b, @d, @amount, @bag, @who, @u)",
-                    new { co = scope.CompanyId, b = scope.Branch, d = day.Id, amount = Money.Round(body.Amount), bag = string.IsNullOrWhiteSpace(body.BagNo) ? null : body.BagNo.Trim(), who = body.TakenBy.Trim(), u = scope.UserId }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "day", day.Id.ToString(), "deposit", $"Bank deposit {body.Amount:N2} taken by {body.TakenBy.Trim()}", note: body.BagNo);
-                return 0;
-            });
-            await live.ToBranch(scope.Branch, "day.changed");
-            return Results.Ok(new { ok = true });
-        });
+        // A bank deposit is recorded only on a till (POST /shifts/{id}/deposit), so it always comes off that drawer's expected cash.
+        // Deposits recorded on Day & shifts before ("from safe") stay in the reports as they were.
     }
 
     /// <summary>
