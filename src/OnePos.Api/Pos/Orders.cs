@@ -364,7 +364,9 @@ public static class Orders
         {
             var qty = body.Qty ?? 1;
             var item = await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, string Station, bool Active, bool IsSold, decimal? BranchPrice, DateOnly? SoldOutDate, bool NeedsPrice, int Decimals, string? NameAr, bool ErpPriced, bool IsCombo)>("""
-                select i.id, i.name, i.price, i.station, i.is_active and cat.is_active as active, coalesce(bi.is_sold, i.erp_item_code is null) as is_sold, bi.price as branch_price, bi.sold_out_date,
+                select i.id, i.name, i.price, i.station, i.is_active and cat.is_active as active,
+                       -- A combo is sold only at its own branch.
+                       coalesce(bi.is_sold, i.erp_item_code is null) and (not i.is_combo or i.branch_id = @b) as is_sold, bi.price as branch_price, bi.sold_out_date,
                        i.needs_price, i.qty_decimals, i.name_ar, coalesce(bi.erp_priced, false), i.is_combo
                 from menu_item i join menu_category cat on cat.id = i.category_id
                 left join branch_item bi on bi.item_id = i.id and bi.branch_id = @b
