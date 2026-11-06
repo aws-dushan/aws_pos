@@ -255,7 +255,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
       erpItemCode: value.erpItemCode ?? "", isActive: value.isActive, groupIds: value.groupIds, branchPrice: value.branchPrice === null ? "" : String(value.branchPrice), isCombo: value.isCombo,
       counts: Object.fromEntries((value.groupCounts ?? []).filter((x) => x.max != null).map((x) => [x.groupId, String(x.max)])),
       bomContents: !!value.bomContents, contentsMax: value.contentsMax == null ? "" : String(value.contentsMax), soldAs: value.erpUnit ?? "" }
-      : value === "combo" ? { ...blank, isCombo: true, station: "none" } : blank);
+      : value === "combo" ? { ...blank, isCombo: true, station: "none", price: "0" } : blank);
   }
   const existing = value && value !== "new" && value !== "combo" ? value : null;
   // "Sold as": the FACTS unit the till sells it in and FACTS gets; only worth showing when FACTS has more than one unit for it.
@@ -402,7 +402,7 @@ function ItemDialog({ value, menu, companyId, fromFacts, defaultCategory, curren
           </div>
           {existing && <PriceHistory itemId={existing.id} currency={currency} branchName={branchName} />}
           {existing && <div className="flex items-center justify-between rounded-xl border px-3 py-2.5"><span className="text-sm">On the menu <span className="text-muted-foreground">· off hides it at every branch</span></span><Switch on={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} label="On the menu" /></div>}
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!f.name.trim() || f.price === "" || !f.categoryId}>Save</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={!f.name.trim() || (!f.isCombo && f.price === "") || !f.categoryId}>Save</Button></DialogFooter>
         </form>
         <RecipeDialog target={recipeFor} currency={currency} onClose={() => setRecipeFor(null)} onSaved={() => recipe.reload()} />
       </DialogContent>
