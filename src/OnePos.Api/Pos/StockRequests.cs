@@ -109,7 +109,7 @@ public static class StockRequests
         {
             await using var f = await facts.OpenAsync(companyId);
             var rows = await f.QueryAsync<(string DocNo, int Line, decimal After)>("""
-                select ltrim(rtrim(d.TSFDET_DOCNO)), d.TSFDET_DOCSRNO, isnull(d.TSFDET_AFTER_DOC_QTY, 0) from TRANSFER_DETAILS d
+                select ltrim(rtrim(d.TSFDET_DOCNO)), d.TSFDET_DOCSRNO, isnull(d.TSFDET_AFTER_DOC_QTY, 0) from TRANSFER_DETAILS d with (nolock)
                 where d.TSFDET_DOCTYPE = 'STR50' and d.TSFDET_DOCNO in (select value from string_split(@nos, ','))
                 """, new { nos = string.Join(',', nos) }, commandTimeout: 30);
             return rows.ToDictionary(r => ($"STR50 {r.DocNo}", r.Line), r => r.After);
@@ -348,14 +348,22 @@ public static class StockRequests
             if (term.Length < 2) return Results.Ok(Array.Empty<object>());
             var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select b.facts_item_master from branch b where b.id = @b", new { b = scope.Branch }, tx));
             await using var f = await facts.OpenAsync(scope.CompanyId);
-            var rows = await f.QueryAsync<(string Code, string Name, string Type, string Unit)>("""
-                select top 30 ltrim(rtrim(m.STKMST_DOCNO)), m.STKMST_DESC, ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO))
-                from STOCK_MASTER m
-                where m.STKMST_ACTIVE_STATUS = 0 and (@master is null or m.STKMST_DOCTYPE = @master)
-                  and (m.STKMST_DOCNO = @term or m.STKMST_DOCNO like @prefix or m.STKMST_DESC like @like)
-                order by case when m.STKMST_DOCNO = @term then 0 when m.STKMST_DOCNO like @prefix then 1 else 2 end, m.STKMST_DESC
-                """, new { master, term, prefix = term + "%", like = "%" + term.Replace("%", "[%]").Replace("_", "[_]") + "%" }, commandTimeout: 30);
-            return Results.Ok(rows.Select(r => new { code = r.Code, name = r.Name.Trim(), type = r.Type, unit = r.Unit }));
+            // A lookup only: it doesn't wait behind FACTS users saving items (nolock); still too slow = a clear message, not a failure.
+            try
+            {
+                var rows = await f.QueryAsync<(string Code, string Name, string Type, string Unit)>("""
+                    select top 30 ltrim(rtrim(m.STKMST_DOCNO)), m.STKMST_DESC, ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_UNIT_DOCNO))
+                    from STOCK_MASTER m with (nolock)
+                    where m.STKMST_ACTIVE_STATUS = 0 and (@master is null or m.STKMST_DOCTYPE = @master)
+                      and (m.STKMST_DOCNO = @term or m.STKMST_DOCNO like @prefix or m.STKMST_DESC like @like)
+                    order by case when m.STKMST_DOCNO = @term then 0 when m.STKMST_DOCNO like @prefix then 1 else 2 end, m.STKMST_DESC
+                    """, new { master, term, prefix = term + "%", like = "%" + term.Replace("%", "[%]").Replace("_", "[_]") + "%" }, commandTimeout: 20);
+                return Results.Ok(rows.Select(r => new { code = r.Code, name = r.Name.Trim(), type = r.Type, unit = r.Unit }));
+            }
+            catch (SqlException e) when (e.Number == -2)
+            {
+                throw new DomainException("FACTS is slow to answer right now. Try the search again in a moment.");
+            }
         });
 
         // Ask a store for stock: kept as a draft, or sent. Sent, it waits for the branch's request approver (under the bell and by
