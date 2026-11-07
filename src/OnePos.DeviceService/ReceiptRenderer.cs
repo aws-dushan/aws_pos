@@ -40,6 +40,9 @@ public static class ReceiptRenderer
         return [.. bytes];
     }
 
+    /// <summary>The receipt as the printer's black-and-white picture (dot for dot), for printing through the Windows driver.</summary>
+    public static Bitmap Page(ReceiptJob job, int dots) => Draw(job, dots, 1);
+
     /// <summary>The receipt as a PNG, `scale` times sharper than the paper (a PDF or a screen preview of the same layout).</summary>
     public static byte[] Preview(ReceiptJob job, int dots, int scale)
     {

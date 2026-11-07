@@ -551,7 +551,9 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 Settings on **Devices** belong to the PC you are on.
 
 1. If it says **The Device Service isn't running on this PC**, tap **Download the installer**, run it, then **Check again**.
-2. Choose the **Receipt printer**, the **Paper width** (80 or 58 mm) and whether the drawer opens with cash. **Save**, then **Test print** and **Open drawer**.
+2. Choose the **Receipt printer**, the **Paper width** (80 or 58 mm), **Print using** and whether the drawer opens with cash. **Save**, then **Test print** and **Open drawer**.
+
+   **Print using**: **Printer language (ESC/POS)** suits most thermal printers and is fastest. If the printer prints letters and symbols instead of the receipt, choose **Windows driver**, **Save** and **Test print**: the receipt then goes through the printer's own Windows driver, like any program.
 3. Under **Kitchen & bar**, give each station a ticket printer or **No printer (display only)**.
 
 ![Devices on a PC without the Device Service](images/devices.jpg)

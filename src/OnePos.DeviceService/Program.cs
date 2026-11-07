@@ -47,7 +47,7 @@ app.MapGet("/status", () =>
     return new
     {
         service = "One POS Device Service", version, machine = Environment.MachineName,
-        s.ReceiptPrinter, s.PaperWidth, s.DrawerOnCash, s.PoleDisplayPort,
+        s.ReceiptPrinter, s.PaperWidth, s.DrawerOnCash, s.PoleDisplayPort, s.PrintMode,
         printers = RawPrinter.Installed(), ports = System.IO.Ports.SerialPort.GetPortNames(),
         lastError, lastPrintAt,
         printerState = s.ReceiptPrinter is { } rp ? RawPrinter.State(rp) : null,
@@ -65,6 +65,8 @@ app.MapPut("/settings", (DeviceSettings body) =>
     {
         ReceiptPrinter = string.IsNullOrWhiteSpace(body.ReceiptPrinter) ? null : body.ReceiptPrinter.Trim(),
         PaperWidth = body.PaperWidth, DrawerOnCash = body.DrawerOnCash,
+        // An older web app that doesn't send it keeps the till's mode.
+        PrintMode = body.PrintMode is "driver" or "escpos" ? body.PrintMode : s.PrintMode,
         PoleDisplayPort = string.IsNullOrWhiteSpace(body.PoleDisplayPort) ? null : body.PoleDisplayPort.Trim(),
         AllowedOrigins = s.AllowedOrigins, AutoUpdate = s.AutoUpdate, ServerApi = s.ServerApi,
     });
@@ -95,7 +97,22 @@ app.MapPut("/update/auto", (AutoBody body) =>
 // "Check for updates" on the Devices screen: install when asked to.
 app.MapPost("/update/check", async (CheckBody body) => Results.Ok(new { result = await updater.CheckAsync(body.Install) }));
 
-IResult Print(string jobId, Func<DeviceSettings, byte[]> bytes, string name, string? printer = null)
+IResult Print(string jobId, Func<DeviceSettings, byte[]> bytes, string name, string? printer = null) =>
+    Send(jobId, (s, target) => RawPrinter.Send(target, bytes(s), name), printer);
+
+// A receipt or kitchen ticket in this till's print mode: ESC/POS bytes, or the same picture through the printer's Windows driver
+// (then the drawer, if asked, still gets its short ESC/POS kick; a printer that refuses even that keeps the receipt printed).
+IResult PrintReceipt(ReceiptJob job, string name, string? printer = null) => Send(job.JobId, (s, target) =>
+{
+    var drawer = printer is null && job.OpenDrawer && s.DrawerOnCash;
+    if (s.PrintMode != "driver") { RawPrinter.Send(target, ReceiptRenderer.Render(job with { OpenDrawer = drawer }, s.Dots), name); return; }
+    using (var page = ReceiptRenderer.Page(job, s.Dots)) DriverPrinter.Print(target, page, name);
+    if (drawer)
+        try { RawPrinter.Send(target, [.. EscPos.Init, .. EscPos.OpenDrawer], "One POS drawer"); }
+        catch (Exception ex) { lastError = $"Receipt printed; the drawer didn't open: {ex.Message}"; }
+}, printer);
+
+IResult Send(string jobId, Action<DeviceSettings, string> send, string? printer = null)
 {
     var s = store.Get();
     var target = printer ?? s.ReceiptPrinter;
@@ -105,8 +122,8 @@ IResult Print(string jobId, Func<DeviceSettings, byte[]> bytes, string name, str
     if (!done.TryAdd(jobId, DateTime.UtcNow)) return Results.Ok(new { ok = true, duplicate = true });
     try
     {
-        RawPrinter.Send(target, bytes(s), name);
         lastError = null;
+        send(s, target);
         lastPrintAt = DateTime.UtcNow;
         foreach (var old in done.OrderBy(x => x.Value).Take(Math.Max(0, done.Count - 500))) done.TryRemove(old.Key, out _);
         return Results.Ok(new { ok = true });
@@ -121,8 +138,7 @@ IResult Print(string jobId, Func<DeviceSettings, byte[]> bytes, string name, str
 }
 
 app.MapPost("/print/receipt", (ReceiptJob job) =>
-    Print(job.JobId, s => ReceiptRenderer.Render(job with { OpenDrawer = job.Printer is null && job.OpenDrawer && s.DrawerOnCash }, s.Dots),
-        job.Printer is null ? "One POS receipt" : "One POS kitchen ticket", job.Printer));
+    PrintReceipt(job, job.Printer is null ? "One POS receipt" : "One POS kitchen ticket", job.Printer));
 
 // The same receipt as a sharp picture (a PDF or a preview of exactly what prints), `scale` times the printer's resolution.
 app.MapPost("/print/preview", (ReceiptJob job, int? scale) =>
@@ -130,18 +146,23 @@ app.MapPost("/print/preview", (ReceiptJob job, int? scale) =>
 
 app.MapPost("/drawer/open", (DrawerBody body) => Print(body.JobId, _ => [.. EscPos.Init, .. EscPos.OpenDrawer], "One POS drawer"));
 
-app.MapPost("/print/test", () => Print(Guid.NewGuid().ToString(), s => ReceiptRenderer.Render(new ReceiptJob("test",
-[
-    new("One POS", null, "center", true, "large", false),
-    new("Test print · طباعة تجريبية", null, "center", false, null, false),
-    new(null, null, null, false, null, true),
-    new("Printer", s.ReceiptPrinter, null, false, null, false),
-    new("Paper", $"{s.PaperWidth} mm", null, false, null, false),
-    new("Till", Environment.MachineName, null, false, null, false),
-    new("Time", DateTime.UtcNow.ToString("u"), null, false, null, false),
-    new(null, null, null, false, null, true),
-    new("If you can read this, receipts will print.", null, "center", false, "small", false),
-], OpenDrawer: false), s.Dots), "One POS test"));
+app.MapPost("/print/test", () =>
+{
+    var s = store.Get();
+    return PrintReceipt(new ReceiptJob(Guid.NewGuid().ToString(),
+    [
+        new("One POS", null, "center", true, "large", false),
+        new("Test print · طباعة تجريبية", null, "center", false, null, false),
+        new(null, null, null, false, null, true),
+        new("Printer", s.ReceiptPrinter, null, false, null, false),
+        new("Paper", $"{s.PaperWidth} mm", null, false, null, false),
+        new("Print using", s.PrintMode == "driver" ? "Windows driver" : "ESC/POS", null, false, null, false),
+        new("Till", Environment.MachineName, null, false, null, false),
+        new("Time", DateTime.UtcNow.ToString("u"), null, false, null, false),
+        new(null, null, null, false, null, true),
+        new("If you can read this, receipts will print.", null, "center", false, "small", false),
+    ], OpenDrawer: false), "One POS test");
+});
 
 app.MapPost("/display", (DisplayBody body) =>
 {

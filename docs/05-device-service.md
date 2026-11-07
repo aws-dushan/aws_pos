@@ -21,7 +21,7 @@ flowchart LR
 | Endpoint | Job |
 | --- | --- |
 | `GET /status` | Version, printers installed, chosen printer and its spooler state |
-| `POST /print/receipt` | Prints a receipt or credit note: drawn as a raster image (Arabic works), sent as raw ESC/POS through the Windows driver |
+| `POST /print/receipt` | Prints a receipt or credit note: drawn as a raster image (Arabic works), sent as raw ESC/POS through the Windows driver, or, in **Windows driver** mode, printed as a picture through the printer's own driver |
 | `POST /print/preview` | The same receipt as an image, for the screen |
 | `POST /print/test` | A test page |
 | `POST /drawer/open` | Kicks the cash drawer through the printer |
@@ -34,8 +34,9 @@ Kitchen tickets print through the station's printer set under Devices → Kitche
 | --- | --- |
 | `ReceiptRenderer.cs` | Draws the receipt; must match `web/src/lib/receipt-draw.ts` line for line |
 | `EscPos.cs`, `RawPrinter.cs` | ESC/POS commands and raw printing via the Windows spooler |
+| `DriverPrinter.cs` | **Windows driver** mode: the receipt picture through the printer's own driver (any printer whose driver prints a Windows test page), dot for dot at 203 dpi, over several pages if the driver keeps short pages; the drawer still gets its ESC/POS kick |
 | `PoleDisplay.cs` | Serial pole display |
-| `DeviceSettings.cs` | Per-PC settings (printer, paper width 80/58 mm, drawer, pole display port) |
+| `DeviceSettings.cs` | Per-PC settings (printer, paper width 80/58 mm, print using ESC/POS or the Windows driver, drawer, pole display port) |
 | `Updater.cs` | Self-update |
 
 A printer named `file:C:\path\out.bin` writes the bytes to a file, for testing without hardware.
@@ -55,7 +56,7 @@ A printer named `file:C:\path\out.bin` writes the bytes to a file, for testing w
 - Tills download it from **Devices** the first time. Afterwards the service checks every 6 hours with the server its web
   app came from (only that address), verifies the SHA-256 and installs quietly with msiexec. **Update by itself** can be
   switched off per PC; **Update now** forces it.
-- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.2.0).
+- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.3.0).
 - The MSI is not code-signed yet, so Windows SmartScreen warns on first install.
 
 ## Device status

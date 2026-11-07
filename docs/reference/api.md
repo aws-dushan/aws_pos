@@ -53,7 +53,7 @@
 | PUT | `/api/branches/{id:guid}/marketing` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:265 |
 | GET | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:174 |
 | PUT | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:189 |
-| PUT | `/api/branches/{id:guid}/request-approval` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:509 |
+| PUT | `/api/branches/{id:guid}/request-approval` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:517 |
 | PUT | `/api/branches/{id:guid}/wastage-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:231 |
 
 ## cash-bank
@@ -76,8 +76,8 @@
 | GET | `/api/companies/{companyId:guid}/erp/items` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:559 |
 | PUT | `/api/companies/{companyId:guid}/erp/items` |  | src/OnePos.Api/Erp/FactsSync.cs:571 |
 | POST | `/api/companies/{companyId:guid}/erp/test` |  | src/OnePos.Api/Erp/ErpConnections.cs:93 |
-| GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:472 |
-| PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:482 |
+| GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:480 |
+| PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:490 |
 | PUT | `/api/companies/{companyId:guid}/rewards` |  | src/OnePos.Api/Pos/Rewards.cs:268 |
 | GET | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:176 |
 | POST | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:186 |
@@ -232,19 +232,19 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/menu` | menu.manage | src/OnePos.Api/Pos/Menu.cs:131 |
-| POST | `/api/menu/categories` | menu.manage | src/OnePos.Api/Pos/Menu.cs:146 |
-| PUT | `/api/menu/categories/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:163 |
+| GET | `/api/menu` | menu.manage | src/OnePos.Api/Pos/Menu.cs:134 |
+| POST | `/api/menu/categories` | menu.manage | src/OnePos.Api/Pos/Menu.cs:149 |
+| PUT | `/api/menu/categories/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:166 |
 | GET | `/api/menu/images/{companyId:guid}/{id:guid}` |  | src/OnePos.Api/Pos/ItemImages.cs:64 |
-| POST | `/api/menu/items` | menu.manage | src/OnePos.Api/Pos/Menu.cs:181 |
-| PUT | `/api/menu/items/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:219 |
-| PUT | `/api/menu/items/{id:guid}/branch` | pos.sell, menu.manage | src/OnePos.Api/Pos/Menu.cs:297 |
+| POST | `/api/menu/items` | menu.manage | src/OnePos.Api/Pos/Menu.cs:184 |
+| PUT | `/api/menu/items/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:222 |
+| PUT | `/api/menu/items/{id:guid}/branch` | pos.sell, menu.manage | src/OnePos.Api/Pos/Menu.cs:300 |
 | DELETE | `/api/menu/items/{id:guid}/image` | menu.manage | src/OnePos.Api/Pos/ItemImages.cs:47 |
 | POST | `/api/menu/items/{id:guid}/image` | menu.manage | src/OnePos.Api/Pos/ItemImages.cs:20 |
-| GET | `/api/menu/items/{id:guid}/price-history` | menu.manage | src/OnePos.Api/Pos/Menu.cs:340 |
-| POST | `/api/menu/modifier-groups` | menu.manage | src/OnePos.Api/Pos/Menu.cs:354 |
-| DELETE | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:394 |
-| PUT | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:373 |
+| GET | `/api/menu/items/{id:guid}/price-history` | menu.manage | src/OnePos.Api/Pos/Menu.cs:343 |
+| POST | `/api/menu/modifier-groups` | menu.manage | src/OnePos.Api/Pos/Menu.cs:357 |
+| DELETE | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:397 |
+| PUT | `/api/menu/modifier-groups/{id:guid}` | menu.manage | src/OnePos.Api/Pos/Menu.cs:376 |
 
 ## notices
 
@@ -325,7 +325,7 @@
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
 | GET | `/api/pos/discounts` | pos.sell, pos.discount | src/OnePos.Api/Pos/Discounts.cs:184 |
-| GET | `/api/pos/menu` | pos.sell | src/OnePos.Api/Pos/Menu.cs:139 |
+| GET | `/api/pos/menu` | pos.sell | src/OnePos.Api/Pos/Menu.cs:142 |
 
 ## public
 
@@ -371,10 +371,10 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/requests/approvals` |  | src/OnePos.Api/Pos/StockRequests.cs:393 |
-| POST | `/api/requests/approvals/{id:guid}/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:432 |
-| POST | `/api/requests/approvals/{id:guid}/reject` |  | src/OnePos.Api/Pos/StockRequests.cs:453 |
-| POST | `/api/requests/approvals/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:442 |
+| GET | `/api/requests/approvals` |  | src/OnePos.Api/Pos/StockRequests.cs:401 |
+| POST | `/api/requests/approvals/{id:guid}/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:440 |
+| POST | `/api/requests/approvals/{id:guid}/reject` |  | src/OnePos.Api/Pos/StockRequests.cs:461 |
+| POST | `/api/requests/approvals/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:450 |
 
 ## reservations
 
@@ -419,9 +419,9 @@
 | POST | `/api/stock/deliveries/check` | kitchen.view, pos.sell | src/OnePos.Api/Pos/Stock.cs:342 |
 | POST | `/api/stock/deliveries/uncheck` | day.manage | src/OnePos.Api/Pos/Stock.cs:398 |
 | GET | `/api/stock/requests` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/StockRequests.cs:319 |
-| POST | `/api/stock/requests` |  | src/OnePos.Api/Pos/StockRequests.cs:363 |
-| PUT | `/api/stock/requests/{id:guid}` |  | src/OnePos.Api/Pos/StockRequests.cs:366 |
-| POST | `/api/stock/requests/{id:guid}/cancel` | day.manage | src/OnePos.Api/Pos/StockRequests.cs:369 |
+| POST | `/api/stock/requests` |  | src/OnePos.Api/Pos/StockRequests.cs:371 |
+| PUT | `/api/stock/requests/{id:guid}` |  | src/OnePos.Api/Pos/StockRequests.cs:374 |
+| POST | `/api/stock/requests/{id:guid}/cancel` | day.manage | src/OnePos.Api/Pos/StockRequests.cs:377 |
 | GET | `/api/stock/requests/items` | kitchen.view, pos.sell | src/OnePos.Api/Pos/StockRequests.cs:343 |
 | GET | `/api/stock/returns` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/StockReturns.cs:242 |
 | POST | `/api/stock/returns` | kitchen.view, pos.sell | src/OnePos.Api/Pos/StockReturns.cs:276 |

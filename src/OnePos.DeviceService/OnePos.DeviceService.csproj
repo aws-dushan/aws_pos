@@ -7,7 +7,7 @@
     <RootNamespace>OnePos.DeviceService</RootNamespace>
     <AssemblyName>OnePos.DeviceService</AssemblyName>
     <!-- The release number the updater compares (tools/release-device-service.ps1 sets it for a release). -->
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

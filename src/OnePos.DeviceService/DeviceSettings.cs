@@ -11,6 +11,11 @@ public sealed class DeviceSettings
     public string? ReceiptPrinter { get; set; }
     /// <summary>Paper width in mm: 80 (576 dots) or 58 (384 dots).</summary>
     public int PaperWidth { get; set; } = 80;
+    /// <summary>
+    /// How this till's printers get receipts and kitchen tickets: "escpos" (default), the picture in the printer's own ESC/POS
+    /// language, fastest; or "driver", the picture through the printer's Windows driver, for printers that don't understand ESC/POS.
+    /// </summary>
+    public string PrintMode { get; set; } = "escpos";
     /// <summary>Open the drawer (through the receipt printer) when a cash payment's receipt prints.</summary>
     public bool DrawerOnCash { get; set; } = true;
     /// <summary>A 2-line pole display on a serial port (e.g. COM3); null = none.</summary>
