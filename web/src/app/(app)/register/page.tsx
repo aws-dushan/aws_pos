@@ -241,10 +241,14 @@ function OrderScreen({ orderId }: { orderId: string }) {
     } catch (e) { toast.error((e as Error).message); }
   }
 
+  // Only categories with something on this register (its items here, sold-out ones and its combos included); a category whose items
+  // all came off falls back to All. On a platform's bill they stay: items without a platform price show greyed.
+  const shownCats = useMemo(() => (menu.data?.categories ?? []).filter((c) => (menu.data?.items ?? []).some((i) => i.categoryId === c.id)), [menu.data]);
+  const curCat = cat === "all" || shownCats.some((c) => c.id === cat) ? cat : "all";
   const items = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (menu.data?.items ?? []).filter((i) => (cat === "all" || i.categoryId === cat) && (!term || i.name.toLowerCase().includes(term)));
-  }, [menu.data, cat, q]);
+    return (menu.data?.items ?? []).filter((i) => (curCat === "all" || i.categoryId === curCat) && (!term || i.name.toLowerCase().includes(term)));
+  }, [menu.data, curCat, q]);
 
   if (loaded.error && !d) return <EmptyState icon={ReceiptTextIcon} title="Order not found" module="fin" action={<Button onClick={() => router.push("/register")}>Back to the register</Button>}>{loaded.error}</EmptyState>;
   if (!d) return <div className="grid gap-4 py-3 md:h-[calc(100dvh-3.5rem)] md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_420px]"><div className="rounded-2xl skeleton-shimmer" /><div className="rounded-2xl skeleton-shimmer" /></div>;
@@ -319,8 +323,8 @@ function OrderScreen({ orderId }: { orderId: string }) {
         <PickupStrip />
         <NoSaleDialog open={noSale} onClose={() => setNoSale(false)} />
         <div role="tablist" aria-label="Categories" className="scrollbar-thin -mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {[{ id: "all", name: "All", tone: "home" as const }, ...(menu.data?.categories ?? [])].map((c) => {
-            const on = cat === c.id;
+          {[{ id: "all", name: "All", tone: "home" as const }, ...shownCats].map((c) => {
+            const on = curCat === c.id;
             return (
               <button key={c.id} type="button" role="tab" aria-selected={on} data-module={c.tone} onClick={() => setCat(c.id)}
                 className={cn("relative flex h-12 shrink-0 items-center gap-2 rounded-xl px-4 text-sm font-medium transition-[color,transform] active:scale-[0.97]",
@@ -336,7 +340,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
           {menu.loading && !menu.data ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">{Array.from({ length: 12 }, (_, i) => <div key={i} className="h-40 rounded-2xl skeleton-shimmer" />)}</div>
           ) : items.length ? (
-            <motion.div key={cat + q} className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+            <motion.div key={curCat + q} className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
               initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.02 } } }}>
               {items.map((i) => <ItemTile key={i.id} item={i} shortRule={menu.data?.shortStock ?? "allow"} image={imageUrl(company?.id, i)} qty={qtyOf(i.id)} currency={cur} tone={tone(i)} hasOptions={groupsOf(i).length > 0} price={i.isCombo ? leastPrice(i, groupsOf(i)) : priceOf(i)} disabled={closed} onTap={() => tapItem(i)} />)}
             </motion.div>
