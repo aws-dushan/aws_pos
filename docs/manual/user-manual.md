@@ -236,7 +236,7 @@ With your shift open, tap **Cash in / out**, pick a tab, a reason, the amount, t
 | Tab | Reasons |
 | --- | --- |
 | Safe drop | Cash moved to the safe. |
-| Cash in | Change from the safe, float top-up. |
+| Cash in | Change from the safe, float top-up (float), or **Cash to deposit to bank**: cash owed to the bank (e.g. held from before One POS), added to Cash to bank with the note typed. |
 | Cash out | Supplier paid, petty cash, staff advance. Over your limit needs approval. |
 | Bank deposit | Cash taken to the bank, with the bag or slip number. |
 
@@ -454,7 +454,7 @@ Every cash sale goes to the bank. **Cash to bank** shows, for the branch chosen 
 - **Bank deposits**: each deposit with its bag or slip number, who took it and the drawer it came from.
 - **All branches**: what each of your branches owes and since when (administrators see every branch).
 
-The float, cash in and cash out stay in the drawer and don't change what is owed; a shift's shortage or over stays with the shift. Deposits are recorded on the till (**Cash in / out** → **Bank deposit**).
+The float, cash in and cash out stay in the drawer and don't change what is owed, except a cash in with the reason **Cash to deposit to bank**, which is added to it with its note; a shift's shortage or over stays with the shift. Deposits are recorded on the till (**Cash in / out** → **Bank deposit**).
 
 ## Paper sales (outages)
 

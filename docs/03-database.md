@@ -22,7 +22,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Menu | `menu_category`, `menu_item` (a combo: one branch each), `item_unit`, `modifier_group` (one branch each), `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
-| Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` `cash_bank_adjustment` (Cash to bank: a branch owes its cash sales less cash refunds, plus amounts added by hand with a remark, less its deposits, from `branch.cash_bank_from`; worked out when asked) |
+| Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` `cash_bank_adjustment` (Cash to bank: a branch owes its cash sales less cash refunds, plus amounts added with a remark (by hand, or a cash in "Cash to deposit to bank", linked by `cash_movement_id`), less its deposits, from `branch.cash_bank_from`; worked out when asked) |
 | Customers and rewards | `customer` (one branch each), `voucher`, `voucher_move`, `loyalty_move` |
 | Stock | `wastage` (also marketing give-aways), `delivery_check`, `stock_return`, `request_store`, `stock_request`, `stock_request_line`, `ingredient`, `recipe_line`, `branch_ingredient`, `ingredient_move`, `bom`, `bom_version`, `bom_line`, `material_unit` |
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |
@@ -161,14 +161,14 @@ PostgreSQL indexes a primary key automatically, but not the column that points a
 matters in two cases: when the app finds the child rows from the parent (a bill's lines), and when it **deletes a
 parent**, because PostgreSQL then checks every table that points at it.
 
-- **102 of the 239 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
+- **103 of the 242 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
   payments, returns, shifts, days, customers, vouchers, option groups, floors and tables.
-- **The other 136 are left without an index on purpose.** Each extra index slows every insert a little, and these give
+- **The other 139 are left without an index on purpose.** Each extra index slows every insert a little, and these give
   nothing back:
-  - **49 `company_id`**: companies are never deleted, and queries always filter on a narrower column first.
+  - **50 `company_id`**: companies are never deleted, and queries always filter on a narrower column first.
   - **50 "who did it"** columns pointing at users (`opened_by`, `taken_by`, `decided_by`, …): users are switched off,
     never deleted, and no screen searches by them.
-  - **37 links to rows the app never deletes** (it switches them off instead) and never searches from: branch, till,
+  - **39 links to rows the app never deletes** (it switches them off instead) and never searches from: branch, till,
     menu item, ingredient, delivery platform, role, currency, voucher, approval, and the FACTS posting of a wastage or
     stock document. Removing a till by hand (`db/maintenance/remove_tills.sql`) is the only delete, and it is rare.
 

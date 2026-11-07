@@ -151,6 +151,8 @@ export function OpenShiftDialog({ open, defaultFloat, currency, onClose, onDone 
   );
 }
 
+/** The cash in that is owed to the bank, not float (it is added to Cash to bank). */
+const TO_BANK = "Cash to deposit to bank";
 const MOVE_REASONS = { in: ["Change from the safe", "Float top-up"], out: ["Supplier paid", "Petty cash", "Staff advance"], drop: ["Safe drop"] };
 
 /** Cash put in, taken out, dropped to the safe, or taken to the bank during the shift. */
@@ -163,17 +165,21 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
   const [bagNo, setBagNo] = useState("");
   const [takenBy, setTakenBy] = useState("");
   const [busy, setBusy] = useState(false);
+  // A cash in owed to the bank (not float): the box then takes an optional note, kept as the remark on Cash to bank.
+  const [toBank, setToBank] = useState(false);
   const deposit = kind === "deposit";
-  const ready = Number(amount) > 0 && (deposit ? takenBy.trim() : reason.trim());
+  const bank = kind === "in" && toBank;
+  const ready = Number(amount) > 0 && (deposit ? takenBy.trim() : bank || reason.trim());
   async function submit() {
     setBusy(true);
     try {
       if (deposit) await api(`/shifts/${shiftId}/deposit`, "POST", { amount: Number(amount), bagNo: bagNo || null, takenBy: takenBy.trim() });
+      else if (bank) await api(`/shifts/${shiftId}/cash`, "POST", { kind, amount: Number(amount), reason: `${TO_BANK}${reason.trim() ? ` · ${reason.trim()}` : ""}`, toBank: true });
       else await api(`/shifts/${shiftId}/cash`, "POST", { kind, amount: Number(amount), reason });
       // Money goes into or out of the drawer, so it opens.
       void openDrawerForCash();
-      toast.success(kind === "in" ? "Cash in recorded" : kind === "out" ? "Cash out recorded" : deposit ? "Bank deposit recorded" : "Safe drop recorded");
-      setAmount(""); setReason(""); setBagNo(""); setTakenBy("");
+      toast.success(bank ? "Cash in recorded, owed to the bank" : kind === "in" ? "Cash in recorded" : kind === "out" ? "Cash out recorded" : deposit ? "Bank deposit recorded" : "Safe drop recorded");
+      setAmount(""); setReason(""); setBagNo(""); setTakenBy(""); setToBank(false);
       onDone();
     } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
@@ -181,7 +187,7 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
     <Dialog open={!!shiftId} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader><DialogTitle>Cash in or out</DialogTitle><DialogDescription>Every movement is counted in the shift and shows in its report.</DialogDescription></DialogHeader>
-        <Segmented id="cash-kind" value={kind} onChange={(k) => { setKind(k); setReason(""); if (k === "deposit" && !takenBy) setTakenBy(me.user.displayName); }} className="w-full"
+        <Segmented id="cash-kind" value={kind} onChange={(k) => { setKind(k); setReason(""); setToBank(false); if (k === "deposit" && !takenBy) setTakenBy(me.user.displayName); }} className="w-full"
           options={[{ value: "drop", label: "Safe drop", icon: VaultIcon }, { value: "in", label: "Cash in", icon: ArrowDownToLineIcon }, { value: "out", label: "Cash out", icon: ArrowUpFromLineIcon },
             ...(canDeposit ? [{ value: "deposit" as const, label: "Bank deposit", icon: LandmarkIcon }] : [])]} />
         <div className="rounded-xl border bg-muted/50 px-4 py-3 text-right font-heading text-3xl font-semibold tabular-nums"><span className="mr-1 text-sm text-muted-foreground">{currency}</span>{amount || "0"}</div>
@@ -196,11 +202,16 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
           <>
             <div className="flex flex-wrap gap-2">
               {MOVE_REASONS[kind as keyof typeof MOVE_REASONS].map((r) => (
-                <button key={r} type="button" onClick={() => setReason(r)}
-                  className={cn("h-10 rounded-full border px-4 text-sm active:scale-[0.97]", reason === r ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>{r}</button>
+                <button key={r} type="button" onClick={() => { setReason(r); setToBank(false); }}
+                  className={cn("h-10 rounded-full border px-4 text-sm active:scale-[0.97]", !bank && reason === r ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>{r}</button>
               ))}
+              {kind === "in" && (
+                <button type="button" onClick={() => { setToBank(true); setReason(""); }}
+                  className={cn("h-10 rounded-full border px-4 text-sm active:scale-[0.97]", bank ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>{TO_BANK}</button>
+              )}
             </div>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason" className="h-11" />
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={bank ? "Note (optional), e.g. Balance from before One POS" : "Reason"} className="h-11" />
+            {bank && <p className="text-xs text-muted-foreground">Goes into the drawer and is added to what this branch owes the bank (Cash to bank). Any other reason is float.</p>}
           </>
         )}
         <DialogFooter>

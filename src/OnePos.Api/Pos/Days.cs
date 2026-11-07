@@ -16,7 +16,8 @@ public static class Days
 {
     public sealed record OpenShiftBody(decimal OpeningFloat, JsonElement? Counts);
     public sealed record CloseShiftBody(decimal CountedCash, JsonElement? Counts, string? Note);
-    public sealed record CashBody(string Kind, decimal Amount, string Reason);
+    /// <summary>`ToBank`: a cash in that is owed to the bank ("Cash to deposit to bank"), not float: it is added to Cash to bank too.</summary>
+    public sealed record CashBody(string Kind, decimal Amount, string Reason, bool? ToBank = null);
     public sealed record ApproveBody(string? Note);
     public sealed record DepositBody(decimal Amount, string? BagNo, string TakenBy);
 
@@ -604,9 +605,19 @@ public static class Days
                 var s = await c.QuerySingleOrDefaultAsync<ShiftRow>($"{ShiftSql} where s.id = @id and s.branch_id = @b", new { id, b = scope.Branch }, tx) ?? throw new NotFoundException("Shift not found.");
                 if (s.Status != "open") throw new DomainException("This shift is closed.");
                 if (s.UserId != scope.UserId && !(s.SharedDrawer && scope.Can("day.shift")) && !scope.Can("day.manage")) throw new ForbiddenException("Only the shift's own cashier or a manager can move its cash.");
-                await c.ExecuteAsync("insert into cash_movement (company_id, shift_id, kind, amount, reason, by_user) values (@co, @id, @kind, @amount, @reason, @u)",
-                    new { co = scope.CompanyId, id, kind, amount = Money.Round(body.Amount), reason = body.Reason.Trim(), u = scope.UserId }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "shift", id.ToString(), $"cash_{kind}", $"Cash {kind}: {body.Amount:N2}", note: body.Reason.Trim());
+                var amount = Money.Round(body.Amount);
+                var reason = body.Reason.Trim();
+                var moveId = await c.ExecuteScalarAsync<Guid>("insert into cash_movement (company_id, shift_id, kind, amount, reason, by_user) values (@co, @id, @kind, @amount, @reason, @u) returning id",
+                    new { co = scope.CompanyId, id, kind, amount, reason, u = scope.UserId }, tx);
+                // Cash owed to the bank (not float): in the drawer like any cash in, and added to Cash to bank on the shift's business day.
+                var toBank = kind == "in" && body.ToBank == true;
+                if (toBank)
+                    await c.ExecuteAsync("""
+                        insert into cash_bank_adjustment (company_id, branch_id, date, amount, remark, cash_movement_id)
+                        select @co, @b, d.date, @amount, @reason, @moveId from business_day d where d.id = @day
+                        """, new { co = scope.CompanyId, b = scope.Branch, day = s.BusinessDayId, amount, reason, moveId }, tx);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "shift", id.ToString(), $"cash_{kind}",
+                    toBank ? $"Cash in: {amount:N2}, owed to the bank" : $"Cash {kind}: {amount:N2}", note: reason);
                 return 0;
             });
             await live.ToBranch(scope.Branch, "day.changed");
