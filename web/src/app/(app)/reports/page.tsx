@@ -8,7 +8,7 @@ import { ReceiptDialog } from "@/components/pos-payment";
 import { SummaryView, summarySections, type Summary } from "@/components/summary-report";
 import { ComparisonView, comparisonSections, type Comparison } from "@/components/branch-comparison";
 import { cellNumber, FilterBar, FilterHeading, useTableView } from "@/components/table-filters";
-import { dayReportLines, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus } from "@/components/shift";
+import { dayReportLines, ReportDialog, SHIFT_STATUS, shiftReportLines, type DayReport, type ShiftReport, type ShiftStatus, type ToBank } from "@/components/shift";
 import type { ReceiptLine } from "@/lib/device";
 import { toast } from "sonner";
 import { fmtIn } from "@/lib/num";
@@ -75,9 +75,9 @@ type Ret = {
 };
 const RET_KIND: Record<Ret["kind"], string> = { bill: "Whole bill", items: "Items", amount: "Amount" };
 type ClosedDays = {
-  days: { id: string; date: string; branch: string; closedAt: string | null; closedByName: string | null; reopened: number; z: DayReport | null }[];
+  days: { id: string; date: string; branch: string; closedAt: string | null; closedByName: string | null; reopened: number; z: DayReport | null; toBank?: ToBank | null }[];
   shifts: { id: string; date: string; branch: string; registerName: string; userName: string; openedAt: string; closedAt: string | null; status: ShiftStatus; openingFloat: number;
-    expectedCash: number | null; countedCash: number | null; variance: number | null; approvedByName: string | null; sales: number; z: ShiftReport | null }[];
+    expectedCash: number | null; countedCash: number | null; variance: number | null; approvedByName: string | null; sales: number; z: ShiftReport | null; toBank?: ToBank | null }[];
 };
 type InvKind = "all" | "notPosted";
 const FACTS_LABEL: Record<string, string> = { posted: "Posted", pending: "Waiting", waiting: "Waiting", failed: "Failed", skipped: "Skipped" };
@@ -144,9 +144,9 @@ export default function ReportsPage() {
   const [zLines, setZLines] = useState<ReceiptLine[] | null>(null);
   const zTitle = (code: string) => `${company?.name ?? ""} · ${code}`;
   const zOf = (i: number): ReceiptLine[] | null => {
-    if (dayKind === "days") { const x = cd.data?.days[i]; return x?.z ? dayReportLines({ ...x.z, status: "closed" }, zTitle(x.branch)) : null; }
+    if (dayKind === "days") { const x = cd.data?.days[i]; return x?.z ? dayReportLines({ ...x.z, status: "closed", toBank: x.toBank ?? x.z.toBank }, zTitle(x.branch)) : null; }
     const x = cd.data?.shifts[i];
-    return x?.z ? shiftReportLines({ ...x.z, kind: "Z" }, zTitle(x.branch)) : null;
+    return x?.z ? shiftReportLines({ ...x.z, kind: "Z", toBank: x.toBank ?? x.z.toBank }, zTitle(x.branch)) : null;
   };
   // The bills shown: not yet in FACTS (waiting or failed; voids never go), and the search on number, cashier, platform order or method.
   const invRows = useMemo(() => {

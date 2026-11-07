@@ -351,14 +351,14 @@ public static class Reports
                         """, new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToArray()
                     : [scope.Branch];
                 var days = await c.QueryAsync<ClosedDay>("""
-                    select d.id, d.date, b.code as branch, d.closed_at, cu.display_name as closed_by_name, d.reopened, d.z_report::text as z
+                    select d.id, d.date, b.code as branch, d.branch_id, d.closed_at, cu.display_name as closed_by_name, d.reopened, d.z_report::text as z
                     from business_day d join branch b on b.id = d.branch_id left join app_user cu on cu.id = d.closed_by
                     where d.branch_id = any(@ids) and d.date between @f and @t and d.status = 'closed'
                     order by d.date desc, b.code
                     """, new { ids, f, t }, tx);
                 // Sales: what the shift took less what it paid back.
                 var shifts = await c.QueryAsync<ClosedShift>("""
-                    select s.id, d.date, b.code as branch, r.name as register_name, u.display_name as user_name, s.opened_at, s.closed_at, s.status,
+                    select s.id, d.date, b.code as branch, s.branch_id, r.name as register_name, u.display_name as user_name, s.opened_at, s.closed_at, s.status,
                            s.opening_float, s.expected_cash, s.counted_cash, s.variance, a.display_name as approved_by_name,
                            coalesce((select sum(case p.kind when 'payment' then p.amount else -p.amount end) from payment p where p.shift_id = s.id), 0) as sales,
                            s.z_report::text as z
@@ -368,10 +368,12 @@ public static class Reports
                     order by d.date desc, b.code, s.opened_at
                     """, new { ids, f, t }, tx);
                 static JsonElement? Json(string? z) => z is null ? null : JsonDocument.Parse(z).RootElement;
+                // Each day's cash still to deposit (Cash to bank), for the reports' cash block.
+                var toBank = await CashToBank.AsOfManyAsync(c, tx, days.Select(x => (x.BranchId, x.Date)).Concat(shifts.Select(x => (x.BranchId, x.Date))).ToList());
                 return new
                 {
-                    days = days.Select(x => new { x.Id, x.Date, x.Branch, x.ClosedAt, x.ClosedByName, x.Reopened, z = Json(x.Z) }),
-                    shifts = shifts.Select(x => new { x.Id, x.Date, x.Branch, x.RegisterName, x.UserName, x.OpenedAt, x.ClosedAt, x.Status, x.OpeningFloat, x.ExpectedCash, x.CountedCash, x.Variance, x.ApprovedByName, x.Sales, z = Json(x.Z) }),
+                    days = days.Select(x => new { x.Id, x.Date, x.Branch, x.ClosedAt, x.ClosedByName, x.Reopened, z = Json(x.Z), toBank = toBank.GetValueOrDefault((x.BranchId, x.Date)) }),
+                    shifts = shifts.Select(x => new { x.Id, x.Date, x.Branch, x.RegisterName, x.UserName, x.OpenedAt, x.ClosedAt, x.Status, x.OpeningFloat, x.ExpectedCash, x.CountedCash, x.Variance, x.ApprovedByName, x.Sales, z = Json(x.Z), toBank = toBank.GetValueOrDefault((x.BranchId, x.Date)) }),
                 };
             });
         });
@@ -380,12 +382,12 @@ public static class Reports
     public sealed class ClosedDay
     {
         public Guid Id { get; set; } public DateOnly Date { get; set; } public string Branch { get; set; } = ""; public DateTime? ClosedAt { get; set; } public string? ClosedByName { get; set; }
-        public int Reopened { get; set; } public string? Z { get; set; }
+        public int Reopened { get; set; } public string? Z { get; set; } public Guid BranchId { get; set; }
     }
 
     public sealed class ClosedShift
     {
-        public Guid Id { get; set; } public DateOnly Date { get; set; } public string Branch { get; set; } = ""; public string RegisterName { get; set; } = ""; public string UserName { get; set; } = "";
+        public Guid Id { get; set; } public DateOnly Date { get; set; } public string Branch { get; set; } = ""; public Guid BranchId { get; set; } public string RegisterName { get; set; } = ""; public string UserName { get; set; } = "";
         public DateTime OpenedAt { get; set; } public DateTime? ClosedAt { get; set; } public string Status { get; set; } = ""; public decimal OpeningFloat { get; set; }
         public decimal? ExpectedCash { get; set; } public decimal? CountedCash { get; set; } public decimal? Variance { get; set; } public string? ApprovedByName { get; set; }
         public decimal Sales { get; set; } public string? Z { get; set; }

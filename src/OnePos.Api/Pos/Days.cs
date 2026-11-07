@@ -211,7 +211,17 @@ public static class Days
             kind = s.Status == "open" ? "X" : "Z", shift = s, cash, expected,
             payments = methods, byType, movements = movements.Select(m => new { m.Kind, m.Amount, m.Reason, m.At }), byCashier,
             orders = await c.ExecuteScalarAsync<int>("select count(distinct order_id)::int from payment where shift_id = @shiftId and kind = 'payment'", new { shiftId }, tx),
+            // The branch's cash still to deposit on the shift's day (Cash to bank), shown under the drawer.
+            toBank = await ToBankOfShiftAsync(c, tx, shiftId),
         };
+    }
+
+    /// <summary>Cash to bank on a shift's business day, for its branch.</summary>
+    private static async Task<CashToBank.DayToBank?> ToBankOfShiftAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid shiftId)
+    {
+        var (branch, date) = await c.QuerySingleAsync<(Guid Branch, DateOnly Date)>(
+            "select s.branch_id, d.date from shift s join business_day d on d.id = s.business_day_id where s.id = @shiftId", new { shiftId }, tx);
+        return await CashToBank.AsOfAsync(c, tx, branch, date);
     }
 
     public sealed record CashMove(string Kind, decimal Amount, string Reason, string? Register, string? By, DateTime At);
@@ -316,6 +326,7 @@ public static class Days
             wastage = new { waste.Count, waste.Value },
             marketing = new { given.Count, given.Value },
             noSales = await c.ExecuteScalarAsync<int>("select count(*)::int from no_sale where branch_id = @b and business_date = @d", args, tx),
+            toBank = await CashToBank.AsOfAsync(c, tx, day.BranchId, day.Date),
         };
     }
 
@@ -408,6 +419,8 @@ public static class Days
                     left join app_user u on u.id = d.opened_by left join app_user cu on cu.id = d.closed_by
                     where d.branch_id = @b and d.status = 'closed' order by d.date desc limit 14
                     """, new { b = scope.Branch }, tx)).ToList();
+                // Each closed day's cash still to deposit (Cash to bank), shown in its Z report.
+                var recentToBank = await CashToBank.AsOfManyAsync(c, tx, recent.Select(r => (r.BranchId, r.Date)).ToList());
                 var myShift = await ShiftOfAsync(c, tx, scope.RegisterId, scope.UserId);
                 // Automatic close: when it closes (with any delay), whether the countdown is on, and whether it can wait longer.
                 DateTime? closesAt = null;
@@ -424,7 +437,8 @@ public static class Days
                     autoOpen = b.AutoOpenTime.ToString("HH:mm"), autoClose = b.AutoCloseTime.ToString("HH:mm"),
                     day, shifts, pending, myShiftId = myShift, registerId = scope.RegisterId,
                     report = day is null ? null : await DayReportAsync(c, tx, day),
-                    recent = recent.Select(r => new { r.Id, r.Date, r.Status, r.OpenedAt, r.ClosedAt, r.OpenedByName, r.ClosedByName, r.Reopened, z = r.ZReport is null ? (JsonElement?)null : JsonDocument.Parse(r.ZReport).RootElement }),
+                    recent = recent.Select(r => new { r.Id, r.Date, r.Status, r.OpenedAt, r.ClosedAt, r.OpenedByName, r.ClosedByName, r.Reopened, z = r.ZReport is null ? (JsonElement?)null : JsonDocument.Parse(r.ZReport).RootElement,
+                                                     toBank = recentToBank.GetValueOrDefault((r.BranchId, r.Date)) }),
                     canManage = scope.Can("day.manage") || (b.DayControl == "cashier" && scope.Can("day.shift")),
                     canReopen = scope.Can("day.reopen"),
                     canDeposit = scope.Can("day.manage") || scope.Can("day.deposit"),

@@ -198,7 +198,7 @@ export default function DayPage() {
                         <TableCell className={cn("text-right tabular-nums", (r.z?.variance ?? 0) < 0 && "text-danger")}>{r.z ? money(r.z.variance) : "—"}</TableCell>
                         <TableCell className="pr-5 text-right">
                           {/* A closed day's kept report is its Z (days closed before 24 Oct kept "open" in it). */}
-                          {r.z && <Button variant="ghost" size="sm" onClick={() => setReport(dayReportLines({ ...r.z!, status: "closed" }, title))}>Z report</Button>}
+                          {r.z && <Button variant="ghost" size="sm" onClick={() => setReport(dayReportLines({ ...r.z!, status: "closed", toBank: r.toBank ?? r.z!.toBank }, title))}>Z report</Button>}
                           {i === 0 && !d.day && d.canReopen && (
                             <Button variant="ghost" size="sm" onClick={() => void confirmDialog({ title: `Reopen ${fmtDate(r.date)}?`, message: "Sales go into it again until it's closed. This is recorded.", confirmLabel: "Reopen" })
                               .then((ok) => { if (ok) void act(() => api(`/day/${r.id}/reopen`, "POST"), "Day reopened"); })}><LockOpenIcon /> Reopen</Button>

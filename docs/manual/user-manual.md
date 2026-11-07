@@ -251,7 +251,16 @@ A bank deposit is recorded only here, on the till, before the shift is counted: 
 
 ![Closing a shift: count each denomination; the difference shows after closing](images/close-shift.jpg)
 
-**X report** shows your shift so far without closing it.
+**X report** shows your shift so far without closing it. Shift and day reports (X so far, Z once closed) read in four blocks:
+
+| Block | Answers |
+| --- | --- |
+| 1. What we sold | Net sales, by order type (delivery platforms on one line, named underneath), discounts, returns, VAT |
+| 2. How we were paid | Card (by card type), platforms (they pay the outlet), cash and the rest; the total matches the sales |
+| 3. Cash drawer | Should be in the drawer, counted and the difference (each cashier underneath); what was sent to the bank; **Still to deposit**, as on Cash to bank; the movements in one small line |
+| 4. Also | Voids, wastage, give-aways, cash in and out |
+
+The shift X report keeps the count blind: it shows what should be in the drawer only once the shift is counted.
 
 ![An X report: the shift so far, by order type, payment and cash](images/x-report.jpg)
 
