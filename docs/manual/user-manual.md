@@ -257,7 +257,7 @@ A bank deposit is recorded only here, on the till, before the shift is counted: 
 | --- | --- |
 | 1. What we sold | Net sales, by order type (delivery platforms on one line, named underneath), discounts, returns, VAT |
 | 2. How we were paid | Card (by card type), platforms (they pay the outlet), cash and the rest; the total matches the sales |
-| 3. Cash drawer | Should be in the drawer, counted and the difference (each cashier underneath); what was sent to the bank; **Still to deposit**, as on Cash to bank; the movements in one small line |
+| 3. Cash drawer | A sum from the **opening count**: + cash sales, − returns, every cash in, cash out, safe drop and bank deposit with its reason, = what the drawer should hold; the count at close and the difference (each cashier underneath); **Still to deposit**, as on Cash to bank. The day report adds a **float check**: the branch's fixed float (usual float per till) + still to deposit = what the drawer should hold, against the count, so a float spent and not yet topped up shows as **Float short by** |
 | 4. Also | Voids, wastage, give-aways, cash in and out |
 
 The shift X report keeps the count blind: it shows what should be in the drawer only once the shift is counted.

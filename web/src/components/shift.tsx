@@ -259,7 +259,6 @@ export function CloseShiftDialog({ shiftId, currency, onClose, onDone }: { shift
   );
 }
 
-const MOVE_LABEL: Record<MoveKind, string> = { in: "Cash in", out: "Cash out", drop: "Safe drop", deposit: "Bank deposit" };
 
 /** An order type's line; `platform`: a delivery platform's orders (null: not a platform's; missing: a report from before the split). */
 type TypeLine = { type: OrderType; platform?: string | null; orders: number; amount: number };
@@ -272,7 +271,7 @@ const methodLabel = (p: PayLine) => (p.method === "platform" && p.platform ? p.p
   : p.method === "card" && p.cardType ? `Card · ${cardLabel(p.cardType)}` : METHOD_LABEL[p.method] ?? p.method);
 
 /** A branch's cash to bank on the report's day: brought forward, that day's cash, amounts added, deposits, and still to deposit. */
-export type ToBank = { broughtForward: number; cash: number; added: number; deposited: number; stillToDeposit: number };
+export type ToBank = { broughtForward: number; cash: number; added: number; deposited: number; stillToDeposit: number; floatPerTill?: number };
 
 const small = (text: string): ReceiptLine => ({ text: `   ${text}`, size: "small" });
 const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${money(Math.abs(n))}`;
@@ -329,17 +328,38 @@ function toBankLines(b: ToBank | null | undefined, label: string): ReceiptLine[]
   return [{ text: label, right: money(b.stillToDeposit), bold: true }, small(parts.join(" "))];
 }
 
-/** The movements behind the drawer figure, in one small line. */
-function cashDetail(opened: number, sales: number, refunds: number, moves: { kind: MoveKind; amount: number }[], shiftChange?: number): ReceiptLine {
-  const total = (k: MoveKind) => moves.filter((m) => m.kind === k).reduce((t, m) => t + m.amount, 0);
-  const parts = [`opened with ${money(opened)}`, `+ cash sales ${money(sales)}`];
-  if (refunds) parts.push(`− cash returns ${money(refunds)}`);
-  if (total("in")) parts.push(`+ cash in ${money(total("in"))}`);
-  if (total("out")) parts.push(`− cash out ${money(total("out"))}`);
-  if (total("drop")) parts.push(`− safe drops ${money(total("drop"))}`);
-  if (total("deposit")) parts.push(`− bank deposits ${money(total("deposit"))}`);
-  if (shiftChange) parts.push(`${shiftChange > 0 ? "− taken out" : "+ put in"} at shift changes ${money(Math.abs(shiftChange))}`);
-  return { text: `Cash details: ${parts.join(" · ")}`, size: "small" };
+/**
+ * The drawer as a sum, line by line: the opening count, cash sales and returns, every cash in / cash out / safe drop / bank deposit
+ * (with its reason), and money taken out or put in between shifts. The caller adds "= Should be in the drawer", the count and the difference.
+ */
+function drawerSum(opened: number, sales: number, refunds: number, moves: { kind: MoveKind; amount: number; reason: string; register?: string | null }[], shiftChange?: number): ReceiptLine[] {
+  const SIGN: Record<MoveKind, string> = { in: "+", out: "−", drop: "−", deposit: "−" };
+  const LABEL: Record<MoveKind, string> = { in: "Cash in", out: "Cash out", drop: "Safe drop", deposit: "Sent to the bank" };
+  const out: ReceiptLine[] = [{ text: "Opening count", right: money(opened) }, { text: "+ Cash sales", right: money(sales) }];
+  if (refunds) out.push({ text: "− Cash returns", right: money(refunds) });
+  for (const m of moves) out.push({ text: `${SIGN[m.kind]} ${LABEL[m.kind]}${m.register ? ` (${m.register})` : ""}`, right: money(m.amount) }, small(m.reason));
+  if (shiftChange) out.push({ text: shiftChange > 0 ? "− Taken out between shifts" : "+ Put in between shifts", right: money(Math.abs(shiftChange)) });
+  return out;
+}
+
+/**
+ * The float check: with a fixed float per till (Companies & branches), the drawers should hold the float plus the cash still to deposit;
+ * what they hold beyond or below that shows (e.g. float spent and not yet topped up). Only once every till is counted.
+ */
+function floatCheck(b: ToBank | null | undefined, tills: number, counted: number): ReceiptLine[] {
+  if (!b || !b.floatPerTill) return [];
+  const float = b.floatPerTill * Math.max(1, tills);
+  const should = float + b.stillToDeposit;
+  const diff = Math.round((counted - should) * 100) / 100;
+  return [
+    { rule: true }, { text: "FLOAT CHECK", bold: true },
+    { text: tills > 1 ? `Float set (${money(b.floatPerTill)} × ${tills} tills)` : "Float set for this branch", right: money(float) },
+    { text: "+ Still to deposit", right: money(b.stillToDeposit) },
+    { text: "= Drawer should hold", right: money(should), bold: true },
+    { text: "Counted at close", right: money(counted) },
+    diff === 0 ? { text: "Float intact", right: "✓", bold: true } : { text: diff < 0 ? "Float short by" : "Float over by", right: money(Math.abs(diff)), bold: true },
+    ...(diff < 0 ? [small("Top the drawer up with Cash in → Float top-up once the money is back.")] : []),
+  ];
 }
 
 /** A shift's X (open) or Z (closed) report as lines for the receipt printer and the screen: what I sold, how I was paid, my drawer, also. */
@@ -359,25 +379,14 @@ export function shiftReportLines(r: ShiftReport, title: string): ReceiptLine[] {
   // A shared drawer: what each cashier took (payments less refunds), so the count can be talked through.
   if (s.sharedDrawer || (r.byCashier?.length ?? 0) > 1)
     for (const x of r.byCashier ?? []) out.push(small(`${x.name}: ${x.payments} bills ${money(x.total)}, cash ${money(x.cash)}`));
-  out.push({ rule: true }, { text: "3. MY DRAWER", bold: true });
+  out.push({ rule: true }, { text: "3. MY DRAWER", bold: true }, ...drawerSum(r.cash.openingFloat, r.cash.cashSales, r.cash.cashRefunds, r.movements));
   // The X report keeps the count blind: it shows what moved, not what the drawer should hold.
   if (r.kind === "Z") {
-    out.push({ text: "Should be in the drawer", right: money(r.expected) });
-    if (s.countedCash !== null) out.push({ text: "Counted", right: money(s.countedCash) }, { text: "Difference", right: signed(s.variance ?? 0), bold: true });
+    out.push({ text: "= Should be in the drawer", right: money(r.expected), bold: true });
+    if (s.countedCash !== null) out.push({ text: "Counted at close", right: money(s.countedCash) }, { text: "Difference", right: signed(s.variance ?? 0), bold: true });
     out.push(small(`Status: ${SHIFT_STATUS[s.status]}`));
-  }
-  const sent = r.movements.filter((m) => m.kind === "deposit");
-  if (sent.length) {
-    out.push({ text: "Sent to the bank", right: money(sent.reduce((t, m) => t + m.amount, 0)) });
-    for (const m of sent) out.push(small(m.reason));
-  }
+  } else out.push(small("What the drawer should hold shows once the shift is counted."));
   out.push(...toBankLines(r.toBank, "Still to deposit (branch)"));
-  out.push(cashDetail(r.cash.openingFloat, r.cash.cashSales, r.cash.cashRefunds, r.movements));
-  const other = r.movements.filter((m) => m.kind !== "deposit");
-  if (other.length) {
-    out.push({ rule: true }, { text: "4. ALSO", bold: true });
-    for (const m of other) out.push({ text: `${MOVE_LABEL[m.kind]}: ${m.reason}`, right: `${m.kind === "in" ? "+" : "−"}${money(m.amount)}`, size: "small" });
-  }
   out.push({ rule: true }, { text: `Printed ${new Date().toLocaleString("en-GB")}`, align: "center", size: "small" });
   return out;
 }
@@ -404,24 +413,25 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
     { rule: true },
   ];
 
-  // Block 3: the drawers. Is the cash right, what went to the bank, what is still to deposit; the movements in one small line.
+  // Block 3: the drawers as a sum from the opening count to what they should hold, the count and the difference; then the cash
+  // still to deposit, and the float check against the branch's fixed float.
   const tills = [...new Set(z.shifts.map((s) => s.registerName))];
   out.push({ text: `3. CASH DRAWER${tills.length === 1 ? ` · ${tills[0]}` : "S"}`, bold: true });
-  if (z.cash) {
-    const k = z.cash;
-    out.push({ text: tills.length > 1 ? "Should be in the drawers" : "Should be in the drawer", right: money(k.expected) });
+  const k = z.cash;
+  if (k) {
+    out.push(...drawerSum(k.openingFloat, k.cashSales, k.cashRefunds, k.movements, k.shiftChange));
+    out.push({ text: tills.length > 1 ? "= Should be in the drawers" : "= Should be in the drawer", right: money(k.expected), bold: true });
     const unit = k.shiftChange === undefined ? "shift" : "till";
-    out.push({ text: k.uncounted ? `Counted (${k.uncounted} ${unit}${k.uncounted === 1 ? "" : "s"} not counted yet)` : "Counted", right: money(k.counted) });
+    out.push({ text: k.uncounted ? `Counted at close (${k.uncounted} ${unit}${k.uncounted === 1 ? "" : "s"} not counted yet)` : "Counted at close", right: money(k.counted) });
   }
   out.push({ text: "Difference", right: signed(z.variance), bold: true });
   const perShift = z.shifts.map((s) => `${tills.length > 1 ? `${s.registerName} ` : ""}${s.userName} ${s.variance === null ? SHIFT_STATUS[s.status].toLowerCase() : signed(s.variance)}`);
   if (perShift.length) out.push(small(perShift.join(" · ")));
-  if (z.depositTotal) {
-    out.push({ text: "Sent to the bank today", right: money(z.depositTotal) });
-    for (const x of z.deposits) out.push(small(`${x.takenBy}${x.bagNo ? ` · bag ${x.bagNo}` : ""} · ${x.fromRegister ? `from ${x.fromRegister}` : "from the safe"} · ${money(x.amount)}`));
-  }
+  // Deposits from the safe (recorded before deposits were only taken on the till) aren't drawer movements: listed apart.
+  for (const x of z.deposits.filter((d) => !d.fromRegister))
+    out.push({ text: "Sent to the bank from the safe", right: money(x.amount) }, small(`${x.takenBy}${x.bagNo ? ` · bag ${x.bagNo}` : ""}`));
   out.push(...toBankLines(z.toBank, "Still to deposit"));
-  if (z.cash) out.push(cashDetail(z.cash.openingFloat, z.cash.cashSales, z.cash.cashRefunds, z.cash.movements, z.cash.shiftChange));
+  if (k && !k.uncounted && k.counted > 0) out.push(...floatCheck(z.toBank, tills.length, k.counted));
 
   // Block 4: everything else of the day.
   const also: ReceiptLine[] = [{ text: "Voids", right: `${z.voids.count} · ${money(z.voids.value)}` }];
@@ -429,8 +439,6 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
   if (z.marketing?.count) also.push({ text: "Given away (marketing)", right: `${z.marketing.count} · ${money(z.marketing.value)}` });
   if (z.noSales) also.push({ text: "Drawer opened without a sale", right: String(z.noSales) });
   if (!closed && z.openOrders.count) also.push({ text: "Open bills", right: `${z.openOrders.count} · ${money(z.openOrders.value)}` });
-  for (const m of z.cash?.movements.filter((x) => x.kind !== "deposit") ?? [])
-    also.push({ text: `${MOVE_LABEL[m.kind]}: ${m.reason}${m.register ? ` (${m.register})` : ""}`, right: `${m.kind === "in" ? "+" : "−"}${money(m.amount)}`, size: "small" });
   out.push({ rule: true }, { text: `4. ALSO ${closed ? "THAT DAY" : "TODAY"}`, bold: true }, ...also);
   out.push({ rule: true }, { text: `Printed ${new Date().toLocaleString("en-GB")}`, align: "center", size: "small" });
   return out;

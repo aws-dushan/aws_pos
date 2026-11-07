@@ -60,8 +60,11 @@ public static class CashToBank
         });
     }
 
-    /// <summary>A branch's cash to bank on one business day (the day and shift reports' "Still to deposit").</summary>
-    public sealed record DayToBank(decimal BroughtForward, decimal Cash, decimal Added, decimal Deposited, decimal StillToDeposit);
+    /// <summary>
+    /// A branch's cash to bank on one business day (the day and shift reports' "Still to deposit"), with the branch's fixed float per till
+    /// (Companies & branches: usual float), for the reports' float check.
+    /// </summary>
+    public sealed record DayToBank(decimal BroughtForward, decimal Cash, decimal Added, decimal Deposited, decimal StillToDeposit, decimal FloatPerTill);
 
     /// <summary>
     /// What the branch owed the bank on that day: brought forward from the days before, that day's cash (sales less refunds), amounts added
@@ -77,17 +80,17 @@ public static class CashToBank
         if (want.Count == 0) return result;
         var ids = want.Select(w => w.Branch).Distinct().ToArray();
         var all = await DaysAsync(c, tx, ids);
-        var starts = (await c.QueryAsync<(Guid Id, DateOnly From)>("select id, cash_bank_from from branch where id = any(@ids)", new { ids }, tx)).ToDictionary(x => x.Id, x => x.From);
+        var branches = (await c.QueryAsync<(Guid Id, DateOnly From, decimal Float)>("select id, cash_bank_from, default_float from branch where id = any(@ids)", new { ids }, tx)).ToDictionary(x => x.Id);
         foreach (var (branch, date) in want.Distinct())
         {
-            if (!starts.TryGetValue(branch, out var start) || date < start) continue;
+            if (!branches.TryGetValue(branch, out var br) || date < br.From) continue;
             var days = all.GetValueOrDefault(branch) ?? [];
             var before = days.Where(d => d.Date < date).Sum(d => d.Owed - d.Deposited);
             var today = days.FirstOrDefault(d => d.Date == date);
             var cash = today is null ? 0 : today.CashSales - today.Refunds;
             var added = today?.Added ?? 0;
             var deposited = today?.Deposited ?? 0;
-            result[(branch, date)] = new DayToBank(before, cash, added, deposited, before + cash + added - deposited);
+            result[(branch, date)] = new DayToBank(before, cash, added, deposited, before + cash + added - deposited, br.Float);
         }
         return result;
     }
