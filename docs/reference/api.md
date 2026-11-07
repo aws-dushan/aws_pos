@@ -53,7 +53,7 @@
 | PUT | `/api/branches/{id:guid}/marketing` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:265 |
 | GET | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:174 |
 | PUT | `/api/branches/{id:guid}/receipt` | branch.manage | src/OnePos.Api/Pos/Branding.cs:189 |
-| PUT | `/api/branches/{id:guid}/request-approval` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:517 |
+| PUT | `/api/branches/{id:guid}/request-approval` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:518 |
 | PUT | `/api/branches/{id:guid}/wastage-approval` | branch.manage | src/OnePos.Api/Platform/CompanyEndpoints.cs:231 |
 
 ## cash-bank
@@ -76,8 +76,8 @@
 | GET | `/api/companies/{companyId:guid}/erp/items` | branch.manage | src/OnePos.Api/Erp/FactsSync.cs:559 |
 | PUT | `/api/companies/{companyId:guid}/erp/items` |  | src/OnePos.Api/Erp/FactsSync.cs:571 |
 | POST | `/api/companies/{companyId:guid}/erp/test` |  | src/OnePos.Api/Erp/ErpConnections.cs:93 |
-| GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:480 |
-| PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:490 |
+| GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:481 |
+| PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:491 |
 | PUT | `/api/companies/{companyId:guid}/rewards` |  | src/OnePos.Api/Pos/Rewards.cs:268 |
 | GET | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:176 |
 | POST | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:186 |
@@ -371,10 +371,10 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/requests/approvals` |  | src/OnePos.Api/Pos/StockRequests.cs:401 |
-| POST | `/api/requests/approvals/{id:guid}/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:440 |
-| POST | `/api/requests/approvals/{id:guid}/reject` |  | src/OnePos.Api/Pos/StockRequests.cs:461 |
-| POST | `/api/requests/approvals/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:450 |
+| GET | `/api/requests/approvals` |  | src/OnePos.Api/Pos/StockRequests.cs:402 |
+| POST | `/api/requests/approvals/{id:guid}/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:441 |
+| POST | `/api/requests/approvals/{id:guid}/reject` |  | src/OnePos.Api/Pos/StockRequests.cs:462 |
+| POST | `/api/requests/approvals/approve` |  | src/OnePos.Api/Pos/StockRequests.cs:451 |
 
 ## reservations
 
@@ -390,9 +390,9 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/returns/approvals` |  | src/OnePos.Api/Pos/StockReturns.cs:321 |
-| POST | `/api/returns/approvals/approve` |  | src/OnePos.Api/Pos/StockReturns.cs:338 |
-| POST | `/api/returns/approvals/reject` |  | src/OnePos.Api/Pos/StockReturns.cs:395 |
+| GET | `/api/returns/approvals` |  | src/OnePos.Api/Pos/StockReturns.cs:322 |
+| POST | `/api/returns/approvals/approve` |  | src/OnePos.Api/Pos/StockReturns.cs:339 |
+| POST | `/api/returns/approvals/reject` |  | src/OnePos.Api/Pos/StockReturns.cs:396 |
 
 ## rewards
 
@@ -457,9 +457,9 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/wastage/approvals` |  | src/OnePos.Api/Pos/WastageApproval.cs:125 |
-| POST | `/api/wastage/approvals/approve` |  | src/OnePos.Api/Pos/WastageApproval.cs:144 |
-| POST | `/api/wastage/approvals/reject` |  | src/OnePos.Api/Pos/WastageApproval.cs:244 |
+| GET | `/api/wastage/approvals` |  | src/OnePos.Api/Pos/WastageApproval.cs:126 |
+| POST | `/api/wastage/approvals/approve` |  | src/OnePos.Api/Pos/WastageApproval.cs:145 |
+| POST | `/api/wastage/approvals/reject` |  | src/OnePos.Api/Pos/WastageApproval.cs:245 |
 
 ## health
 

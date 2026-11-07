@@ -22,8 +22,9 @@ const REASON: Record<string, string> = { short: "Short delivered", excess: "Not 
  * Returns to the factory waiting for me (the branches I approve wastage for). Approve, lowering a quantity where needed: FACTS must
  * hold the stock, then it is posted there as a stock transfer back to where the delivery came from. Reject: it stays at the branch.
  */
-export function ReturnsApprovals() {
-  const list = useApi<{ isApprover: boolean; items: Waiting[] }>("/returns/approvals");
+/** all: every branch I approve for (All my branches); otherwise the branch chosen at the top. */
+export function ReturnsApprovals({ all = true }: { all?: boolean }) {
+  const list = useApi<{ isApprover: boolean; items: Waiting[] }>(`/returns/approvals${all ? "?all=true" : ""}`);
   useLiveEvent(["stock.changed"], () => list.reload());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [qty, setQty] = useState<Record<string, string>>({});

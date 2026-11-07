@@ -24,8 +24,9 @@ const REASON: Record<string, string> = { expired: "Expired", damaged: "Damaged",
  * stock, then it is posted there as a stock transfer to the wastage location (marketing give-aways: a material consumption, MCV50, to
  * the marketing expense account). Reject: taken off with the reason, never sent.
  */
-export function WastageApprovals() {
-  const list = useApi<{ currency: string; isApprover: boolean; items: Waiting[] }>("/wastage/approvals");
+/** all: every branch I approve for (All my branches); otherwise the branch chosen at the top. */
+export function WastageApprovals({ all = true }: { all?: boolean }) {
+  const list = useApi<{ currency: string; isApprover: boolean; items: Waiting[] }>(`/wastage/approvals${all ? "?all=true" : ""}`);
   useLiveEvent(["stock.changed"], () => list.reload());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [qty, setQty] = useState<Record<string, string>>({});

@@ -170,8 +170,13 @@ export function CustomerDialog({ value, currency, onClose, onSaved }: { value: s
 function PreapprovedBox({ customer: c, onSaved }: { customer: Customer; onSaved: () => void }) {
   const { can } = useSession();
   const allowed = can("customers.preapprove");
-  const [f, setF] = useState({ pct: c.preapprovedPct ? String(c.preapprovedPct) : "100", reason: c.preapprovedReason ?? "complimentary", until: c.preapprovedUntil ?? "" });
+  const fromSaved = () => ({ pct: c.preapprovedPct ? String(c.preapprovedPct) : "100", reason: c.preapprovedReason ?? "complimentary", until: c.preapprovedUntil ?? "" });
+  const [f, setF] = useState(fromSaved);
   const [busy, setBusy] = useState(false);
+  // The box shows what is saved: filled again whenever the customer or their saved discount changes (after Save, Take off, another customer).
+  const savedKey = `${c.id}|${c.preapprovedPct ?? ""}|${c.preapprovedReason ?? ""}|${c.preapprovedUntil ?? ""}`;
+  const [seenKey, setSeenKey] = useState(savedKey);
+  if (savedKey !== seenKey) { setSeenKey(savedKey); setF(fromSaved()); }
   async function save(off = false) {
     setBusy(true);
     try {

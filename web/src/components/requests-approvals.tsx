@@ -29,8 +29,9 @@ export function Overdue({ at }: { at: string }) {
  * reject them together. Quantities can be changed first (0 takes a line off); approved, each request is posted in FACTS at once as
  * an STR50 from the store to the branch. Rejected: nothing goes to FACTS.
  */
-export function RequestsApprovals() {
-  const list = useApi<{ isApprover: boolean; items: Waiting[] }>("/requests/approvals");
+/** all: every branch I approve for (All my branches); otherwise the branch chosen at the top. */
+export function RequestsApprovals({ all = true }: { all?: boolean }) {
+  const list = useApi<{ isApprover: boolean; items: Waiting[] }>(`/requests/approvals${all ? "?all=true" : ""}`);
   useLiveEvent(["stock.changed"], () => list.reload());
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [qty, setQty] = useState<Record<string, string>>({});

@@ -323,8 +323,10 @@ export function receiptHead(r: Receipt, titleEn: string, titleAr: string): Recei
 export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
   const d = r.detail, o = d.order, bi = r.language !== "en", show = r.settings.show;
   const a = (s: string) => (bi ? s : null);
-  const paidDoc = !!o.invoiceNo;
-  const out = receiptHead(r, paidDoc ? "TAX INVOICE" : "BILL · NOT PAID YET", paidDoc ? AR.taxInvoice : AR.bill);
+  // A voided bill is never a tax invoice: its preview (and receipt link) says so, and it can't be printed (printOrderReceipt).
+  const voided = o.status === "void";
+  const paidDoc = !!o.invoiceNo && !voided;
+  const out = receiptHead(r, voided ? "VOID · NOT A TAX INVOICE" : paidDoc ? "TAX INVOICE" : "BILL · NOT PAID YET", voided ? "فاتورة ملغاة" : paidDoc ? AR.taxInvoice : AR.bill);
   if (r.receiptHeader) for (const t of r.receiptHeader.split("\n")) out.push({ text: t, align: "center", size: "small" });
   // Ref#: the invoice's serial (EBQS-00123 -> 00123, INV-EB-QS-000123 -> 000123); a bill not paid yet, the order's number.
   const serial = o.invoiceNo?.match(/-(\d+)$/)?.[1] ?? o.invoiceNo?.match(/(\d{6})$/)?.[1];
@@ -404,6 +406,7 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
  */
 export async function printOrderReceipt(orderId: string, drawer: boolean, jobId = newKey()): Promise<boolean> {
   const r = await api<Receipt>(`/orders/${orderId}/receipt`);
+  if (r.detail.order.status === "void") throw new Error("This bill was voided: it can't be printed.");
   const qr = r.qrToken ? await qrImage(receiptUrl(r.qrToken)).catch(() => null) : null;
   try {
     await printReceipt(jobId, receiptLines(r, qr), drawer);
@@ -431,7 +434,7 @@ export function ReceiptDialog({ orderId, onClose, primary }: { orderId: string |
           <PrintedLines lines={receiptLines(r.data, qr)} className="max-h-[60vh]" />
         )}
         <DialogFooter>
-          {can("pos.sell") && <Button variant="outline" className="h-12" disabled={!d} onClick={async () => {
+          {can("pos.sell") && d?.order.status !== "void" && <Button variant="outline" className="h-12" disabled={!d} onClick={async () => {
             try { if (!(await printOrderReceipt(orderId!, false))) printReceiptArea(); else toast.success("Receipt sent to the printer."); }
             catch (e) { toast.error((e as Error).message); }
           }}><PrinterIcon /> Print</Button>}

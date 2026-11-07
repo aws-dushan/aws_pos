@@ -398,13 +398,14 @@ public static class StockRequests
         });
 
         // Waiting for me: the branches I approve requests for (an administrator sees all), each line with the stock at the outlet and the store.
-        api.MapGet("/requests/approvals", async (HttpContext http, Db db, FactsSync facts) =>
+        // all=true: every branch I approve for (All my branches); otherwise only the branch chosen at the top (This branch).
+        api.MapGet("/requests/approvals", async (HttpContext http, Db db, FactsSync facts, bool? all) =>
         {
             var scope = await http.ScopeAsync(db);
             var (isApprover, rows, lines) = await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var rs = (await c.QueryAsync<RequestRow>($"{RowSql} where r.approval = 'waiting' and (@admin or b.request_approver_id = @u) order by r.requested_at",
-                    new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToList();
+                var rs = (await c.QueryAsync<RequestRow>($"{RowSql} where r.approval = 'waiting' and (@admin or b.request_approver_id = @u) and (@all or b.id = @br) order by r.requested_at",
+                    new { admin = scope.IsAdmin, u = scope.UserId, all = all == true, br = scope.BranchId }, tx)).ToList();
                 var approver = scope.IsAdmin || await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where request_approver_id = @u)", new { u = scope.UserId }, tx);
                 return (approver, rs, await LinesAsync(c, tx, rs.Select(r => r.Id).ToArray()));
             });

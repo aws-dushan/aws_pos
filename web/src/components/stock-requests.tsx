@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ClipboardListIcon, CopyIcon, Loader2Icon, PencilIcon, SaveIcon, SendIcon, XIcon } from "lucide-react";
+import { ClipboardListIcon, CopyIcon, Loader2Icon, PencilIcon, PrinterIcon, SaveIcon, SendIcon, XIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -12,6 +12,8 @@ import { confirmDialog } from "@/components/confirm";
 import { EmptyState, ErrorNote, LoadingRows, ObjectStatus, SearchField, TONE } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ReportDialog } from "@/components/shift";
+import type { ReceiptLine } from "@/lib/device";
 
 type Line = { id: string; itemCode: string; itemName: string; unit: string | null; qty: number; requestedQty: number | null; delivered: number | null };
 type Request = {
@@ -23,6 +25,36 @@ type Item = { code: string; name: string; type: string; unit: string };
 type Draft = { code: string; name: string; unit: string | null; qty: string };
 
 const day = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+/**
+ * A request as lines for the receipt printer (or the browser's print): number, branch and store, needed by, its FACTS STR50 and who
+ * approved it, each item with its quantity (what was asked when it was changed, what the store sent), and a line to sign on receipt.
+ */
+function requestLines(r: Request, company: string, branch: string, location: string | null): ReceiptLine[] {
+  const when = (d: string) => new Date(d).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  const state = r.approval === "draft" ? "Draft, not sent" : r.approval === "waiting" ? "Waiting for approval" : r.approval === "rejected" ? `Rejected by ${r.decidedByName ?? ""}`
+    : r.approval === "cancelled" ? "Cancelled" : `${r.erpDoc ?? "Approved"}${r.decidedByName && r.decisionNote !== "Pre-approved" ? ` · approved by ${r.decidedByName}` : ""}`;
+  const out: ReceiptLine[] = [
+    { text: company, align: "center", bold: true },
+    { text: `STOCK REQUEST · ${r.number}`, align: "center", bold: true, size: "large" },
+    { text: `${branch}${location ? ` (${location})` : ""}`, align: "center", size: "small" },
+    { rule: true },
+    { text: "To", right: `${r.storeName} (${r.storeCode})` },
+    ...(r.neededBy ? [{ text: "Needed by", right: new Date(r.neededBy).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) }] : []),
+    { text: "Status", right: state },
+    ...(r.note ? [{ text: `Note: ${r.note}`, size: "small" as const }] : []),
+    { rule: true },
+  ];
+  for (const l of r.lines) {
+    out.push({ text: `${l.itemCode}  ${l.itemName}`, right: `${fmtQty(l.qty)} ${l.unit ?? ""}`.trim() });
+    const more = [l.requestedQty !== null ? `asked ${fmtQty(l.requestedQty)}` : "", l.delivered !== null ? `sent ${fmtQty(l.delivered)}` : ""].filter(Boolean).join(" · ");
+    if (more) out.push({ text: `   ${more}`, size: "small" });
+  }
+  out.push({ rule: true }, { text: `${r.lines.length} item${r.lines.length === 1 ? "" : "s"}`, size: "small" },
+    { text: `Requested by ${r.requestedByName} · ${when(r.requestedAt)}`, size: "small" }, { text: " " }, { text: "Received by: ____________________" }, { text: " " },
+    { rule: true }, { text: `Printed ${new Date().toLocaleString("en-GB")}`, align: "center", size: "small" });
+  return out;
+}
+
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); };
 
 /**
@@ -31,8 +63,10 @@ const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); retur
  * A pre-approved branch skips the approver: sent, it is posted at once. A request can be saved as a draft first and sent later.
  */
 export function StockRequests() {
-  const { can } = useSession();
+  const { can, company, branch } = useSession();
   const asks = can("pos.sell") || can("kitchen.view");
+  // A request opened for printing (receipt printer or the browser's print).
+  const [printing, setPrinting] = useState<ReceiptLine[] | null>(null);
   const list = useApi<{ enabled: boolean; location: string | null; approver: string | null; preapproved: boolean; stores: { code: string; name: string }[]; requests: Request[] }>("/stock/requests?days=14");
   useLiveEvent(["stock.changed"], () => list.reload());
   const [store, setStore] = useState("");
@@ -161,16 +195,18 @@ export function StockRequests() {
           <div className="space-y-3">
             {d.requests.map((r) => <RequestCard key={r.id} r={r} onAgain={asks && d.enabled && r.approval !== "draft" ? () => again(r) : undefined}
                 onOpen={asks && d.enabled && r.approval === "draft" ? () => open(r) : undefined}
-                onCancel={asks && (r.approval === "waiting" || r.approval === "draft") ? () => void cancel(r) : undefined} />)}
+                onCancel={asks && (r.approval === "waiting" || r.approval === "draft") ? () => void cancel(r) : undefined}
+                onPrint={() => setPrinting(requestLines(r, company?.name ?? "", branch?.name ?? "", d.location))} />)}
           </div>
         ) : <EmptyState icon={ClipboardListIcon} title="No requests in the last 14 days" module="inv">{asks && d.enabled ? "Make one on the left." : "Requests appear here."}</EmptyState>}
       </section>
+      <ReportDialog lines={printing} onClose={() => setPrinting(null)} />
     </div>
   );
 }
 
 /** One request: where it stands, and per line what was asked, approved and (once posted) sent. */
-function RequestCard({ r, onAgain, onOpen, onCancel }: { r: Request; onAgain?: () => void; onOpen?: () => void; onCancel?: () => void }) {
+function RequestCard({ r, onAgain, onOpen, onCancel, onPrint }: { r: Request; onAgain?: () => void; onOpen?: () => void; onCancel?: () => void; onPrint: () => void }) {
   // Sent at a pre-approved branch: approved by whoever sent it.
   const pre = r.approval === "approved" && r.decisionNote === "Pre-approved";
   const status = r.approval === "draft" ? <ObjectStatus className={TONE.muted}>Draft · not sent</ObjectStatus>
@@ -207,13 +243,12 @@ function RequestCard({ r, onAgain, onOpen, onCancel }: { r: Request; onAgain?: (
             </div>
           ))}
         </div>
-        {(onAgain || onOpen || onCancel) && (
           <div className="mt-3 flex flex-wrap gap-2">
             {onOpen && <Button className="h-10" onClick={onOpen}><PencilIcon /> Open draft</Button>}
+            <Button variant="outline" className="h-10" onClick={onPrint}><PrinterIcon /> Print</Button>
             {onAgain && <Button variant="outline" className="h-10" onClick={onAgain}><CopyIcon /> Request again</Button>}
             {onCancel && <Button variant="outline" className="h-10 text-danger" onClick={onCancel}>{r.approval === "draft" ? "Delete draft" : "Cancel request"}</Button>}
           </div>
-        )}
       </div>
     </details>
   );

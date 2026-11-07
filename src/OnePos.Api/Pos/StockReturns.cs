@@ -318,13 +318,14 @@ public static class StockReturns
         });
 
         // Waiting for me: the branches I approve wastage (and so returns) for; an administrator sees all.
-        api.MapGet("/returns/approvals", async (HttpContext http, Db db) =>
+        // all=true: every branch I approve for (All my branches); otherwise only the branch chosen at the top (This branch).
+        api.MapGet("/returns/approvals", async (HttpContext http, Db db, bool? all) =>
         {
             var scope = await http.ScopeAsync(db);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var rows = await c.QueryAsync<ReturnRow>($"{RowSql} where r.approval = 'waiting' and (@admin or b.wastage_approver_id = @u) order by r.recorded_at",
-                    new { admin = scope.IsAdmin, u = scope.UserId }, tx);
+                var rows = await c.QueryAsync<ReturnRow>($"{RowSql} where r.approval = 'waiting' and (@admin or b.wastage_approver_id = @u) and (@all or b.id = @br) order by r.recorded_at",
+                    new { admin = scope.IsAdmin, u = scope.UserId, all = all == true, br = scope.BranchId }, tx);
                 var approver = await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where wastage_approver_id = @u)", new { u = scope.UserId }, tx);
                 return new
                 {

@@ -220,7 +220,7 @@ An approval covers that one action, once, within 15 minutes. You cannot approve 
 
 ![Orders: today's orders with their status, and Return on paid ones](images/orders.jpg)
 
-2. Tap a paid order, then **Print** to reprint.
+2. Tap a paid order, then **Print** to reprint. A voided order shows **VOID · NOT A TAX INVOICE** and can't be printed.
 3. To return it, tap **Return**, pick the reason (e.g. **Wrong item**, **Food quality**, **Charged twice**) and tap **Return AED x**.
 
 ![Returning a bill: the whole bill comes back, with a reason](images/orders-return.jpg)
@@ -341,7 +341,7 @@ flowchart LR
 The shield icon in the header shows how many requests are waiting. Open **Approvals**:
 
 - **Till requests** (discount, refund, cash out): **Approve** or **Reject**. You cannot approve your own request, and only within your own limits.
-- **Wastage and marketing to approve**, **returns** and **Stock requests to approve**: shown only to that branch's named approver. Tick the lines (or **Select all**), correct quantities if needed, then **Approve and post to FACTS** or **Reject** with a reason. Items waiting 12 hours or more show in red.
+- **Wastage and marketing to approve**, **returns** and **Stock requests to approve**: shown only to that branch's named approver; like the till requests they follow **All my branches** or **This branch** at the top, each with its branch. Tick the lines (or **Select all**), correct quantities if needed, then **Approve and post to FACTS** or **Reject** with a reason. Items waiting 12 hours or more show in red.
 
 ![Approvals: stock items and till requests waiting for you](images/approvals.jpg)
 
@@ -419,7 +419,7 @@ flowchart LR
 | --- | --- | --- |
 | Wastage | **Find the item**, quantity, reason (Expired, Damaged, Quality, Machine calibration…), **Record**. | After the approver approves: a posted transfer (STV50) to the wastage location. |
 | Marketing | **Record a give-away** with a reason (tasting, promotion, influencer, gift). | After approval: a material consumption (MCV50) to the marketing account. |
-| Requests | Pick the **Store** and **Needed by**, add items, then **Send for approval** (or **Save draft**). | After approval: a posted stock request (STR50) to the store. |
+| Requests | Pick the **Store** and **Needed by**, add items, then **Send for approval** (or **Save draft**). **Print** on a request prints it on the till's receipt printer (or the browser's print): store, needed by, its STR50, each item and a line to sign on receipt. | After approval: a posted stock request (STR50) to the store. |
 | Deliveries | Tap **Check in**, enter what was received per line, then **Check in**. | Anything short goes back to where it came from as a return, after approval. |
 | Returns | **Return an item**: find it, quantity, reason, **Send for approval**. | After approval: a posted transfer (STV50) back to where its last delivery came from. |
 

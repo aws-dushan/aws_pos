@@ -57,9 +57,9 @@ export default function ApprovalsPage() {
       <PageHeader title="Approvals" icon={ShieldCheckIcon} module="appr" count={pending.data?.length}
         description="Wastage, returns to the factory and stock requests waiting for their approver, and discounts, refunds and cash out above a cashier's limit. Approving here acts at once."
         actions={<Segmented id="appr-where" value={where} onChange={setWhere} options={[{ value: "all", label: "All my branches" }, { value: "branch", label: "This branch" }]} />} />
-      <WastageApprovals />
-      <ReturnsApprovals />
-      <RequestsApprovals />
+      <WastageApprovals all={where === "all"} />
+      <ReturnsApprovals all={where === "all"} />
+      <RequestsApprovals all={where === "all"} />
       <ErrorNote message={pending.error} />
       {!pending.data ? <LoadingRows rows={3} /> : pending.data.length === 0 ? (
         <EmptyState icon={ShieldCheckIcon} title="Nothing waiting" module="appr">New requests appear here the moment a till sends them.</EmptyState>

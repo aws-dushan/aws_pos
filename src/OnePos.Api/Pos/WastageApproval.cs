@@ -122,13 +122,14 @@ public static class WastageApproval
     public static void Map(RouteGroupBuilder api)
     {
         // Waiting for me: the branches I approve wastage or marketing for (an administrator sees all).
-        api.MapGet("/wastage/approvals", async (HttpContext http, Db db) =>
+        // all=true: every branch I approve for (All my branches); otherwise only the branch chosen at the top (This branch).
+        api.MapGet("/wastage/approvals", async (HttpContext http, Db db, bool? all) =>
         {
             var scope = await http.ScopeAsync(db);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var rows = (await c.QueryAsync<WaitingRow>($"{WaitingSql} and (@admin or case when w.kind = 'marketing' then b.marketing_approver_id else b.wastage_approver_id end = @u) order by w.recorded_at",
-                    new { admin = scope.IsAdmin, u = scope.UserId }, tx)).ToList();
+                var rows = (await c.QueryAsync<WaitingRow>($"{WaitingSql} and (@admin or case when w.kind = 'marketing' then b.marketing_approver_id else b.wastage_approver_id end = @u) and (@all or b.id = @br) order by w.recorded_at",
+                    new { admin = scope.IsAdmin, u = scope.UserId, all = all == true, br = scope.BranchId }, tx)).ToList();
                 var cur = await c.ExecuteScalarAsync<string>("select base_currency from company where id = @co", new { co = scope.CompanyId }, tx);
                 var approver = await c.ExecuteScalarAsync<bool>("select exists (select 1 from branch where wastage_approver_id = @u or marketing_approver_id = @u)", new { u = scope.UserId }, tx);
                 return new
