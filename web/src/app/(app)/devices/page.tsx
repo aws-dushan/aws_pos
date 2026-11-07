@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 export default function DevicesPage() {
   const { me, branch, isTill, can } = useSession();
   const [status, setStatus] = useState<DeviceStatus | null | undefined>(undefined);
-  const [form, setForm] = useState({ receiptPrinter: "", paperWidth: 80, drawerOnCash: true, poleDisplayPort: "" });
+  const [form, setForm] = useState({ receiptPrinter: "", paperWidth: 80, drawerOnCash: true, poleDisplayPort: "", printMode: "escpos" as "escpos" | "driver" });
   const [busy, setBusy] = useState<string | null>(null);
   // The latest installer on this server, offered where no Device Service answers.
   const [installer, setInstaller] = useState<{ version: string; file: string } | null>(null);
@@ -33,11 +33,11 @@ export default function DevicesPage() {
   const check = useCallback(async () => {
     const s = await deviceStatus();
     setStatus(s);
-    if (s) setForm({ receiptPrinter: s.receiptPrinter ?? "", paperWidth: s.paperWidth, drawerOnCash: s.drawerOnCash, poleDisplayPort: s.poleDisplayPort ?? "" });
+    if (s) setForm({ receiptPrinter: s.receiptPrinter ?? "", paperWidth: s.paperWidth, drawerOnCash: s.drawerOnCash, poleDisplayPort: s.poleDisplayPort ?? "", printMode: s.printMode ?? "escpos" });
   }, []);
   useEffect(() => { deviceStatus().then((s) => {
     setStatus(s);
-    if (s) setForm({ receiptPrinter: s.receiptPrinter ?? "", paperWidth: s.paperWidth, drawerOnCash: s.drawerOnCash, poleDisplayPort: s.poleDisplayPort ?? "" });
+    if (s) setForm({ receiptPrinter: s.receiptPrinter ?? "", paperWidth: s.paperWidth, drawerOnCash: s.drawerOnCash, poleDisplayPort: s.poleDisplayPort ?? "", printMode: s.printMode ?? "escpos" });
   }); }, []);
 
   async function act(name: string, fn: () => Promise<unknown>, ok: string) {
@@ -115,6 +115,17 @@ export default function DevicesPage() {
                 </select>
               </Field>
             </div>
+            {/* Device Service 1.3+: a printer that prints letters and symbols instead of the receipt doesn't understand ESC/POS. */}
+            {status.printMode !== undefined ? (
+              <Field label="Print using" hint={form.printMode === "driver"
+                ? "Through the printer's Windows driver, like any program: for printers that print letters and symbols instead of the receipt. A little slower."
+                : "The printer's own receipt language (ESC/POS): fastest, for most thermal printers. Prints letters and symbols instead? Choose Windows driver, save and Test print."}>
+                <Segmented id="print-mode" value={form.printMode} onChange={(v) => setForm({ ...form, printMode: v })} className="w-full"
+                  options={[{ value: "escpos", label: "Printer language (ESC/POS)" }, { value: "driver", label: "Windows driver" }]} />
+              </Field>
+            ) : (
+              <p className="text-xs text-muted-foreground">Printing through the Windows driver (for printers that print letters and symbols instead of the receipt) needs Device Service 1.3: check for updates below.</p>
+            )}
             <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
               <span className="flex items-center gap-2 text-sm"><InboxIcon className="size-4 text-muted-foreground" /> Open the cash drawer whenever cash is taken or given back</span>
               <Switch on={form.drawerOnCash} onChange={(v) => setForm({ ...form, drawerOnCash: v })} label="Drawer on cash" />

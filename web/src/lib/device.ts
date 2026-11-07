@@ -13,6 +13,8 @@ export type DeviceStatus = {
   poleDisplayPort: string | null; printers: string[]; ports: string[]; lastError: string | null; lastPrintAt: string | null;
   /** What Windows' spooler says about the receipt printer: ready, paper out, offline, error… (REQ HW-08). */
   printerState?: string | null;
+  /** How receipts reach the printers (Device Service 1.3+): ESC/POS in the printer's own language, or through the Windows driver. */
+  printMode?: "escpos" | "driver";
   /** Self-update (REQ HW-01): on or off on this PC, the newest release the server has, when it last looked, what happened. */
   update?: { autoUpdate: boolean; latest: string | null; lastCheck: string | null; result: string | null; paired: boolean };
 };
@@ -56,7 +58,7 @@ export async function deviceStatus(): Promise<DeviceStatus | null> {
   try { return await call<DeviceStatus>("/status", "GET", undefined, 1500); } catch { return null; }
 }
 
-export const saveDeviceSettings = (s: { receiptPrinter: string | null; paperWidth: number; drawerOnCash: boolean; poleDisplayPort: string | null }) =>
+export const saveDeviceSettings = (s: { receiptPrinter: string | null; paperWidth: number; drawerOnCash: boolean; poleDisplayPort: string | null; printMode?: "escpos" | "driver" }) =>
   call("/settings", "PUT", s);
 
 /** A picture as base64 PNG for the printer: at most 384 dots wide, flattened on white (thermal paper has no transparency), in greys. */
