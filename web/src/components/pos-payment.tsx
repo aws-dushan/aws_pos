@@ -72,7 +72,12 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const [seen, setSeen] = useState<string | null>(null);
   const payRef = useRef<HTMLButtonElement>(null);
   const key = open ? `${detail.order.id}:${due}` : null;
-  if (key !== seen) { setSeen(key); setAmount(method === "cash" ? "" : due ? due.toFixed(2) : ""); setReference(""); setPristine(true); setParts([]); setSplitting(false); }
+  // Opened for an order: a delivery platform's order starts on Platform (the platform pays), any other on Cash; not the last order's method.
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const opened = open ? detail.order.id : null;
+  let start = method;
+  if (opened !== openFor) { setOpenFor(opened); if (opened) { start = detail.order.platformId ? "platform" : "cash"; setMethod(start); } }
+  if (key !== seen) { setSeen(key); setAmount(start === "cash" ? "" : due ? due.toFixed(2) : ""); setReference(""); setPristine(true); setParts([]); setSplitting(false); }
 
   // Cash: nothing typed is the exact amount (of what's left after the split's parts); otherwise what the customer handed over.
   const value = method === "cash" && amount === "" ? left : Number(amount || 0);
