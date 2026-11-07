@@ -53,7 +53,9 @@ export const noPrice = (i: MenuItem) => (i.needsPrice || i.erpPriced) && i.branc
 export type BoxContent = { type: string; code: string; name: string; unit: string; bomUnit: string; perUnit: number | null };
 export type ModifierOption = { id: string; groupId: string; name: string; price: number; sort: number; isActive: boolean; itemId: string | null;
   /** Charged at its item's live price here (FACTS), not a typed price; noPrice = its item has none here, so it can't be chosen. */
-  factsPrice: boolean; noPrice: boolean };
+  factsPrice: boolean; noPrice: boolean;
+  /** Its linked item is a FACTS item (so a platform's bill charges that item's platform price), even when it isn't a button here. */
+  itemFacts?: boolean };
 export type ModifierGroup = { id: string; branchId: string; name: string; minSelect: number; maxSelect: number; options: ModifierOption[] };
 export type ShortStock = "allow" | "warn" | "block";
 export type Menu = { categories: MenuCategory[]; items: MenuItem[]; groups: ModifierGroup[]; shortStock?: ShortStock;
@@ -65,8 +67,9 @@ export function withPlatformPrices(menu: Menu | undefined, platformId: string | 
   const p = menu && platformId ? menu.platformPrices?.find((x) => x.platformId === platformId) : undefined;
   if (!menu || !p) return menu;
   const facts = new Set(menu.items.filter((i) => i.erpItemCode).map((i) => i.id));
-  // FACTS-priced options linked to a FACTS item take that item's platform price too.
-  const groups = menu.groups.map((g) => ({ ...g, options: g.options.map((o) => (o.factsPrice && o.itemId && facts.has(o.itemId)
+  // FACTS-priced options linked to a FACTS item take that item's platform price too, also when that item isn't a button on this
+  // register (e.g. a combo's sizes): the options window then shows what the bill will charge (none there = can't be chosen).
+  const groups = menu.groups.map((g) => ({ ...g, options: g.options.map((o) => (o.factsPrice && o.itemId && (o.itemFacts || facts.has(o.itemId))
     ? { ...o, price: p.prices[o.itemId] ?? 0, noPrice: p.prices[o.itemId] === undefined } : o)) }));
   return { ...menu, groups, items: menu.items.map((i) => (i.erpItemCode ? { ...i, branchPrice: p.prices[i.id] ?? null, erpPriced: true } : i)) };
 }

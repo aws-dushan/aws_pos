@@ -120,6 +120,9 @@ public static class Menu
         public bool FactsPrice { get; set; }
         /// <summary>FACTS-priced and its item has no price at this branch: it can't be chosen.</summary>
         public bool NoPrice { get; set; }
+        /// <summary>Its linked item is a FACTS item, so on a platform's bill a FACTS-priced option costs that item's platform price
+        /// (also when the item itself isn't a button on this register).</summary>
+        public bool ItemFacts { get; set; }
     }
 
     private static readonly string[] Tones = ["fin", "sales", "purch", "inv", "bp", "bank", "appr", "admin"];
@@ -471,6 +474,12 @@ public static class Menu
                 o.Price = p ?? 0;
                 o.NoPrice = p is null;
             }
+        }
+        var linked = options.Where(o => o.ItemId is not null).Select(o => o.ItemId!.Value).Distinct().ToArray();
+        if (linked.Length > 0)
+        {
+            var factsItems = (await c.QueryAsync<Guid>("select id from menu_item where id = any(@linked) and erp_item_code is not null", new { linked }, tx)).ToHashSet();
+            foreach (var o in options) o.ItemFacts = o.ItemId is { } it && factsItems.Contains(it);
         }
         foreach (var g in groups) g.Options = options.Where(o => o.GroupId == g.Id).ToList();
         // Counts set per item (how many from a group on this item).
