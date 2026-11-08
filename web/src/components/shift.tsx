@@ -29,7 +29,11 @@ export type ShiftRow = {
   floatExpected: number; closedAt: string | null; expectedCash: number | null; countedCash: number | null; variance: number | null; note: string | null; approvedByName: string | null;
   /** The till's drawer is shared: several cashiers work in this shift. */
   sharedDrawer?: boolean;
+  /** The till's last closing count this shift opened against (first shift of a day), and why the count differed. */
+  lastClose?: number | null; lastCloseAt?: string | null; lastCloseBy?: string | null; openingReason?: string | null;
 };
+/** What a shift opened on this till now is counted against: the till's last closing count (counted, or what it should have held). */
+export type LastClose = { amount: number; at: string; by: string; counted: boolean };
 /** A cash movement in a shift: in, out, a drop to the safe, or a bank deposit straight from the drawer. */
 export type MoveKind = "in" | "out" | "drop" | "deposit";
 export type ShiftReport = {
@@ -59,6 +63,9 @@ export type DayReport = {
     openingFloat: number; cashSales: number; cashRefunds: number; cashIn: number; cashOut: number; drops: number; deposits?: number; expected: number; counted: number; uncounted: number;
     /** Taken out (positive) or put in between shifts on the same till: the last count less the next float (reports since 25 Oct). */
     shiftChange?: number;
+    /** Tills whose first shift was counted against their last closing count; openingDiff: opened − last close, summed. */
+    openingDiff?: number;
+    openingChecks?: { register: string; lastClose: number; opened: number; reason: string | null }[];
     movements: { kind: MoveKind; amount: number; reason: string; register: string | null; by: string | null; at: string }[];
   };
   openOrders: { count: number; value: number };
@@ -75,6 +82,8 @@ export type DayInfo = {
   recent: (DayRow & { z: DayReport | null; toBank?: ToBank | null })[]; canManage: boolean; canReopen: boolean; canDeposit: boolean;
   /** Automatic close: when the day closes (with any delay); closingAt: the countdown is on and ends then. */
   closesAt: string | null; closingAt: string | null; delayedMinutes: number; canDelay: boolean; delayStep: number;
+  /** A shift opened on this till now is counted against this (null: against the usual float). */
+  lastClose?: LastClose | null;
 };
 
 export const SHIFT_STATUS: Record<ShiftStatus, string> = { open: "Open", closed: "Closed", needs_approval: "Needs approval", not_counted: "Not counted" };
@@ -119,19 +128,28 @@ function CashCount({ counts, onChange, currency, onLast }: { counts: Counts; onC
   );
 }
 
-/** Opening a shift on this till: count the float. A difference to the branch's usual float is fine but recorded. */
-export function OpenShiftDialog({ open, defaultFloat, currency, onClose, onDone }: {
-  open: boolean; defaultFloat: number; currency: string; onClose: () => void; onDone: () => void;
+/**
+ * Opening a shift on this till: count the float. The till's first shift of the day is counted against its last closing count, and a
+ * different count needs a reason; otherwise (no last close) a difference to the branch's usual float is fine but recorded.
+ */
+export function OpenShiftDialog({ open, defaultFloat, lastClose, currency, onClose, onDone }: {
+  open: boolean; defaultFloat: number; lastClose?: LastClose | null; currency: string; onClose: () => void; onDone: () => void;
 }) {
   const [counts, setCounts] = useState<Counts>({});
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const total = countTotal(counts);
+  const against = lastClose ? lastClose.amount : defaultFloat;
+  const diff = Math.round((total - against) * 100) / 100;
+  const needReason = !!lastClose && total > 0 && diff !== 0;
+  const ready = total > 0 && (!needReason || reason.trim().length > 0);
   async function submit() {
+    if (!ready) return;
     setBusy(true);
     try {
-      await api("/shifts/open", "POST", { openingFloat: total, counts });
+      await api("/shifts/open", "POST", { openingFloat: total, counts, reason: needReason ? reason.trim() : null });
       toast.success("Shift open");
-      setCounts({});
+      setCounts({}); setReason("");
       onDone();
     } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
@@ -140,15 +158,24 @@ export function OpenShiftDialog({ open, defaultFloat, currency, onClose, onDone 
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Open your shift</DialogTitle>
-          <DialogDescription>Count the float in the drawer. The usual float here is {currency} {money(defaultFloat)}.</DialogDescription>
+          <DialogDescription>
+            {lastClose
+              ? <>Count the cash in the drawer. This till last closed with <b className="tabular-nums">{currency} {money(lastClose.amount)}</b>{lastClose.counted ? "" : " (not counted: what it should have held)"} · {new Date(lastClose.at).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })} · {lastClose.by}.</>
+              : <>Count the float in the drawer. The usual float here is {currency} {money(defaultFloat)}.</>}
+          </DialogDescription>
         </DialogHeader>
-        <CashCount counts={counts} onChange={setCounts} currency={currency} onLast={() => { if (!busy && total > 0) void submit(); }} />
-        {total > 0 && total !== defaultFloat && (
-          <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{total > defaultFloat ? "More" : "Less"} than the usual float by {money(Math.abs(total - defaultFloat))}. It will be noted.</p>
-        )}
+        <CashCount counts={counts} onChange={setCounts} currency={currency} onLast={() => { if (!busy) void submit(); }} />
+        {total > 0 && (diff === 0
+          ? <p className="rounded-lg bg-success/10 px-3 py-2 text-sm text-success">✓ Same as {lastClose ? "the last closing count" : "the usual float"}</p>
+          : lastClose
+            ? <div className="grid gap-2">
+                <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{money(Math.abs(diff))} {diff < 0 ? "less" : "more"} than the last closing count. Give a reason: it shows on the day report.</p>
+                <Input id="open-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (needed), e.g. Taken to the office overnight" className="h-11" />
+              </div>
+            : <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning">{diff > 0 ? "More" : "Less"} than the usual float by {money(Math.abs(diff))}. It will be noted.</p>)}
         <DialogFooter>
           <Button variant="outline" className="h-12" onClick={onClose}>Not now</Button>
-          <Button className="h-12 min-w-40" disabled={busy || total <= 0} onClick={() => void submit()}>Open shift · {money(total)}</Button>
+          <Button className="h-12 min-w-40" disabled={busy || !ready} onClick={() => void submit()}>Open shift · {money(total)}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -342,6 +369,28 @@ function drawerSum(opened: number, sales: number, refunds: number, moves: { kind
   return out;
 }
 
+type OpeningCheck = { register: string; lastClose: number; opened: number; reason: string | null };
+
+/**
+ * The opening check: each till's first shift of the day against the till's last closing count. Same: one ✓ line; different: both
+ * counts, the difference and the reason. None checked (older days, a new till): nothing.
+ */
+function openingCheckLines(checks: OpeningCheck[], named: boolean): ReceiptLine[] {
+  if (!checks.length) return [];
+  const out: ReceiptLine[] = [{ text: "OPENING CHECK (against last close)", bold: true }];
+  for (const x of checks) {
+    const diff = Math.round((x.opened - x.lastClose) * 100) / 100;
+    const till = named ? `${x.register}: ` : "";
+    if (diff === 0) { out.push({ text: `${till}Same as last close`, right: `${money(x.opened)} ✓` }); continue; }
+    out.push({ text: `${till}Last closing count`, right: money(x.lastClose) }, { text: "Opened with", right: money(x.opened) }, { text: "Difference", right: signed(diff), bold: true });
+    if (x.reason) out.push(small(x.reason));
+  }
+  out.push({ rule: true });
+  return out;
+}
+const shiftOpeningCheck = (s: ShiftRow): OpeningCheck[] =>
+  s.lastClose == null ? [] : [{ register: s.registerName, lastClose: s.lastClose, opened: s.openingFloat, reason: s.openingReason ?? null }];
+
 /**
  * The float check: with a fixed float per till (Companies & branches), the drawers should hold the float plus the cash still to deposit;
  * what they hold beyond or below that shows (e.g. float spent and not yet topped up). Only once every till is counted.
@@ -352,7 +401,7 @@ function floatCheck(b: ToBank | null | undefined, tills: number, counted: number
   const should = float + b.stillToDeposit;
   const diff = Math.round((counted - should) * 100) / 100;
   return [
-    { rule: true }, { text: "FLOAT CHECK", bold: true },
+    { rule: true }, { text: "FLOAT CHECK (against the fixed float)", bold: true },
     { text: tills > 1 ? `Float set (${money(b.floatPerTill)} × ${tills} tills)` : "Float set for this branch", right: money(float) },
     { text: "+ Still to deposit", right: money(b.stillToDeposit) },
     { text: "= Drawer should hold", right: money(should), bold: true },
@@ -379,7 +428,7 @@ export function shiftReportLines(r: ShiftReport, title: string): ReceiptLine[] {
   // A shared drawer: what each cashier took (payments less refunds), so the count can be talked through.
   if (s.sharedDrawer || (r.byCashier?.length ?? 0) > 1)
     for (const x of r.byCashier ?? []) out.push(small(`${x.name}: ${x.payments} bills ${money(x.total)}, cash ${money(x.cash)}`));
-  out.push({ rule: true }, { text: "3. MY DRAWER", bold: true }, ...drawerSum(r.cash.openingFloat, r.cash.cashSales, r.cash.cashRefunds, r.movements));
+  out.push({ rule: true }, ...openingCheckLines(shiftOpeningCheck(s), false), { text: "3. MY DRAWER", bold: true }, ...drawerSum(r.cash.openingFloat, r.cash.cashSales, r.cash.cashRefunds, r.movements));
   // The X report keeps the count blind: it shows what moved, not what the drawer should hold.
   if (r.kind === "Z") {
     out.push({ text: "= Should be in the drawer", right: money(r.expected), bold: true });
@@ -416,8 +465,9 @@ export function dayReportLines(z: DayReport, title: string): ReceiptLine[] {
   // Block 3: the drawers as a sum from the opening count to what they should hold, the count and the difference; then the cash
   // still to deposit, and the float check against the branch's fixed float.
   const tills = [...new Set(z.shifts.map((s) => s.registerName))];
-  out.push({ text: `3. CASH DRAWER${tills.length === 1 ? ` · ${tills[0]}` : "S"}`, bold: true });
   const k = z.cash;
+  out.push(...openingCheckLines(k?.openingChecks ?? [], tills.length > 1));
+  out.push({ text: `3. CASH DRAWER${tills.length === 1 ? ` · ${tills[0]}` : "S"}`, bold: true });
   if (k) {
     out.push(...drawerSum(k.openingFloat, k.cashSales, k.cashRefunds, k.movements, k.shiftChange));
     out.push({ text: tills.length > 1 ? "= Should be in the drawers" : "= Should be in the drawer", right: money(k.expected), bold: true });

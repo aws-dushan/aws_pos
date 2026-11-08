@@ -14,7 +14,8 @@ namespace OnePos.Api.Pos;
 /// </summary>
 public static class Days
 {
-    public sealed record OpenShiftBody(decimal OpeningFloat, JsonElement? Counts);
+    /// <summary>`Reason`: why the count differs from the till's last closing count (needed then).</summary>
+    public sealed record OpenShiftBody(decimal OpeningFloat, JsonElement? Counts, string? Reason = null);
     public sealed record CloseShiftBody(decimal CountedCash, JsonElement? Counts, string? Note);
     /// <summary>`ToBank`: a cash in that is owed to the bank ("Cash to deposit to bank"), not float: it is added to Cash to bank too.</summary>
     public sealed record CashBody(string Kind, decimal Amount, string Reason, bool? ToBank = null);
@@ -53,6 +54,12 @@ public static class Days
         public DateTime OpenedAt { get; set; }
         public decimal OpeningFloat { get; set; }
         public decimal FloatExpected { get; set; }
+        /// <summary>The till's last closing count this shift opened against (first shift of a day, from the branch's check date).</summary>
+        public decimal? LastClose { get; set; }
+        public DateTime? LastCloseAt { get; set; }
+        public string? LastCloseBy { get; set; }
+        public bool? LastCloseCounted { get; set; }
+        public string? OpeningReason { get; set; }
         public DateTime? ClosedAt { get; set; }
         public decimal? ExpectedCash { get; set; }
         public decimal? CountedCash { get; set; }
@@ -76,6 +83,29 @@ public static class Days
         public string OpenOrdersAtClose { get; set; } = "";
         public int CloseDelayMinutes { get; set; }
         public int CloseDelayMaxMinutes { get; set; }
+        public DateOnly OpeningCheckFrom { get; set; }
+    }
+
+    /// <summary>A till's last closing count: counted, or (closed without a count) what it should have held.</summary>
+    public sealed record LastClose(decimal Amount, DateTime At, string By, bool Counted);
+
+    /// <summary>
+    /// What a new shift on this till opens against: the till's last closed shift from an earlier day, when this is the till's first shift
+    /// of the day and the day is on or after the branch's check date. Null: no check (a later shift of the day, a new till, older days).
+    /// </summary>
+    private static async Task<LastClose?> LastCloseAsync(NpgsqlConnection c, NpgsqlTransaction tx, Branch b, Guid registerId)
+    {
+        var day = await c.QuerySingleOrDefaultAsync<(Guid Id, DateOnly Date)?>("select id, date from business_day where branch_id = @b and status = 'open'", new { b = b.Id }, tx);
+        var date = day?.Date ?? BusinessClock.Today(b.TimeZone);
+        if (date < b.OpeningCheckFrom) return null;
+        if (day is { } d && await c.ExecuteScalarAsync<bool>("select exists (select 1 from shift where business_day_id = @id and register_id = @registerId)", new { d.Id, registerId }, tx))
+            return null;
+        var last = await c.QuerySingleOrDefaultAsync<(decimal? Counted, decimal? Expected, DateTime? At, string By)?>("""
+            select s.counted_cash, s.expected_cash, s.closed_at, u.display_name from shift s join business_day bd on bd.id = s.business_day_id join app_user u on u.id = s.user_id
+            where s.register_id = @registerId and s.status <> 'open' and bd.date < @date order by bd.date desc, s.closed_at desc nulls last limit 1
+            """, new { registerId, date }, tx);
+        if (last is not { } l || (l.Counted ?? l.Expected) is not { } amount) return null;
+        return new LastClose(amount, l.At ?? DateTime.UtcNow, l.By, l.Counted is not null);
     }
 
     /// <summary>How long the tills count down before the day closes by itself.</summary>
@@ -227,7 +257,10 @@ public static class Days
     public sealed record CashMove(string Kind, decimal Amount, string Reason, string? Register, string? By, DateTime At);
     /// <summary>The day's cash, till by till (see <see cref="DayCashAsync"/>).</summary>
     public sealed record DayCash(decimal OpeningFloat, decimal CashSales, decimal CashRefunds, decimal CashIn, decimal CashOut, decimal Drops, decimal Deposits,
-        decimal ShiftChange, decimal Expected, decimal Counted, int Uncounted, IReadOnlyList<CashMove> Movements);
+        decimal ShiftChange, decimal Expected, decimal Counted, int Uncounted, IReadOnlyList<CashMove> Movements,
+        decimal OpeningDiff = 0, IReadOnlyList<OpeningCheck>? OpeningChecks = null);
+    /// <summary>A till whose first shift was counted against its last closing count: both counts and, if different, why.</summary>
+    public sealed record OpeningCheck(string Register, decimal LastClose, decimal Opened, string? Reason);
 
     /// <summary>
     /// The day's cash, TILL BY TILL: a till's shifts follow each other in one drawer, so the next shift's float is (mostly) the cash the
@@ -237,9 +270,11 @@ public static class Days
     /// </summary>
     public static async Task<DayCash> DayCashAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid dayId)
     {
-        var shifts = (await c.QueryAsync<(Guid Id, Guid Register, decimal Float, string Status, decimal? Expected, decimal? Counted)>("""
-            select id, register_id, opening_float, status, expected_cash, counted_cash from shift where business_day_id = @dayId order by register_id, opened_at
+        var shifts = (await c.QueryAsync<(Guid Id, Guid Register, decimal Float, string Status, decimal? Expected, decimal? Counted, decimal? LastClose, string? Reason, string RegisterName)>("""
+            select s.id, s.register_id, s.opening_float, s.status, s.expected_cash, s.counted_cash, s.last_close, s.opening_reason, r.name
+            from shift s join register r on r.id = s.register_id where s.business_day_id = @dayId order by s.register_id, s.opened_at
             """, new { dayId }, tx)).ToList();
+        var checks = new List<OpeningCheck>();
         var flows = await c.QuerySingleAsync<(decimal Sales, decimal Refunds, decimal In, decimal Out, decimal Drops, decimal Deposits)>("""
             select
               coalesce((select sum(amount) from payment p join shift x on x.id = p.shift_id where x.business_day_id = @dayId and p.method = 'cash' and p.kind = 'payment'), 0),
@@ -255,6 +290,7 @@ public static class Days
         {
             var list = till.ToList();
             firstFloats += list[0].Float;
+            if (list[0].LastClose is { } lc) checks.Add(new(list[0].RegisterName, lc, list[0].Float, list[0].Reason));
             for (var i = 1; i < list.Count; i++)
             {
                 var before = list[i - 1].Counted ?? list[i - 1].Expected ?? (await ExpectedAsync(c, tx, list[i - 1].Id)).Expected;
@@ -269,7 +305,8 @@ public static class Days
             left join register r on r.id = x.register_id left join app_user u on u.id = m.by_user
             where x.business_day_id = @dayId order by m.at
             """, new { dayId }, tx)).ToList();
-        return new DayCash(firstFloats, flows.Sales, flows.Refunds, flows.In, flows.Out, flows.Drops, flows.Deposits, change, expected, counted, uncounted, moves);
+        return new DayCash(firstFloats, flows.Sales, flows.Refunds, flows.In, flows.Out, flows.Drops, flows.Deposits, change, expected, counted, uncounted, moves,
+            checks.Sum(x => x.Opened - x.LastClose), checks);
     }
 
     /// <summary>The day's Z report: sales, VAT, discounts, by type and method, refunds, voids, shifts and their variances, deposits.</summary>
@@ -442,6 +479,8 @@ public static class Days
                     canManage = scope.Can("day.manage") || (b.DayControl == "cashier" && scope.Can("day.shift")),
                     canReopen = scope.Can("day.reopen"),
                     canDeposit = scope.Can("day.manage") || scope.Can("day.deposit"),
+                    // What a shift opened on this till now would be counted against (null: the usual float).
+                    lastClose = scope.RegisterId is { } reg && myShift is null ? await LastCloseAsync(c, tx, b, reg) : null,
                 };
             });
         });
@@ -563,14 +602,24 @@ public static class Days
                 if (await ShiftOfAsync(c, tx, null, scope.UserId) is not null || await c.ExecuteScalarAsync<bool>("select exists (select 1 from shift where user_id = @u and branch_id = @b and status = 'open')", new { u = scope.UserId, b = scope.Branch }, tx))
                     throw new ConflictException("You already have a shift open on another register.");
                 var b = await BranchAsync(c, tx, scope.Branch);
+                var f = Money.Round(body.OpeningFloat);
+                // The till's first shift of the day opens against its last closing count: a different count needs a reason.
+                var last = await LastCloseAsync(c, tx, b, reg);
+                var reason = string.IsNullOrWhiteSpace(body.Reason) ? null : body.Reason.Trim();
+                if (last is not null && f != last.Amount && reason is null)
+                    throw new DomainException($"The count is {Math.Abs(f - last.Amount):N2} {(f < last.Amount ? "less" : "more")} than this till's last closing count ({last.Amount:N2}). Give a reason.");
+                if (last is null || f == last.Amount) reason = null;
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into shift (company_id, branch_id, business_day_id, register_id, user_id, opening_float, float_expected, opening_counts)
-                    values (@co, @b, @day, @reg, @u, @f, @expected, cast(@counts as jsonb)) returning id
-                    """, new { co = scope.CompanyId, b = scope.Branch, day = day.Id, reg, u = scope.UserId, f = Money.Round(body.OpeningFloat), expected = b.DefaultFloat,
-                               counts = body.Counts?.GetRawText() }, tx);
-                var diff = Money.Round(body.OpeningFloat) - b.DefaultFloat;
+                    insert into shift (company_id, branch_id, business_day_id, register_id, user_id, opening_float, float_expected, opening_counts,
+                                       last_close, last_close_at, last_close_by, last_close_counted, opening_reason)
+                    values (@co, @b, @day, @reg, @u, @f, @expected, cast(@counts as jsonb), @lastClose, @lastAt, @lastBy, @lastCounted, @reason) returning id
+                    """, new { co = scope.CompanyId, b = scope.Branch, day = day.Id, reg, u = scope.UserId, f, expected = b.DefaultFloat,
+                               counts = body.Counts?.GetRawText(), lastClose = last?.Amount, lastAt = last?.At, lastBy = last?.By, lastCounted = last?.Counted, reason }, tx);
+                var against = last?.Amount ?? b.DefaultFloat;
+                var diff = f - against;
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "shift", id.ToString(), "opened",
-                    $"Shift opened with a float of {body.OpeningFloat:N2}{(diff != 0 ? $" ({diff:+0.00;-0.00} against the expected {b.DefaultFloat:N2})" : "")}");
+                    $"Shift opened with a float of {f:N2}{(diff != 0 ? $" ({diff:+0.00;-0.00} against {(last is null ? "the expected" : "the last closing count")} {against:N2})" : "")}",
+                    note: reason);
                 return id;
             });
             await live.ToBranch(scope.Branch, "day.changed");

@@ -108,12 +108,12 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/day` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:403 |
-| POST | `/api/day/{id:guid}/reopen` | day.reopen | src/OnePos.Api/Pos/Days.cs:528 |
-| POST | `/api/day/close` |  | src/OnePos.Api/Pos/Days.cs:464 |
-| POST | `/api/day/close-now` | day.shift | src/OnePos.Api/Pos/Days.cs:509 |
-| POST | `/api/day/delay-close` | day.shift | src/OnePos.Api/Pos/Days.cs:482 |
-| POST | `/api/day/open` |  | src/OnePos.Api/Pos/Days.cs:449 |
+| GET | `/api/day` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:440 |
+| POST | `/api/day/{id:guid}/reopen` | day.reopen | src/OnePos.Api/Pos/Days.cs:567 |
+| POST | `/api/day/close` |  | src/OnePos.Api/Pos/Days.cs:503 |
+| POST | `/api/day/close-now` | day.shift | src/OnePos.Api/Pos/Days.cs:548 |
+| POST | `/api/day/delay-close` | day.shift | src/OnePos.Api/Pos/Days.cs:521 |
+| POST | `/api/day/open` |  | src/OnePos.Api/Pos/Days.cs:488 |
 
 ## devices
 
@@ -404,12 +404,12 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:673 |
-| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:607 |
-| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:654 |
-| POST | `/api/shifts/{id:guid}/deposit` | day.manage, day.deposit, day.shift | src/OnePos.Api/Pos/Days.cs:582 |
-| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:642 |
-| POST | `/api/shifts/open` | day.shift | src/OnePos.Api/Pos/Days.cs:547 |
+| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:722 |
+| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:656 |
+| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:703 |
+| POST | `/api/shifts/{id:guid}/deposit` | day.manage, day.deposit, day.shift | src/OnePos.Api/Pos/Days.cs:631 |
+| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:691 |
+| POST | `/api/shifts/open` | day.shift | src/OnePos.Api/Pos/Days.cs:586 |
 
 ## stock
 

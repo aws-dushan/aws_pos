@@ -214,7 +214,7 @@ export default function DayPage() {
         </Stagger>
       )}
 
-      <OpenShiftDialog open={opening} defaultFloat={d?.defaultFloat ?? 0} currency={cur} onClose={() => setOpening(false)} onDone={() => { setOpening(false); info.reload(); }} />
+      <OpenShiftDialog open={opening} defaultFloat={d?.defaultFloat ?? 0} lastClose={d?.lastClose ?? null} currency={cur} onClose={() => setOpening(false)} onDone={() => { setOpening(false); info.reload(); }} />
       <CashMoveDialog shiftId={moving} currency={cur} onClose={() => setMoving(null)} onDone={() => { setMoving(null); info.reload(); }} />
       <CloseShiftDialog shiftId={closing} currency={cur} onClose={() => setClosing(null)}
         onDone={(r) => {

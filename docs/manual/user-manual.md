@@ -88,7 +88,9 @@ flowchart LR
 
 1. On the Dashboard, Register or Day & shifts, find **Open your shift**. On a back-office PC you are first asked **Taking payments on this PC?**: pick the register.
 2. Tap each denomination (1000 down to the 0.25 coin) and type how many you have. **Total** adds them up.
-3. Tap **Open shift · amount**. If the float differs from the usual one, One POS warns you and notes it.
+3. Tap **Open shift · amount**.
+
+The first shift of the day on a till is checked against that till's **last closing count**, shown at the top with the date and who closed. The same amount shows **✓ Same as the last closing count**. A different amount needs a **reason** (for example, Taken to the office overnight) before the shift opens, and both counts, the difference and the reason print on the shift and day reports under **Opening check**. A till with no earlier close, or a later shift on the same day, is checked against the usual float instead: a difference is only noted.
 
 You can have only one open shift, on one register. Where the branch shares one drawer, you simply sell.
 
@@ -257,7 +259,8 @@ A bank deposit is recorded only here, on the till, before the shift is counted: 
 | --- | --- |
 | 1. What we sold | Net sales, by order type (delivery platforms on one line, named underneath), discounts, returns, VAT |
 | 2. How we were paid | Card (by card type), platforms (they pay the outlet), cash and the rest; the total matches the sales |
-| 3. Cash drawer | A sum from the **opening count**: + cash sales, − returns, every cash in, cash out, safe drop and bank deposit with its reason, = what the drawer should hold; the count at close and the difference (each cashier underneath); **Still to deposit**, as on Cash to bank. The day report adds a **float check**: the branch's fixed float (usual float per till) + still to deposit = what the drawer should hold, against the count, so a float spent and not yet topped up shows as **Float short by** |
+| Opening check | Only when the first shift of the day on a till was checked against its last closing count: **Same as last close ✓**, or the last closing count, what it opened with, the difference and the reason |
+| 3. Cash drawer | A sum from the **opening count**: + cash sales, − returns, every cash in, cash out, safe drop and bank deposit with its reason, = what the drawer should hold; the count at close and the difference (each cashier underneath); **Still to deposit**, as on Cash to bank. The day report adds a **float check**: the branch's fixed float (usual float per till) + still to deposit = what the drawer should hold, against the count, so a float spent and not yet topped up shows as **Float short by**. The opening check asks whether money left the drawer between closing and opening; the float check asks whether the whole fixed float is there. A drawer that closed and opened with the same 1,800 against a 2,000 float passes the opening check and shows **Float short by 200.00** until it is topped up |
 | 4. Also | Voids, wastage, give-aways, cash in and out |
 
 The shift X report keeps the count blind: it shows what should be in the drawer only once the shift is counted.
