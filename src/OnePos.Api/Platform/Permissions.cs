@@ -33,6 +33,7 @@ public static class Permissions
         new("users.manage", "Administration", "Manage users and roles"),
         new("audit.view", "Administration", "View the audit log"),
         new("customers.preapprove", "Register", "Pre-approve a customer's discount (e.g. 100 % complimentary): it then applies at the till with no approval"),
+        new("prices.post", "Back office", "Change selling prices (outlet and delivery platforms) and post them in FACTS"),
         new("facts.post", "Finance", "FACTS posting: see the log, push and re-push bills, record wastage posted in FACTS"),
     ];
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ErpConnectionDialog } from "@/components/erp-connection";
-import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon } from "lucide-react";
+import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon, TagIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { useSession } from "@/components/session";
@@ -28,6 +28,8 @@ type Branch = {
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
+  /** Prices page: the FACTS user this branch's prices are posted as (null: can't post prices). */
+  factsPriceUser?: string | null;
   marketingApproverId: string | null; marketingApprovalEmail: string | null; marketingFactsUser: string | null; marketingAccount: string | null;
   requestApproverId: string | null; requestApprovalEmail: string | null; requestFactsUser: string | null; requestPreapproved: boolean;
   discountApprovalEmails: string[] | null;
@@ -400,6 +402,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
           )}
           {value?.branch && <DiscountApprovalBox branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <WastageApprovalBox company={value.company} branch={value.branch} onSaved={onSaved} />}
+          {value?.branch && value.company.erpConnector === "facts" && <PricePostingBox branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <MarketingBox company={value.company} branch={value.branch} onSaved={onSaved} />}
           {value?.branch && value.company.erpConnector === "facts" && <RequestApprovalBox company={value.company} branch={value.branch} onSaved={onSaved} />}
 
@@ -615,6 +618,43 @@ function WastageApprovalBox({ company, branch, onSaved }: { company: Company; br
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button type="button" className="h-10" disabled={busy || !v.approverId} onClick={() => void save()}>Save wastage approval</Button>
+        {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
+      </div>
+    </div>
+  );
+}
+
+/** Prices page: the FACTS user this branch's prices are posted as (one FACTS lets post OSMPI and CPL50). Saved on its own. */
+function PricePostingBox({ branch, onSaved }: { branch: Branch; onSaved: () => void }) {
+  const [user, setUser] = useState(branch.factsPriceUser ?? "");
+  const [busy, setBusy] = useState(false);
+  async function save(off = false) {
+    setBusy(true);
+    try {
+      await api(`/branches/${branch.id}/price-posting`, "PUT", { factsUser: off ? null : user.trim() || null });
+      if (off) setUser("");
+      toast.success(off ? "Price posting off for this branch." : "FACTS user for price posting saved.");
+      onSaved();
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  }
+  const on = !!branch.factsPriceUser;
+  return (
+    <div data-module="sales" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><TagIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Price posting {on ? <Pill className={TONE.done} dot>On</Pill> : <Pill className={TONE.muted}>Off</Pill>}</div>
+          <p className="text-xs text-muted-foreground">
+            Prices changed on the Prices page are posted in FACTS as this FACTS user: outlet prices as an outlet price import (OSMPI), platform prices as
+            customer price lists (CPL50). The user must be allowed to post both in FACTS.
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="FACTS user for price posting"><Input value={user} maxLength={20} onChange={(e) => setUser(e.target.value)} placeholder="e.g. DushanF" /></Field>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button type="button" className="h-10" disabled={busy || !user.trim()} onClick={() => void save()}>Save</Button>
         {on && <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => void save(true)}>Turn off</Button>}
       </div>
     </div>

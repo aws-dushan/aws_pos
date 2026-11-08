@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon, LandmarkIcon } from "lucide-react";
+import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon, LandmarkIcon, TagIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -50,6 +50,7 @@ export const SCREENS: Screen[] = [
   { href: "/orders", label: "Orders", icon: ReceiptTextIcon, module: "bank", hint: "Today's orders, receipts, refunds", group: "Service", perm: "pos.sell" },
   { href: "/boms", label: "BOM (raw materials)", icon: LayersIcon, module: "inv", hint: "Raw materials of items made at the branch", group: "Back office", perm: "menu.manage|facts.post", factsOnly: true },
   { href: "/discounts", label: "Discounts", icon: PercentIcon, module: "sales", hint: "Promotions and cashier discounts", group: "Back office", perm: "menu.manage" },
+  { href: "/prices", label: "Prices", icon: TagIcon, module: "sales", hint: "Outlet and platform prices, posted in FACTS", group: "Back office", perm: "prices.post", factsOnly: true },
   { href: "/menu", label: "Menu", icon: UtensilsCrossedIcon, module: "inv", hint: "Categories, items, options, prices", group: "Back office", perm: "menu.manage" },
   { href: "/tables", label: "Tables & floors", icon: LayoutGridIcon, module: "sales", hint: "Floor plan designer", group: "Back office", perm: "tables.manage", tableOnly: true },
   { href: "/admin/companies", label: "Companies & branches", icon: Building2Icon, module: "admin", hint: "Outlets, tax, ERP, table service", group: "Administration", perm: "branch.manage" },

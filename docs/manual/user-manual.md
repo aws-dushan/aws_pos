@@ -359,11 +359,21 @@ Items, their codes and their prices come from FACTS. One POS decides what each b
 
 ![The Menu: categories, and each item with what it sells for here](images/menu.jpg)
 
-Prices cannot be typed for FACTS items: **Price at (branch)** comes from the branch's FACTS price type. To change a price, change it in FACTS. An item with no FACTS price cannot be sold. **Price history** shows every change.
+Prices cannot be typed on the Menu for FACTS items: **Price at (branch)** comes from the branch's FACTS price type. To change a price, use **Prices** (below) or change it in FACTS. An item with no FACTS price cannot be sold. **Price history** shows every change.
 
 **Sold as** is the unit an item is sold in at the till. FACTS keeps some items in litres or kilos but sells them by the piece: Sprite is kept in LTR, and one can (PCS) is 0.33 LTR. The list shows the item's units from FACTS with what one of each is, e.g. **PCS – 1 = 0.33 LTR**, and below it what one sale takes off FACTS stock. An item is sold in FACTS' stock unit until you choose another: for Sprite choose **PCS**, so 1 can sold takes 0.33 LTR off stock and the stock shows in cans. An item made from a FACTS BOM stays in the BOM's unit.
 
 ![An item: name, Arabic name, price, where it is prepared and its option groups](images/menu-item.jpg)
+
+## Prices
+
+**Prices** sets the selling prices of the items enabled for selling at this branch, at the outlet and on each delivery platform, and posts them in FACTS. The prices are the selling prices with VAT, exactly as the till charges them: 7.00 here is 7.00 on the bill. It needs the **Change selling prices** permission (Roles), which branch managers and head office have.
+
+1. Open **Prices**. Each row is an item: its outlet price, then one price per platform (Talabat, Deliveroo …). An empty cell (—) means no price: the item can't be sold there.
+2. Type the new prices. Changed cells are highlighted with the old price underneath. **Missing on a platform** lists the items without a price on some platform; **Fill missing from outlet price + %** fills those empty cells from the outlet price.
+3. Tap **Post to FACTS…**, add a remark if you like, and **Post to FACTS**. The outlet prices go in as one outlet price import (OSMPI) and the platform prices as one price list (CPL50) per platform, posted straight away as the branch's FACTS user for price posting. The till has the new prices within a minute.
+
+**Price changes** below lists every posting with its FACTS document numbers. If FACTS refuses a document, nothing of it stays in FACTS; the reason shows, and **Post again** sends it once fixed.
 
 ## Combos and option groups
 
@@ -514,6 +524,7 @@ Key branch settings:
 | Returns | On or off; **Returns accepted for (days)**, 0 = the same day |
 | Discount approval email | Where approval codes are emailed |
 | Wastage approval, Marketing, Stock requests | Approver, email and FACTS username (FACTS companies) |
+| Price posting | The FACTS user prices from the **Prices** page are posted as; it must be allowed to post OSMPI and CPL50 in FACTS (FACTS companies) |
 
 ![A branch's settings](images/branch-settings.jpg)
 

@@ -23,6 +23,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
 | Day and cash | `business_day`, `shift`, `cash_movement`, `bank_deposit` `cash_bank_adjustment` (Cash to bank: a branch owes its cash sales less cash refunds, plus amounts added with a remark (by hand, or a cash in "Cash to deposit to bank", linked by `cash_movement_id`), less its deposits, from `branch.cash_bank_from`; worked out when asked). A till's first shift of a day from `branch.opening_check_from` keeps the till's last closing count it opened against (`shift.last_close`, `last_close_at`, `last_close_by`, `last_close_counted`) and the reason for a different count (`opening_reason`) |
+| Prices | `price_change` (a posting from the Prices page: branch, remark, the FACTS user it was posted as), `price_change_doc` (each FACTS document of it: OSMPI or CPL50, its lines old → new, status, FACTS number or the reason it was refused); `branch.facts_price_user` |
 | Customers and rewards | `customer` (one branch each), `voucher`, `voucher_move`, `loyalty_move` |
 | Stock | `wastage` (also marketing give-aways), `delivery_check`, `stock_return`, `request_store`, `stock_request`, `stock_request_line`, `ingredient`, `recipe_line`, `branch_ingredient`, `ingredient_move`, `bom`, `bom_version`, `bom_line`, `material_unit` |
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |
@@ -86,7 +87,7 @@ These break strict 3NF deliberately. Each is written once and never updated from
 
 | Copy | Where | Why |
 | --- | --- | --- |
-| `company_id` on every company-owned table, including child rows such as `order_line` | 64 tables | Row-level security filters each table on its own `company_id` without a join. Child rows also carry it so a policy never depends on a parent lookup |
+| `company_id` on every company-owned table, including child rows such as `order_line` | 66 tables | Row-level security filters each table on its own `company_id` without a join. Child rows also carry it so a policy never depends on a parent lookup |
 | The sale as it was: item `name`/`name_ar`, `unit_price`, `vat`, `line_total`, discount name/type/value | `order_line`, `credit_note_line` | A tax invoice must reprint exactly as issued, even after the menu item is renamed or repriced |
 | The bill's rates and totals: `vat_rate`, `prices_include_vat`, `service_pct`, `subtotal`, `discount_total`, `vat`, `total`, `paid`, `refunded` | `pos_order` | Same reason, and the totals are read on every screen and report; the API recalculates them (`Orders.RecalcAsync`) in the same transaction as every change to the lines |
 | `branch_id`, `business_date` on payments, cash movements, postings | `payment`, `cash_movement`, `erp_post`, … | Day-end (X/Z) and reports sum a branch's day without joining back through the order |
@@ -138,7 +139,7 @@ When adding a column, follow the same types: money `numeric(14,2)`, quantities `
 
 ## Indexes and speed
 
-The database has **195 indexes** on 76 tables: 118 unique (they also enforce a business rule) and 45 partial. Every index
+The database has **202 indexes** on 79 tables: 121 unique (they also enforce a business rule) and 46 partial. Every index
 is listed under its table in the [Data dictionary](reference/data-dictionary.md). The everyday queries are timed in
 [Query speed](reference/query-speed.md).
 
@@ -161,7 +162,7 @@ PostgreSQL indexes a primary key automatically, but not the column that points a
 matters in two cases: when the app finds the child rows from the parent (a bill's lines), and when it **deletes a
 parent**, because PostgreSQL then checks every table that points at it.
 
-- **103 of the 242 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
+- **105 of the 248 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
   payments, returns, shifts, days, customers, vouchers, option groups, floors and tables.
 - **The other 139 are left without an index on purpose.** Each extra index slows every insert a little, and these give
   nothing back:

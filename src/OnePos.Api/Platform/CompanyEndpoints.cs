@@ -85,6 +85,8 @@ public static class CompanyEndpoints
         public Guid? WastageApproverId { get; set; }
         public string? WastageApprovalEmail { get; set; }
         public string? WastageFactsUser { get; set; }
+        /// <summary>Prices page: the FACTS user prices are posted as (OSMPI and CPL50); null = this branch can't post prices.</summary>
+        public string? FactsPriceUser { get; set; }
         /// <summary>Marketing give-aways: who approves, where requests are emailed, the FACTS username the MCV50 is posted as, its expense account.</summary>
         public Guid? MarketingApproverId { get; set; }
         public string? MarketingApprovalEmail { get; set; }
@@ -105,6 +107,7 @@ public static class CompanyEndpoints
     }
 
     public sealed record WastageApprovalBody(Guid? ApproverId, string? Email, string? FactsUser);
+    public sealed record PricePostingBody(string? FactsUser);
     public sealed record MarketingBody(Guid? ApproverId, string? Email, string? FactsUser, string? Account);
     public sealed record DiscountApprovalBody(string[]? Emails);
 
@@ -254,6 +257,28 @@ public static class CompanyEndpoints
                     new("Wastage approver", oldName, name), new("Approval email", old.WastageApprovalEmail, approver is null ? null : email),
                     new("FACTS username", old.WastageFactsUser, approver is null ? null : factsUser),
                 ]);
+                return 0;
+            });
+            await live.ToCompany(companyId, "branches.changed");
+            return Results.Ok(new { ok = true });
+        });
+
+        // The FACTS user this branch's prices (Prices page) are posted as: one FACTS lets post OSMPI and CPL50. Null: no posting.
+        api.MapPut("/branches/{id:guid}/price-posting", async (Guid id, PricePostingBody body, HttpContext http, Db db, Live live) =>
+        {
+            var companyId = await db.Platform((c, tx) => c.ExecuteScalarAsync<Guid?>("select company_id from branch where id = @id", new { id }, tx))
+                            ?? throw new NotFoundException("Branch not found.");
+            var scope = await http.ScopeAsync(db, companyId);
+            scope.Require("branch.manage");
+            var user = string.IsNullOrWhiteSpace(body.FactsUser) ? null : body.FactsUser.Trim();
+            if (user is not null && !System.Text.RegularExpressions.Regex.IsMatch(user, "^[A-Za-z0-9._-]{1,20}$"))
+                throw new DomainException("The FACTS user is a FACTS login name (e.g. DushanF).");
+            await db.Company(companyId, async (c, tx) =>
+            {
+                var old = await c.QuerySingleAsync<BranchRow>("select * from branch where id = @id for update", new { id }, tx);
+                await c.ExecuteAsync("update branch set facts_price_user = @user where id = @id", new { user, id }, tx);
+                await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "changed", $"Branch {old.Code}: FACTS user for price posting {(user is null ? "removed" : "set")}",
+                    [new("FACTS user for price posting", old.FactsPriceUser, user)]);
                 return 0;
             });
             await live.ToCompany(companyId, "branches.changed");

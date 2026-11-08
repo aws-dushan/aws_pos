@@ -1,0 +1,45 @@
+-- One POS: rehearse usp_ONEPOS_PostPrices, posted as DushanF (the branch's FACTS user for price posting). Both kinds, each with one
+-- item re-posted at the price FACTS already has, so even the test data matches FACTS:
+--   1. OUTLET: Mercato's price type OP3, its first item.
+--   2. PLATFORM: Deliveroo (AR-D0007) at Mercato's location ERBJM, an item on its current price list at that list's price.
+-- Everything is rolled back at the end: no OSMPI or CPL50 stays, no price changes, the last numbers are unchanged. Run after
+-- creating the procedure (db/facts/usp_ONEPOS_PostPrices.sql).
+DECLARE @User NVARCHAR(20) = N'DushanF', @Body NVARCHAR(MAX), @Item NVARCHAR(40), @Type NVARCHAR(6), @Price NUMERIC(18, 3);
+SET XACT_ABORT OFF;
+BEGIN TRANSACTION;
+
+-- 1. Outlet price (OSMPI -> STOCK_PRICE).
+SELECT TOP 1 @Item = LTRIM(RTRIM(STKPRICE_STOCK_DOCNO)), @Type = STKPRICE_DOCTYPE, @Price = STKPRICE_PRICE FROM dbo.STOCK_PRICE WHERE STKPRICE_PRICE_DOCNO = 'OP3' AND STKPRICE_PRICE > 0 ORDER BY STKPRICE_STOCK_DOCNO;
+SET @Body = N'<data><Prices><Kind>OUTLET</Kind><DocDate>' + CONVERT(NVARCHAR(10), GETDATE(), 23) + N'</DocDate><Reference>One POS prices REHEARSAL</Reference><PriceType>OP3</PriceType>'
+          + N'<Line><ItemType>' + @Type + N'</ItemType><ItemCode>' + @Item + N'</ItemCode><Price>' + CONVERT(NVARCHAR(30), @Price) + N'</Price></Line></Prices></data>';
+EXEC dbo.usp_ONEPOS_PostPrices @ClientID = @User, @BodyXML = @Body;
+SELECT DFES_DOCNO, DFES_REMARKS, DFES_POSTED_BY, DFES_POSTED_TS FROM dbo.DATA_FROM_EXTERNAL_SOURCE_HEADER WHERE DFES_DOCTYPE = 'OSMPI' AND DFES_REMARKS = N'One POS prices REHEARSAL';
+SELECT a.ACTION_DOCNO, a.ACTION_KEY, a.ACTION_USER_DOCNO FROM dbo.ACTION_STATUS a JOIN dbo.DATA_FROM_EXTERNAL_SOURCE_HEADER h ON h.DFES_DOCTYPE = a.ACTION_DOCTYPE AND h.DFES_DOCNO = a.ACTION_DOCNO
+WHERE h.DFES_DOCTYPE = 'OSMPI' AND h.DFES_REMARKS = N'One POS prices REHEARSAL';
+SELECT STKPRICE_STOCK_DOCNO, STKPRICE_PRICE_DOCNO, STKPRICE_PRICE, @Price AS was FROM dbo.STOCK_PRICE WHERE STKPRICE_PRICE_DOCNO = 'OP3' AND STKPRICE_STOCK_DOCNO = @Item;
+
+-- 2. Platform price (CPL50).
+SELECT TOP 1 @Item = LTRIM(RTRIM(d.SALDET_STOCK_DOCNO)), @Type = d.SALDET_STOCK_DOCTYPE, @Price = d.SALDET_RATE
+FROM dbo.SALES_HEADER h JOIN dbo.SALES_DETAILS d ON d.SALDET_FYCODE = h.SAL_FYCODE AND d.SALDET_DOCTYPE = h.SAL_DOCTYPE AND d.SALDET_DOCNO = h.SAL_DOCNO
+WHERE h.SAL_DOCTYPE = 'CPL50' AND h.SAL_AC_DOCNO = 'AR' AND h.SAL_SUBLEDGER_DOCNO = 'D0007' AND h.SAL_LOCATION_DOCNO = 'ERBJM' AND h.SAL_POSTED_BY IS NOT NULL
+ORDER BY h.SAL_DOCDATE DESC, d.SALDET_DOCSRNO;
+SET @Body = N'<data><Prices><Kind>PLATFORM</Kind><DocDate>' + CONVERT(NVARCHAR(10), GETDATE(), 23) + N'</DocDate><Reference>One POS prices REHEARSAL Deliveroo</Reference>'
+          + N'<Customer>AR-D0007</Customer><Location>ERBJM</Location><ValidTo>2030-12-31</ValidTo>'
+          + N'<Line><ItemType>' + @Type + N'</ItemType><ItemCode>' + @Item + N'</ItemCode><Price>' + CONVERT(NVARCHAR(30), @Price) + N'</Price></Line></Prices></data>';
+EXEC dbo.usp_ONEPOS_PostPrices @ClientID = @User, @BodyXML = @Body;
+SELECT SAL_DOCNO, SAL_DOCDATE, SAL_REFDATE, SAL_LOCATION_DOCNO, SAL_SMAN_DOCNO, SAL_GROSS_AMOUNT, SAL_NET_AMOUNT, SAL_POSTED_BY, SAL_POSTED_TS
+FROM dbo.SALES_HEADER WHERE SAL_DOCTYPE = 'CPL50' AND SAL_NARRATION = N'One POS prices REHEARSAL Deliveroo';
+SELECT d.SALDET_STOCK_DOCNO, d.SALDET_UNIT_DOCNO, d.SALDET_QTY, d.SALDET_RATE, d.SALDET_VAT_AMOUNT FROM dbo.SALES_DETAILS d JOIN dbo.SALES_HEADER h
+  ON h.SAL_FYCODE = d.SALDET_FYCODE AND h.SAL_DOCTYPE = d.SALDET_DOCTYPE AND h.SAL_DOCNO = d.SALDET_DOCNO WHERE h.SAL_DOCTYPE = 'CPL50' AND h.SAL_NARRATION = N'One POS prices REHEARSAL Deliveroo';
+SELECT a.ACTION_DOCNO, a.ACTION_KEY, a.ACTION_USER_DOCNO FROM dbo.ACTION_STATUS a JOIN dbo.SALES_HEADER h ON h.SAL_DOCTYPE = a.ACTION_DOCTYPE AND h.SAL_DOCNO = a.ACTION_DOCNO
+WHERE h.SAL_DOCTYPE = 'CPL50' AND h.SAL_NARRATION = N'One POS prices REHEARSAL Deliveroo';
+-- A price list must not touch stock or accounts.
+SELECT (SELECT COUNT(*) FROM dbo.STOCK_TRANSACTION t JOIN dbo.SALES_HEADER h ON h.SAL_DOCTYPE = t.STTRN_DOCTYPE AND h.SAL_DOCNO = t.STTRN_DOCNO
+        WHERE h.SAL_DOCTYPE = 'CPL50' AND h.SAL_NARRATION = N'One POS prices REHEARSAL Deliveroo') AS stock_rows,
+       (SELECT COUNT(*) FROM dbo.ACCOUNT_TRANSACTION t JOIN dbo.SALES_HEADER h ON h.SAL_DOCTYPE = t.ACTRN_DOCTYPE AND h.SAL_DOCNO = t.ACTRN_DOCNO
+        WHERE h.SAL_DOCTYPE = 'CPL50' AND h.SAL_NARRATION = N'One POS prices REHEARSAL Deliveroo') AS account_rows;
+
+IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+SELECT 'Rolled back' AS done,
+       (SELECT COUNT(*) FROM dbo.DATA_FROM_EXTERNAL_SOURCE_HEADER WHERE DFES_DOCTYPE = 'OSMPI' AND DFES_REMARKS LIKE N'One POS prices REHEARSAL%') AS osmpi_left,
+       (SELECT COUNT(*) FROM dbo.SALES_HEADER WHERE SAL_DOCTYPE = 'CPL50' AND SAL_NARRATION LIKE N'One POS prices REHEARSAL%') AS cpl50_left;
