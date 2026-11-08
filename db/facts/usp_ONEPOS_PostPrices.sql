@@ -14,7 +14,7 @@ AS
     the screen shows it, salesman and division of the customer's last list). Its posting step is FACTS' usp_SAL_APPR_Posting. The
     newest valid list wins where lists overlap, so older lists stay as history.
   Both: number = FACTS' next number of the type, under a lock; the save is logged as FACTS' screen logs it (ADD_EDIT_DELETE_LOG
-  "A"); then FACTS' own usp_DocumentAutoApprove posts it as @ClientID (the branch's price posting user, who must be allowed that
+  "A"); then FACTS' Approve (usp_ApproveDocuments, its "Transaction Posting" step) posts it as @ClientID (the price posting user, allowed that
   posting step in FACTS), recording ACTION_STATUS. FACTS refusing it: nothing stays in FACTS, the answer is FAILED with the reason.
   The same Reference again (a retry) finds the document already posted and answers it.
 
@@ -195,12 +195,21 @@ BEGIN
         RETURN;
     END CATCH
 
-    -- FACTS' own posting (Transaction Posting), as the Approve button runs it, as the branch's price posting user.
-    DECLARE @Refused NVARCHAR(400) = NULL;
+    -- FACTS' own posting (Transaction Posting), as the Approve button runs it, as the branch's price posting user. These steps are
+    -- not "approve on save" in FACTS (usp_DocumentAutoApprove skips them), so the Approve button's procedure runs the named step:
+    -- usp_ApproveDocuments (the step, the document's checks, the "R" log, ACTION_STATUS). The screen checks the user's right to
+    -- the step before it calls it, so this does too (DOCUMENT_PROCEDURES users / roles).
+    DECLARE @Refused NVARCHAR(400) = NULL, @Role NVARCHAR(20) = (SELECT TOP 1 USER_ROLE FROM dbo.USER_MASTER WHERE USER_LOGINID = @ClientID);
     DECLARE @Docs NVARCHAR(MAX) = N'<FACTS><PARAMETERS><COLUMN1>' + @DocType + N'</COLUMN1><COLUMN2>' + @DocNo + N'</COLUMN2></PARAMETERS></FACTS>';
+    IF EXISTS (SELECT 1 FROM dbo.DOCUMENT_PROCEDURES
+               WHERE DMP_DOC_DOCTYPE = @DocType AND DMP_USP_NAME = @Key AND (DMP_USER_DOCNOS IS NOT NULL OR DMP_ROLE_DOCNOS IS NOT NULL)
+                 AND ISNULL(DMP_USER_DOCNOS.exist('/NewDataSet/TABLE1[CODE = sql:variable("@ClientID")]'), 0) = 0
+                 AND ISNULL(DMP_ROLE_DOCNOS.exist('/NewDataSet/TABLE1[CODE = sql:variable("@Role")]'), 0) = 0)
+        SET @Refused = N'FACTS doesn''t allow ' + @ClientID + N' (role ' + ISNULL(@Role, N'none') + N') to post ' + @DocType + N' "Transaction Posting"';
     SET XACT_ABORT OFF;
     BEGIN TRY
-        EXEC dbo.usp_DocumentAutoApprove @strFycode = @FyCode, @strDocType = @DocType, @strXmlDocDetails = @Docs, @strLoginID = @ClientID, @strMachineId = N'One POS';
+        IF @Refused IS NULL
+            EXEC dbo.usp_ApproveDocuments @strFyCode = @FyCode, @strDocType = @DocType, @strXmlDocDetails = @Docs, @strLoginID = @ClientID, @strKey = @Key, @strMachineId = N'One POS';
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
@@ -223,7 +232,7 @@ BEGIN
         END
         DELETE FROM dbo.ADD_EDIT_DELETE_LOG WHERE AED_FYCODE = @FyCode AND AED_DOCTYPE = @DocType AND AED_DOCNO = @DocNo AND AED_MACHINE_ID = N'One POS' AND AED_STATUS = 'A';
         SELECT NULL AS DocumentNo, @DocType AS DocumentType, 'FAILED' AS status,
-               LEFT(N'FACTS did not post it as ' + @ClientID + N': ' + ISNULL(@Refused, N'that user may not post ' + @DocType + N' "Transaction Posting"') + N'. Nothing was saved in FACTS.', 400) AS description;
+               LEFT(N'FACTS did not post it as ' + @ClientID + N': ' + ISNULL(@Refused, N'FACTS'' checks on ' + @DocType + N' refused it') + N'. Nothing was saved in FACTS.', 400) AS description;
         RETURN;
     END
 

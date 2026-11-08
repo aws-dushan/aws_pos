@@ -41,7 +41,6 @@ export default function PricesPage() {
   const [filter, setFilter] = useState<"all" | "missing" | "changed">("all");
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
-  const [fillPct, setFillPct] = useState("0");
   const [posting, setPosting] = useState(false);
   const d = data.data;
   const platforms = useMemo(() => d?.platforms ?? [], [d]);
@@ -68,22 +67,6 @@ export default function PricesPage() {
     (!cat || i.category === cat) && (!q.trim() || `${i.code} ${i.name}`.toLowerCase().includes(q.trim().toLowerCase()))
     && (filter === "all" || (filter === "missing" ? missing(i) : changedItems.has(i.id))));
   const missingCount = (d?.items ?? []).filter(missing).length;
-
-  /** Fills the empty platform cells of the rows shown with the outlet price (plus the % given). */
-  function fillMissing() {
-    const pct = Number(fillPct || 0);
-    if (!Number.isFinite(pct) || pct < -50 || pct > 100) { toast.error("Give a % between −50 and 100."); return; }
-    const next = { ...edits };
-    let n = 0;
-    for (const i of shown) {
-      const base = parse(edits[key(i.id, "")] ?? "") ?? i.outlet;
-      if (!base) continue;
-      for (const p of platforms)
-        if (i.platforms[p.id] === undefined && !next[key(i.id, p.id)]) { next[key(i.id, p.id)] = (Math.round(base * (1 + pct / 100) * 100) / 100).toFixed(2); n++; }
-    }
-    setEdits(next);
-    toast.message(n ? `${n} platform price${n === 1 ? "" : "s"} filled in. Check them, then post.` : "Nothing to fill in the rows shown.");
-  }
 
   // What posting makes in FACTS: one outlet import and one price list per platform with changes.
   const docs = useMemo(() => {
@@ -125,14 +108,6 @@ export default function PricesPage() {
                 <option value="">All categories</option>
                 {cats.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
-              {platforms.length > 0 && (
-                <div className="flex items-center gap-1 rounded-xl border bg-card px-2 py-1">
-                  <span className="text-xs text-muted-foreground">Fill missing from outlet price +</span>
-                  <Input id="fill-pct" value={fillPct} onChange={(e) => setFillPct(e.target.value.replace(/[^\d.-]/g, ""))} className="h-7 w-14 px-2 text-right" inputMode="decimal" />
-                  <span className="text-xs text-muted-foreground">%</span>
-                  <Button type="button" size="sm" variant="outline" className="h-7" onClick={fillMissing}>Fill</Button>
-                </div>
-              )}
             </div>
           </div>
           {shown.length === 0 ? (
