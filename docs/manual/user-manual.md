@@ -593,6 +593,43 @@ The **Receipt** tab sets the language, the name printed, which header lines show
 
 ![Receipt & display, with the live receipt preview](images/branding.jpg)
 
+## TV screens
+
+TV screens show menus, offers and pictures with animations on TVs connected to the branch's tills. Prices, photos, sold-out items and today's counts come from the menu, so the TVs keep up by themselves.
+
+**Switch it on**
+
+1. Open **TV screens** and switch **On at this branch**.
+2. Connect the TV to a till as a second screen: an HDMI cable, a wireless HDMI kit, or Windows wireless display (**Win+K**, pick the TV, then **Win+P** → **Extend**).
+3. Within a few seconds the TV appears under **TVs** (for example "TV 1 · Hisense VIDAA TV") and plays the first design. The till needs the One POS Device Service 1.4 or later.
+
+**Choose what each TV plays**
+
+- Type a name for the TV (for example "Counter left").
+- **Plays**: the design it shows; **Nothing (black)** leaves it dark.
+- **On**: switch a TV off and it goes black within a few seconds; switch it on and it plays again.
+- **Status** says **Playing**, **Black** or **Not connected** (the TV or its till is off).
+
+Staff can't close the TV picture from the till: it has no window to close, and if it is stopped it starts again by itself.
+
+**Make a design**
+
+1. Under **Designs**, tap **New design**. It starts with four slides made from your menu.
+2. On the left are the slides in the order they play. Tap one to change it; use the arrows to move it, the eye to switch it off, and copy or delete it. **Add slide** adds another.
+3. The middle shows exactly what the TV will show. **Replay animation** plays the slide again; **Play the loop** plays them all in turn.
+4. On the right, set the slide:
+   - **Bestseller**: one item, big, with its photo and price, words under the title, a spinning badge and, if you like, how many sold today.
+   - **Offer**: an item or picture, the offer price and the price before (shown crossed out with "Save"), and **Ends at**: a countdown runs, and after that time the slide stops playing.
+   - **Menu grid**: a category or items you pick, 2 to 4 cards per row, photos, a spotlight that moves from item to item, and tags such as Bestseller or New.
+   - **Menu list**: a category or items in two columns with prices, in English and Arabic.
+   - **Fresh now**: freshly made items with rolling words, the next batch time and an add-on line (for example "Add one to any coffee +6 AED").
+   - **Picture or video**: full screen, with a caption if you want one.
+   - For every slide: **Animation** (Rise, Fade, Zoom, Slide in, Pop, Focus or None), **Speed**, how many seconds it stays on screen, **Background** (theme, a colour, or a picture darkened for readable text) and **When it plays** (all day, or set days and times).
+5. **Theme, ticker and clock** sets the colours (ready-made or your own), the lettering, Arabic names, the move between slides, the background movement, and the bottom strip: logo and branch name, scrolling messages and the clock.
+6. Tap **Save**. TVs playing the design change within a few seconds. **All branches** makes the design available at every branch.
+
+Pictures and videos for designs go under **Pictures and videos** (pictures up to 5 MB, MP4 or WebM videos up to 25 MB), or straight from a slide with **Upload**.
+
 ## Daily summary & alerts
 
 When a branch closes its day, a summary goes to the newspaper icon (and by email once an email server is set). Set the alert limits (voids, refunds, no-sales, discount %, cash variance, shifts closed without a count), the email list, approval reminders and the **Email server (SMTP)**.

@@ -29,6 +29,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |
 | FACTS | `company_erp` (encrypted connection), `erp_sync` (sync log), `erp_payment_mode`, `erp_post` (posting queue and log) |
 | Reports and notices | `sales_day_item`, `sales_day_built`, `notice`, `notice_read`, `approval_reminder`, `device_status`, `display_image` |
+| TV screens | `signage_design` (theme and slides as JSON), `signage_media` (pictures and videos), `signage_device` (a till PC and the SHA-256 of its key; no row-level security, found by key), `signage_screen` (a TV of a PC: name, on/off, design); `branch.signage_enabled` |
 
 Option groups (`modifier_group.branch_id`) and combos (`menu_item.branch_id`, set only on combos) belong to the branch
 they were made at: only that branch loads, sells and changes them, and a group name is unique per branch. Items from FACTS

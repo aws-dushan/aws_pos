@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { api } from "@/lib/api";
 import { appStorage } from "@/lib/base-path";
-import { deviceStatus, pairServer } from "@/lib/device";
+import { deviceStatus, pairServer, setSignage, type DeviceStatus } from "@/lib/device";
 import { withBase } from "@/lib/base-path";
 
 /** This PC's own id, kept in its browser: the Devices list shows each PC once. */
@@ -22,12 +22,13 @@ function deviceKey() {
 export function useDeviceHeartbeat(branchId: string | null | undefined) {
   useEffect(() => {
     if (!branchId) return;
-    let stop = false, paired = false;
+    let stop = false, paired = false, askedAt = 0;
     const beat = async () => {
       const s = await deviceStatus().catch(() => null);
       if (stop) return;
       // Once per page load: tell this PC's Device Service which One POS server we are (its updates come from here).
       if (s && !paired) { paired = true; void pairServer(`${window.location.origin}${withBase("/api")}`).catch(() => { paired = false; }); }
+      if (s?.signage) { askedAt = await signage(s, branchId, askedAt).catch(() => askedAt); }
       await api("/devices/heartbeat", "POST", {
         // The PC's name (from its Device Service) is its id where there is one, so clearing the browser doesn't list it twice.
         deviceKey: s?.machine ? `pc:${s.machine}` : deviceKey(), machine: s?.machine ?? null, serviceVersion: s?.version ?? null, receiptPrinter: s?.receiptPrinter ?? null,
@@ -38,4 +39,19 @@ export function useDeviceHeartbeat(branchId: string | null | undefined) {
     const t = window.setInterval(() => void beat(), 60_000);
     return () => { stop = true; window.clearInterval(t); };
   }, [branchId]);
+}
+
+/**
+ * TV screens: when this branch has them on and this PC's Device Service holds no key for it, gets one from the server and hands it
+ * to the service (the tray app shows the TVs with it). Asks at most every 10 minutes while the branch has them off.
+ */
+async function signage(s: DeviceStatus, branchId: string, askedAt: number): Promise<number> {
+  const sg = s.signage!;
+  if (sg.configured && sg.branchId === branchId) return askedAt;
+  if (sg.branchId === branchId && Date.now() - askedAt < 10 * 60_000) return askedAt;
+  const r = await api<{ enabled: boolean; token: string | null }>("/signage/device-token", "POST", { deviceKey: `pc:${s.machine}`, machine: s.machine });
+  if (r.enabled && r.token) await setSignage(r.token, branchId);
+  else if (sg.configured) await setSignage(null, null);
+  else await setSignage(null, branchId).catch(() => {});
+  return Date.now();
 }

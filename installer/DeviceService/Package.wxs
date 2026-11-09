@@ -42,7 +42,9 @@
         </ServiceInstall>
         <ServiceControl Id="OnePosDeviceControl" Name="OnePosDevice" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
       </Component>
-      <!-- Both programs are published as single self-contained files (no .NET to install on the till). -->
+      <!-- Both programs are published as single self-contained files (no .NET to install on the till). The tray's WebView2 parts
+           (Microsoft.Web.WebView2.Core/WinForms.dll and the native WebView2Loader.dll) are inside OnePos.DeviceTray.exe too
+           (IncludeNativeLibrariesForSelfExtract); the service's watchdog finds the tray at ..\Tray\OnePos.DeviceTray.exe. -->
 
       <!-- Which One POS web address may use the service. -->
       <Component Id="WebOriginKey" Directory="SERVICEDIR" Condition="WEBORIGIN" Bitness="always64">

@@ -9,11 +9,23 @@
     <RootNamespace>OnePos.DeviceTray</RootNamespace>
     <AssemblyName>OnePos.DeviceTray</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
+    <!-- For UI Automation (System.Windows.Automation), used to pick a wireless TV in Windows' Cast panel. -->
+    <UseWPF>true</UseWPF>
+    <!-- Real pixels per screen, so a TV window covers its TV exactly and sharply whatever each screen's scaling. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="app.ico" />
+    <!-- UseWPF drops these from the implicit usings. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- TV screens: each TV window shows the One POS TV page in Edge WebView2 (the runtime comes with Windows 11). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
   </ItemGroup>
 
 </Project>

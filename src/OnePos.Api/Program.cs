@@ -135,6 +135,7 @@ Dashboard.Map(api);
 ItemImages.Map(api, builder.Configuration, app.Environment);
 Branding.Map(app, api, builder.Configuration, app.Environment);
 PublicReceipts.Map(app);
+Signage.Map(app, api, builder.Configuration, app.Environment);
 DeviceReleases.Map(app, builder.Configuration, app.Environment);
 DeviceStatus.Map(api);
 Notices.Map(api);

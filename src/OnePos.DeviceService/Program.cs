@@ -10,6 +10,7 @@ builder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(builder.Configuration.Ge
 builder.Services.AddSingleton<SettingsStore>();
 builder.Services.AddSingleton<Updater>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<Updater>());
+builder.Services.AddHostedService<TrayWatchdog>();
 var app = builder.Build();
 var store = app.Services.GetRequiredService<SettingsStore>();
 var version = Updater.Version;
@@ -54,7 +55,34 @@ app.MapGet("/status", () =>
         update = new { s.AutoUpdate, latest = updater.LatestVersion, lastCheck = updater.LastCheck, result = updater.LastResult, paired = s.ServerApi is not null },
         // The One POS web address (the tray's "Open One POS"): the server's API address without /api.
         server = s.ServerApi is { } api && api.EndsWith("/api", StringComparison.OrdinalIgnoreCase) ? api[..^4] : s.ServerApi,
+        signage = new { configured = s.SignageToken is not null, branchId = s.SignageBranch },
     };
+});
+
+// TV screens: the web app (signed in) hands over this PC's TV token; the tray app reads it back to show the TVs.
+app.MapPut("/signage", (SignageBody body, HttpContext ctx) =>
+{
+    // Only the One POS web app (an allowed Origin, checked above) may set it, never a local program without one.
+    if (ctx.Request.Headers.Origin.ToString().Length == 0) return Results.Json(new { error = "Only the One POS web app can set this." }, statusCode: 403);
+    var token = string.IsNullOrWhiteSpace(body.Token) ? null : body.Token.Trim();
+    if (token is { Length: < 32 or > 100 } || (token is not null && !token.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_')))
+        return Results.BadRequest(new { error = "That isn't a TV screens token." });
+    var s = store.Get();
+    s.SignageToken = token;
+    s.SignageBranch = token is null || string.IsNullOrWhiteSpace(body.BranchId) ? null : body.BranchId.Trim();
+    store.Save(s);
+    return Results.Ok(new { ok = true });
+});
+
+app.MapGet("/signage", (HttpContext ctx) =>
+{
+    var s = store.Get();
+    // The token only for a program on this PC (the tray): no Origin header (not a web page) and addressed as this PC
+    // (a web page that renamed itself to 127.0.0.1 would still send its own host name).
+    var local = ctx.Request.Headers.Origin.ToString().Length == 0 && ctx.Request.Host.Host is "127.0.0.1" or "localhost" or "[::1]";
+    return local
+        ? Results.Ok(new { configured = s.SignageToken is not null, branchId = s.SignageBranch, api = s.ServerApi, token = s.SignageToken })
+        : Results.Ok(new { configured = s.SignageToken is not null, branchId = s.SignageBranch, api = s.ServerApi });
 });
 
 app.MapPut("/settings", (DeviceSettings body) =>
@@ -69,6 +97,7 @@ app.MapPut("/settings", (DeviceSettings body) =>
         PrintMode = body.PrintMode is "driver" or "escpos" ? body.PrintMode : s.PrintMode,
         PoleDisplayPort = string.IsNullOrWhiteSpace(body.PoleDisplayPort) ? null : body.PoleDisplayPort.Trim(),
         AllowedOrigins = s.AllowedOrigins, AutoUpdate = s.AutoUpdate, ServerApi = s.ServerApi,
+        SignageToken = s.SignageToken, SignageBranch = s.SignageBranch,
     });
     return Results.Ok(new { ok = true });
 });
@@ -179,3 +208,4 @@ record ServerBody(string Api);
 record AutoBody(bool On);
 record CheckBody(bool Install);
 record DisplayBody(string? Line1, string? Line2);
+record SignageBody(string? Token, string? BranchId);
