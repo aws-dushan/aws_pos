@@ -369,11 +369,11 @@ Prices cannot be typed on the Menu for FACTS items: **Price at (branch)** comes 
 
 **Prices** sets the selling prices of the items enabled for selling at this branch, at the outlet and on each delivery platform, and posts them in FACTS. The prices are the selling prices with VAT, exactly as the till charges them: 7.00 here is 7.00 on the bill. It needs the **Change selling prices** permission (Roles), which branch managers and head office have.
 
-1. Open **Prices**. Each row is an item: its outlet price, then one price per platform (Talabat, Deliveroo …). An empty cell (—) means no price: the item can't be sold there.
+1. Open **Prices**. Each row is an item: its outlet price, then one price per platform (Talabat, Deliveroo …). An empty cell (—) means no price: the item can't be sold there. A long list scrolls inside its box, with the column headings and the item name kept in view.
 2. Type the new prices. Changed cells are highlighted with the old price underneath. **Missing on a platform** lists the items without a price on some platform.
 3. Tap **Post to FACTS…**, add a remark if you like, and **Post to FACTS**. The outlet prices go in as one outlet price import (OSMPI) and the platform prices as one price list (CPL50) per platform, posted straight away as the branch's FACTS user for price posting. The till has the new prices within a minute.
 
-**Price changes** below lists every posting with its FACTS document numbers. If FACTS refuses a document, nothing of it stays in FACTS; the reason shows, and **Post again** sends it once fixed.
+The **History** tab lists the branch's price postings, newest first: when, who, the remark and the FACTS document numbers. Everyone who can open Prices sees them for the branch selected at the top. Tap a posting to see each item's old and new price. If FACTS refuses a document, nothing of it stays in FACTS; the reason shows, and **Post again** sends it once fixed.
 
 ## Combos and option groups
 

@@ -42,6 +42,7 @@ export default function PricesPage() {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("");
   const [posting, setPosting] = useState(false);
+  const [tab, setTab] = useState<"prices" | "history">("prices");
   const d = data.data;
   const platforms = useMemo(() => d?.platforms ?? [], [d]);
 
@@ -94,7 +95,11 @@ export default function PricesPage() {
       {d && blockers.length > 0 && (
         <div className="mb-4 rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">{blockers.map((b) => <div key={b}>{b}</div>)}</div>
       )}
-      {data.loading && !d ? <LoadingRows rows={6} /> : d && (
+      <Segmented id="price-tab" value={tab} onChange={setTab} className="mb-4"
+        options={[{ value: "prices", label: "Prices" }, { value: "history", label: `History${history.data?.length ? ` ${history.data.length}` : ""}` }]} />
+      {tab === "history" ? (
+        <History data={history.data} error={history.error} onRetried={() => { history.reload(); data.reload(); }} />
+      ) : data.loading && !d ? <LoadingRows rows={6} /> : d && (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <Segmented id="price-filter" value={filter} onChange={setFilter} size="sm"
@@ -115,8 +120,9 @@ export default function PricesPage() {
               {filter === "all" && !q && !cat ? "No FACTS items are enabled for selling at this branch." : "Change the filter or search."}
             </EmptyState>
           ) : (
-            <TablePanel>
-              <Table>
+            // Scrolls inside its own box: the page stays put and the column headings (and the item) stay in view.
+            <TablePanel className={cn(changes.length > 0 || invalid > 0 ? "max-h-[calc(100dvh-21rem)]" : "max-h-[calc(100dvh-17rem)]", "min-h-64 overflow-auto [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_tbody_td:nth-child(2)]:sticky [&_tbody_td:nth-child(2)]:left-0 [&_tbody_td:nth-child(2)]:z-[1] [&_tbody_td:nth-child(2)]:bg-card [&_thead_th:nth-child(2)]:left-0 [&_thead_th:nth-child(2)]:z-20")}>
+              <Table bare>
                 <TableHeader><TableRow>
                   <TableHead className="pl-5">Code</TableHead><TableHead>Item</TableHead>
                   <TableHead className="text-right">Outlet <span className="block text-[0.7rem] font-normal text-muted-foreground">{d.branch.priceType ?? "no price type"}</span></TableHead>
@@ -151,8 +157,6 @@ export default function PricesPage() {
         </>
       )}
 
-      <History data={history.data} error={history.error} onRetried={() => { history.reload(); data.reload(); }} />
-
       {(changes.length > 0 || invalid > 0) && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 px-4 py-3 shadow-lg backdrop-blur" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
@@ -170,7 +174,7 @@ export default function PricesPage() {
             { remark, changes: changes.map((c) => ({ itemId: c.item.id, platformId: c.platformId || null, price: c.price })) });
           setPosting(false);
           if (r.failed === 0) { toast.success(`Posted in FACTS (${r.posted} document${r.posted === 1 ? "" : "s"}). The till has the new prices now.`); setEdits({}); }
-          else toast.error(`${r.failed} document${r.failed === 1 ? "" : "s"} refused by FACTS: see Price changes below. ${r.posted ? `${r.posted} posted.` : ""}`);
+          else toast.error(`${r.failed} document${r.failed === 1 ? "" : "s"} refused by FACTS: see History. ${r.posted ? `${r.posted} posted.` : ""}`);
           if (r.failed === 0 || r.posted > 0) setEdits({});
           history.reload(); data.reload();
         }} />
@@ -213,16 +217,16 @@ function History({ data, error, onRetried }: { data: PriceChange[] | null | unde
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   if (error) return <ErrorNote message={error} />;
-  if (!data?.length) return null;
+  if (!data) return <LoadingRows rows={4} />;
+  if (!data.length) return <EmptyState icon={TagIcon} title="No price changes yet" module="sales">Prices posted from this page show here for everyone with this branch selected.</EmptyState>;
   return (
-    <section className="mt-8">
-      <h2 className="mb-3 font-heading text-[0.95rem] font-semibold">Price changes</h2>
+    <section>
       <div className="grid gap-2">
         {data.map((c) => (
           <div key={c.id} className="rounded-xl border bg-card p-3">
             <button type="button" className="flex w-full flex-wrap items-center justify-between gap-2 text-left" onClick={() => setOpen(open === c.id ? null : c.id)}>
               <span className="text-sm"><b>{new Date(c.createdAt).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</b> · {c.by}{c.remark ? ` · ${c.remark}` : ""}</span>
-              <span className="text-xs text-muted-foreground">as {c.factsUser} · {c.docs.reduce((n, d) => n + d.lines.length, 0)} prices</span>
+              <span className="text-xs text-muted-foreground">as {c.factsUser} · {((n) => `${n} price${n === 1 ? "" : "s"}`)(c.docs.reduce((n, d) => n + d.lines.length, 0))}</span>
             </button>
             <div className="mt-2 grid gap-1.5">
               {c.docs.map((d) => (
