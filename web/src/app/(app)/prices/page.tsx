@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { RotateCcwIcon, SearchIcon, TagIcon } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { DownloadIcon, RotateCcwIcon, SearchIcon, TagIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { downloadTemplate, readPrices, type XResult } from "./excel";
 
 type Platform = { id: string; name: string; customer: string };
 type Item = { id: string; code: string; name: string; category: string; outlet: number | null; platforms: Record<string, number> };
@@ -43,6 +44,9 @@ export default function PricesPage() {
   const [cat, setCat] = useState("");
   const [posting, setPosting] = useState(false);
   const [tab, setTab] = useState<"prices" | "history">("prices");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [upload, setUpload] = useState<{ file: string; result: XResult } | null>(null);
+  const [excelBusy, setExcelBusy] = useState(false);
   const d = data.data;
   const platforms = useMemo(() => d?.platforms ?? [], [d]);
 
@@ -113,6 +117,21 @@ export default function PricesPage() {
                 <option value="">All categories</option>
                 {cats.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
+              <Button variant="outline" className="h-9" disabled={excelBusy || shown.length === 0} title="An Excel file with today's prices of the items listed"
+                onClick={async () => {
+                  setExcelBusy(true);
+                  try { await downloadTemplate({ code: d.branch.code, name: branch?.name ?? d.branch.code, priceType: d.branch.priceType }, platforms, shown); }
+                  catch (e) { toast.error((e as Error).message); } finally { setExcelBusy(false); }
+                }}><DownloadIcon className="size-4" /> Download template</Button>
+              <Button variant="outline" className="h-9" disabled={excelBusy} onClick={() => fileRef.current?.click()}><UploadIcon className="size-4" /> Upload Excel</Button>
+              <input ref={fileRef} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]; e.target.value = "";
+                  if (!f) return;
+                  setExcelBusy(true);
+                  try { setUpload({ file: f.name, result: await readPrices(f, d.branch.code, platforms, d.items) }); }
+                  catch (err) { toast.error((err as Error).message); } finally { setExcelBusy(false); }
+                }} />
             </div>
           </div>
           {shown.length === 0 ? (
@@ -168,6 +187,11 @@ export default function PricesPage() {
           </div>
         </div>
       )}
+      <UploadDialog upload={upload} onClose={() => setUpload(null)} onApply={(r) => {
+        setEdits((prev) => ({ ...prev, ...Object.fromEntries(r.changes.map((c) => [key(c.itemId, c.platformId), c.price.toFixed(2)])) }));
+        setFilter("changed"); setQ(""); setCat(""); setUpload(null);
+        toast.success(`${r.changes.length} price${r.changes.length === 1 ? "" : "s"} put on the screen. Check them, then Post to FACTS.`);
+      }} />
       <PostDialog open={posting} docs={docs} factsUser={d?.branch.factsUser ?? ""} onClose={() => setPosting(false)}
         onPost={async (remark) => {
           const r = await api<{ posted: number; failed: number }>("/prices/post", "POST",
@@ -179,6 +203,44 @@ export default function PricesPage() {
           history.reload(); data.reload();
         }} />
     </div>
+  );
+}
+
+/** What an uploaded file holds: the changes found, what was the same, and every row or cell left out (with why). */
+function UploadDialog({ upload, onClose, onApply }: { upload: { file: string; result: XResult } | null; onClose: () => void; onApply: (r: XResult) => void }) {
+  const r = upload?.result;
+  return (
+    <Dialog open={!!upload} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Read “{upload?.file}”</DialogTitle>
+          <DialogDescription>Nothing is posted yet: the changes go on the screen, highlighted, and you post them as usual.</DialogDescription>
+        </DialogHeader>
+        {r && (
+          <div className="grid gap-2 text-sm">
+            <div className={cn("rounded-lg border px-3 py-2", r.changes.length ? "border-primary/40 bg-primary/5" : "")}>
+              <b>{r.changes.length} price change{r.changes.length === 1 ? "" : "s"}</b>
+              {r.perColumn.length > 0 && <span className="text-muted-foreground"> ({r.perColumn.map((c) => `${c.n} ${c.label}`).join(" · ")})</span>}
+            </div>
+            <div className="px-3 text-muted-foreground">{r.unchanged} price{r.unchanged === 1 ? "" : "s"} the same as now, left as they are</div>
+            {r.skipped.length > 0 && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+                <div className="mb-1 font-medium text-warning">{r.skipped.length} left out</div>
+                <div className="grid max-h-48 gap-0.5 overflow-auto text-xs">
+                  {r.skipped.map((x, i) => (
+                    <div key={i}>{x.row ? <span className="text-muted-foreground">Row {x.row} </span> : null}{x.code && <span className="font-mono">{x.code} </span>}{x.why}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!r?.changes.length} onClick={() => r && onApply(r)}>Put on the screen</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

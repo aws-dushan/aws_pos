@@ -5,9 +5,9 @@
 
 export type ExportTable = { title: string; subtitle?: string; head: string[]; rows: (string | number)[][] };
 
-const fileName = (s: string) => s.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+export const fileName = (s: string) => s.replace(/[^\w.-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 
-function save(blob: Blob, name: string) {
+export function save(blob: Blob, name: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = name; a.click();
   window.setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
