@@ -54,7 +54,8 @@ the TVs).
 runs in the session of whoever is signed in at the till's own screen (the active console session) and, if not, starts it there
 as that user (`WTSQueryUserToken` → `CreateProcessAsUser` on `winsta0\default`). It waits until the user's desktop is up,
 does nothing when nobody is signed in, and when the tray keeps closing (5 starts in 5 minutes) waits 5 minutes before the next
-try. The tray is found at `..\Tray\OnePos.DeviceTray.exe` from the service's folder (where the installer puts it).
+try. The tray is found at `..\Tray\OnePos.DeviceTray.exe` from the service's folder (where the installer puts it). After an update, a tray still running from before (started before its file was last written) is closed, so the
+watchdog starts the new one.
 
 ### TV screens
 
@@ -109,7 +110,7 @@ attempt. The tray also shows the result as a note by the clock.
 - Tills download it from **Devices** the first time. Afterwards the service checks every 6 hours with the server its web
   app came from (only that address), verifies the SHA-256 and installs quietly with msiexec. **Update by itself** can be
   switched off per PC; **Update now** forces it.
-- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.1; the tray is
+- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.2; the tray is
   1.3.0). Both programs are single self-contained files; the tray's WebView2 libraries are inside its exe.
 - The MSI is not code-signed yet, so Windows SmartScreen warns on first install.
 

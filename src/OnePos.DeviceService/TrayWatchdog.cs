@@ -67,6 +67,9 @@ public sealed class TrayWatchdog(ILogger<TrayWatchdog> logger) : BackgroundServi
     {
         var session = WTSGetActiveConsoleSessionId();
         if (session is 0xFFFFFFFF or 0) return false;
+        // After an update the old tray keeps running (Windows can't swap a running program): a tray started before its file was
+        // last written is the old one, so it is closed and started again below.
+        if (TrayPath() is { } file) StopOlderThan(TrayName, File.GetLastWriteTimeUtc(file));
         if (Running(TrayName, session)) return false;
         // Wait until the user's desktop is up (Explorer runs), so the icon has a taskbar to go to.
         if (!Running("explorer", session)) return false;
@@ -95,6 +98,21 @@ public sealed class TrayWatchdog(ILogger<TrayWatchdog> logger) : BackgroundServi
             if (env != IntPtr.Zero) DestroyEnvironmentBlock(env);
             if (primary != IntPtr.Zero) CloseHandle(primary);
             CloseHandle(userToken);
+        }
+    }
+
+    private void StopOlderThan(string name, DateTime fileWrittenUtc)
+    {
+        foreach (var p in Process.GetProcessesByName(name))
+        {
+            try
+            {
+                if (p.StartTime.ToUniversalTime() >= fileWrittenUtc) continue;
+                p.Kill();
+                logger.LogInformation("Closed the tray app from before the update (session {Session})", p.SessionId);
+            }
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { }
+            finally { p.Dispose(); }
         }
     }
 
