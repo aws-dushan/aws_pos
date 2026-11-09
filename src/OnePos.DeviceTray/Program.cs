@@ -45,7 +45,6 @@ internal sealed class TrayContext : ApplicationContext
         menu.Items.Add("Print a test page", null, async (_, _) => await PostAsync("/print/test", new { }, "Test page sent to the printer."));
         updateItem.Click += async (_, _) => await PostAsync("/update/check", new { install = true }, null);
         menu.Items.Add(updateItem);
-        menu.Items.Add("Connect wireless TV", null, async (_, _) => await signage!.ConnectWirelessAsync());
         menu.Items.Add(new ToolStripSeparator());
         // Hides only the icon: the app keeps running (it shows the TV screens) until the next sign-in.
         menu.Items.Add("Hide this icon", null, (_, _) => icon!.Visible = false);

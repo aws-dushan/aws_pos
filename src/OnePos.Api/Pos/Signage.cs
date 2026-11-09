@@ -26,24 +26,7 @@ public static class Signage
     public sealed record ScreenBody(string? Name, bool? IsOn, Guid? DesignId, bool ClearDesign = false);
     public sealed record TokenBody(string? DeviceKey, string? Machine);
     public sealed record Monitor(string? Key, string? Name, int? Width, int? Height);
-    public sealed record NearbyTv(string? Name, bool Connected);
-    public sealed record ConnectDone(string? Name, bool Ok, string? Message);
-    public sealed record ReportBody(IReadOnlyList<Monitor>? Monitors, string? Machine, IReadOnlyList<NearbyTv>? Nearby = null, ConnectDone? ConnectDone = null);
-    public sealed record ConnectBody(string? Name);
-
-    public sealed class DeviceRow
-    {
-        public Guid Id { get; set; }
-        public string? Machine { get; set; }
-        public bool Online { get; set; }
-        public string? Nearby { get; set; }
-        public DateTime? NearbyAt { get; set; }
-        public string? ConnectName { get; set; }
-        public DateTime? ConnectAt { get; set; }
-        public bool? ConnectOk { get; set; }
-        public string? ConnectMessage { get; set; }
-        public DateTime? ConnectDoneAt { get; set; }
-    }
+    public sealed record ReportBody(IReadOnlyList<Monitor>? Monitors, string? Machine);
 
     public sealed class ScreenRow
     {
@@ -132,17 +115,6 @@ public static class Signage
                     from signage_design g where g.branch_id is null or g.branch_id = @b order by g.name
                     """, new { b = scope.Branch }, tx),
                 media = await c.QueryAsync<MediaRow>("select id, kind, name, bytes, created_at from signage_media order by created_at desc", transaction: tx),
-                // The branch's till PCs with the wireless TVs each can see (signage_device has no row-level security: by branch and company).
-                devices = (await c.QueryAsync<DeviceRow>("""
-                    select id, machine, coalesce(last_seen > now() - interval '30 seconds', false) as online, nearby::text as nearby, nearby_at,
-                           connect_name, connect_at, connect_ok, connect_message, connect_done_at
-                    from signage_device where branch_id = @b and company_id = @co and last_seen > now() - interval '30 days'
-                    order by machine nulls last
-                    """, new { b = scope.Branch, co = scope.CompanyId }, tx)).Select(d => new
-                    {
-                        d.Id, d.Machine, d.Online, nearby = d.Nearby is null ? null : (object)JsonDocument.Parse(d.Nearby).RootElement, d.NearbyAt,
-                        d.ConnectName, d.ConnectAt, d.ConnectOk, d.ConnectMessage, d.ConnectDoneAt,
-                    }),
             });
         });
 
@@ -259,34 +231,6 @@ public static class Signage
             return Results.Ok(new { id });
         });
 
-        // Ask a till PC to connect one of the wireless TVs it can see (it does so within a few seconds and reports back).
-        api.MapPost("/signage/devices/{id:guid}/connect", async (Guid id, ConnectBody body, HttpContext http, Db db, Live live) =>
-        {
-            var scope = await http.ScopeAsync(db);
-            scope.Require("branch.manage");
-            var name = Cut(body.Name, 120) ?? throw new DomainException("Choose a TV.");
-            await db.Company(scope.CompanyId, async (c, tx) =>
-            {
-                var machine = await c.QuerySingleOrDefaultAsync<string?>("""
-                    update signage_device set connect_name = @name, connect_at = now(), connect_ok = null, connect_message = null, connect_done_at = null
-                    where id = @id and branch_id = @b and company_id = @co returning coalesce(machine, 'the till')
-                    """, new { id, name, b = scope.Branch, co = scope.CompanyId }, tx) ?? throw new NotFoundException("Till not found.");
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "signage_device", id.ToString(), "connect", $"{machine} asked to connect TV {name}");
-                return 0;
-            });
-            await live.ToBranch(scope.Branch, "signage.changed");
-            return Results.Ok(new { id, name });
-        });
-
-        api.MapDelete("/signage/devices/{id:guid}/connect", async (Guid id, HttpContext http, Db db) =>
-        {
-            var scope = await http.ScopeAsync(db);
-            scope.Require("branch.manage");
-            await db.Company(scope.CompanyId, (c, tx) => c.ExecuteAsync(
-                "update signage_device set connect_name = null where id = @id and branch_id = @b and company_id = @co", new { id, b = scope.Branch, co = scope.CompanyId }, tx));
-            return Results.Ok(new { id });
-        });
-
         // Pictures (JPEG, PNG, WebP up to 5 MB) and videos (MP4 or WebM up to 25 MB) for designs.
         api.MapPost("/signage/media", async (IFormFile file, HttpContext http, Db db) =>
         {
@@ -370,20 +314,7 @@ public static class Signage
             {
                 var enabled = await c.ExecuteScalarAsync<bool>("select signage_enabled from branch where id = @b", new { b = dev.BranchId }, tx);
                 await c.ExecuteAsync("update signage_device set last_seen = now(), machine = coalesce(@machine, machine) where id = @id", new { id = dev.Id, machine = Cut(body.Machine, 80) }, tx);
-                // The wireless TVs it can see now (left out: it couldn't look), and how a requested connect went.
-                if (body.Nearby is { } near)
-                {
-                    var list = near.Where(n => !string.IsNullOrWhiteSpace(n.Name)).Take(20).Select(n => new { name = Cut(n.Name, 120), connected = n.Connected });
-                    await c.ExecuteAsync("update signage_device set nearby = cast(@json as jsonb), nearby_at = now() where id = @id",
-                        new { id = dev.Id, json = JsonSerializer.Serialize(list) }, tx);
-                }
-                if (body.ConnectDone is { Name: { } doneName } done)
-                    await c.ExecuteAsync("""
-                        update signage_device set connect_name = null, connect_ok = @ok, connect_message = @msg, connect_done_at = now()
-                        where id = @id and connect_name = @name
-                        """, new { id = dev.Id, name = Cut(doneName, 120), ok = done.Ok, msg = Cut(done.Message, 300) }, tx);
-                var connect = await c.ExecuteScalarAsync<string?>("select connect_name from signage_device where id = @id", new { id = dev.Id }, tx);
-                if (!enabled) return new { enabled, screens = Array.Empty<object>(), connect = (string?)null };
+                if (!enabled) return new { enabled, screens = Array.Empty<object>() };
                 var firstDesign = await c.ExecuteScalarAsync<Guid?>(
                     "select id from signage_design where branch_id is null or branch_id = @b order by branch_id is null, created_at limit 1", new { b = dev.BranchId }, tx);
                 var screens = new List<object>();
@@ -404,7 +335,7 @@ public static class Signage
                         }, tx);
                     screens.Add(new { monitorKey = key, id = s.Id, name = s.Name, isOn = s.IsOn && s.DesignId is not null });
                 }
-                return new { enabled, screens = screens.ToArray(), connect };
+                return new { enabled, screens = screens.ToArray() };
             }));
         });
 

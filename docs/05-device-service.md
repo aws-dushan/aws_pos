@@ -47,7 +47,7 @@ A printer named `file:C:\path\out.bin` writes the bytes to a file, for testing w
 ## Tray app
 
 `src/OnePos.DeviceTray` starts with Windows and shows whether the service runs, the printer state, the TV screens, a test
-print, "check for updates" and "Connect wireless TV". **Hide this icon** hides only the icon; the app keeps running (it shows
+print and "check for updates". **Hide this icon** hides only the icon; the app keeps running (it shows
 the TVs).
 
 **Watchdog.** The service (only when it runs as the Windows service) checks every 10 seconds that `OnePos.DeviceTray.exe`
@@ -78,27 +78,8 @@ screens need the WebView2 Runtime) with its data in `%LOCALAPPDATA%\OnePos\TvWeb
 zoom or browser keys, and videos may play by themselves. A page that fails or crashes reloads after 5 seconds; if the browser
 itself ends, the windows start again.
 
-**Wireless TV.** The tray remembers the name of a TV that was connected wirelessly (`%LOCALAPPDATA%\OnePos\tray.json`).
-About 20 seconds after the tray starts, if that TV isn't connected, it tries once to connect it: it opens Windows' Cast panel
-(Win+K), picks the TV there (UI Automation), waits up to 20 seconds, closes the panel and runs `DisplaySwitch.exe /extend` so
-the TV becomes a screen of its own. **Connect wireless TV** in the tray menu does the same; with no TV remembered it opens
-the Cast panel for the user to pick one. It never retries by itself.
-
-**Nearby wireless TVs.** Each report to the server also carries `nearby`: the wireless (Miracast) TVs this PC can see now
-(`NearbyTvs.cs`), as `[{ "name": "Hisense VIDAA TV", "connected": false }]`. The list comes from Windows' Wi-Fi Direct display
-devices (`DeviceInformation.FindAllAsync`, Miracast protocol, association endpoints) that are in reach (`IsPresent`); TVs paired
-before but not around now are left out, and so are Wi-Fi Direct printers (names starting with `DIRECT-`). `connected` is true
-when that TV is a screen of this PC right now (display configuration, as above); a connected TV is always in the list. Looking
-the TVs up takes a few seconds, so it runs in the background at most every 20 seconds (and at once after a connect attempt);
-each report sends the last result. An empty list is `[]`; `nearby` is left out only when Windows can't list them.
-
-**Connect on request.** A manager picks a nearby TV on the One POS web page and clicks Connect; the server's answer then holds
-`"connect": "<TV name>"`. The tray makes one attempt in the background for that request (not while TV screens are switched off,
-and not while another attempt runs): it connects that TV through the Cast panel as above, extends onto it and remembers it as
-this PC's wireless TV. It then sends `"connectDone": { "name", "ok", "message" }` with every report until the server stops
-asking for that TV; `message` is a plain sentence for the manager, e.g. "Connected and playing." or "The TV didn't answer.
-Check it is on with Screen Mirroring open.". A new request for the same TV after the server cleared the old one is a new
-attempt. The tray also shows the result as a note by the clock.
+**Wireless TVs.** A TV connected with Windows' wireless display (Win+K, set to Extend) is a screen like any other and plays
+the same way. The tray doesn't connect wireless TVs itself: Windows doesn't let a program drive its Cast panel reliably.
 
 ## Installer and updates
 
@@ -110,8 +91,8 @@ attempt. The tray also shows the result as a note by the clock.
 - Tills download it from **Devices** the first time. Afterwards the service checks every 6 hours with the server its web
   app came from (only that address), verifies the SHA-256 and installs quietly with msiexec. **Update by itself** can be
   switched off per PC; **Update now** forces it.
-- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.2; the tray is
-  1.3.0). Both programs are single self-contained files; the tray's WebView2 libraries are inside its exe.
+- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.3; the tray is
+  1.3.2). Both programs are single self-contained files; the tray's WebView2 libraries are inside its exe.
 - The MSI is not code-signed yet, so Windows SmartScreen warns on first install.
 
 ## Device status

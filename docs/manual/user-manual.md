@@ -600,8 +600,8 @@ TV screens show menus, offers and pictures with animations on TVs connected to t
 **Switch it on**
 
 1. Open **TV screens** and switch **On at this branch**.
-2. Turn the TV on with **Screen Mirroring** (or Screen Share) open. Under **Nearby TVs**, each till lists the wireless TVs it can see: tap **Connect** next to yours. The till connects the TV as a second screen by itself and connects it again after a restart. A TV on an HDMI cable or a wireless HDMI kit needs no Connect.
-3. Within a few seconds the TV appears under **TVs** (for example "TV 1 · Hisense VIDAA TV") and plays the first design. The till needs the One POS Device Service 1.4.1 or later.
+2. Connect the TV to a till as a second screen: an HDMI cable, a wireless HDMI kit, or Windows wireless display (**Win+K**, pick the TV, then **Win+P** → **Extend**).
+3. Within a few seconds the TV appears under **TVs** (for example "TV 1 · Hisense VIDAA TV") and plays the first design. The till needs the One POS Device Service 1.4 or later.
 
 **Choose what each TV plays**
 

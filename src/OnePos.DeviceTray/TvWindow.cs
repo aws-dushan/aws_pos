@@ -32,6 +32,8 @@ internal sealed class TvWindow : Form
         ShowInTaskbar = false;
         TopMost = false;
         BackColor = Color.Black;
+        AutoScaleMode = AutoScaleMode.None;
+        target = bounds;
         Bounds = bounds;
         web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.Black };
         Controls.Add(web);
@@ -99,11 +101,43 @@ internal sealed class TvWindow : Form
         catch (Exception ex) when (ex is not OutOfMemoryException) { Broken = true; }
     }
 
-    /// <summary>Keeps the window on its screen when the screens change.</summary>
+    private Rectangle target;
+
+    /// <summary>
+    /// Keeps the window exactly on its screen (in the screen's own pixels). Checked against where Windows really has it, since a
+    /// change of resolution or display scaling can move or resize it behind WinForms' back.
+    /// </summary>
     public void Place(Rectangle bounds)
     {
-        if (Bounds != bounds) Bounds = bounds;
+        target = bounds;
+        if (!IsHandleCreated) { Bounds = bounds; return; }
+        if (GetWindowRect(Handle, out var r) && r.Left == bounds.Left && r.Top == bounds.Top && r.Right == bounds.Right && r.Bottom == bounds.Bottom) return;
+        SetWindowPos(Handle, IntPtr.Zero, bounds.X, bounds.Y, bounds.Width, bounds.Height, SwpNoZOrder | SwpNoActivate);
     }
+
+    /// <summary>A screen whose display scaling changes sends WM_DPICHANGED with a suggested size: ignored, the window stays on its screen.</summary>
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmDpiChanged)
+        {
+            m.Result = IntPtr.Zero;
+            BeginInvoke(() => { if (!IsDisposed) Place(target); });
+            return;
+        }
+        base.WndProc(ref m);
+    }
+
+    private const int WmDpiChanged = 0x02E0;
+    private const uint SwpNoZOrder = 0x0004, SwpNoActivate = 0x0010;
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct Rect { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
     /// <summary>Only the controller closes a TV window.</summary>
     public void CloseTv()
