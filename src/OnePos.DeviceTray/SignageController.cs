@@ -11,6 +11,9 @@ namespace OnePos.DeviceTray;
 /// finds the screens besides the till's own, reports them to the One POS server and keeps one TV window on each screen the server
 /// answers for, showing that TV's page (the page itself follows the server: the design when the TV is on, black when off).
 /// No token, TV screens switched off for the branch, or a token the server doesn't know: no TV windows. Never throws.
+/// Each report also lists the wireless TVs this PC can see ("nearby", each with whether it is connected now); when the server
+/// answers with "connect": a TV's name (a manager picked it in One POS), the tray connects that TV once and reports how it went
+/// ("connectDone") until the server stops asking.
 /// </summary>
 internal sealed class SignageController : IDisposable
 {
@@ -26,6 +29,17 @@ internal sealed class SignageController : IDisposable
     private Task<CoreWebView2Environment>? environment;
     private bool running, again, runtimeWarned, configured;
 
+    // Wireless TVs in reach: looked up at most every 20 seconds (and right after a connect attempt), off the screen's thread.
+    private static readonly TimeSpan NearbyEvery = TimeSpan.FromSeconds(20);
+    private List<string>? nearby;
+    private DateTime nearbyAt = DateTime.MinValue;
+    private bool nearbyLooking;
+
+    // A manager's "connect this TV": the attempt running now, the request already answered (until the server stops asking), and
+    // how the last attempt ended (sent on every report until the server stops asking for that TV).
+    private string? connecting, answered;
+    private (string Name, bool Ok, string Message)? connectDone;
+
     public string Status { get; private set; } = "TV screens: off";
     public event Action? StatusChanged;
 
@@ -39,9 +53,9 @@ internal sealed class SignageController : IDisposable
         wirelessOnce.Tick += async (_, _) =>
         {
             wirelessOnce.Stop();
-            if (!configured || WirelessTv.Remembered is not { } tv || WirelessTv.Connected(tv)) return;
-            var result = await Task.Run(WirelessTv.ConnectAsync);
-            notify(result, ToolTipIcon.Info);
+            if (!configured || connecting is not null || WirelessTv.Remembered is not { } tv || WirelessTv.Connected(tv)) return;
+            var result = await Task.Run(() => WirelessTv.ConnectAsync(tv));
+            notify($"{tv}: {result.Message}", ToolTipIcon.Info);
         };
         timer.Start();
         wirelessOnce.Start();
@@ -51,8 +65,10 @@ internal sealed class SignageController : IDisposable
     /// <summary>"Connect wireless TV" in the tray menu.</summary>
     public async Task ConnectWirelessAsync()
     {
-        var result = await Task.Run(WirelessTv.ConnectAsync);
-        notify(result, ToolTipIcon.Info);
+        var tv = WirelessTv.Remembered;
+        var result = await Task.Run(() => WirelessTv.ConnectAsync(tv));
+        notify(tv is null ? result.Message : $"{tv}: {result.Message}", ToolTipIcon.Info);
+        nearbyAt = DateTime.MinValue;
         _ = RunAsync();
     }
 
@@ -97,6 +113,8 @@ internal sealed class SignageController : IDisposable
 
         WirelessTv.RememberConnected();
         var monitors = Displays.Tvs();
+        _ = LookForNearbyAsync();
+        var done = connectDone;
         JsonElement answer;
         try
         {
@@ -106,7 +124,9 @@ internal sealed class SignageController : IDisposable
                 {
                     machine = Environment.MachineName,
                     monitors = monitors.Select(m => new { key = m.Key, name = m.Name, width = m.Bounds.Width, height = m.Bounds.Height }),
-                }),
+                    nearby = Nearby(),
+                    connectDone = done is { } d ? new { name = d.Name, ok = d.Ok, message = d.Message } : null,
+                }, options: SkipNulls),
             };
             req.Headers.Add("X-Signage-Token", token);
             using var res = await Server.SendAsync(req);
@@ -121,6 +141,7 @@ internal sealed class SignageController : IDisposable
         }
 
         if (!answer.TryGetProperty("enabled", out var en) || en.ValueKind != JsonValueKind.True) { CloseAll("TV screens: off"); return; }
+        Connect(Text(answer, "connect"));
 
         // A browser that ended takes all TV windows with it: start them again with a new one.
         if (windows.Values.Any(w => w.Window.Broken)) { CloseAll(null); environment = null; }
@@ -162,6 +183,54 @@ internal sealed class SignageController : IDisposable
             : off == 0 ? $"TV screens: {playing} playing" : $"TV screens: {playing} playing, {off} switched off");
     }
 
+    /// <summary>The wireless TVs in reach, each with whether it is a screen of this PC now; null when Windows can't list them.</summary>
+    private List<object>? Nearby()
+    {
+        if (nearby is null) return null;
+        var connected = Displays.WirelessNames();
+        var names = nearby.ToList();
+        foreach (var c in connected) if (!names.Contains(c, StringComparer.OrdinalIgnoreCase)) names.Add(c);   // connected, so in reach
+        return [.. names.Select(n => new { name = n, connected = connected.Contains(n, StringComparer.OrdinalIgnoreCase) })];
+    }
+
+    /// <summary>Looks the wireless TVs up again in the background when the last look is 20 seconds old (or was asked to).</summary>
+    private async Task LookForNearbyAsync()
+    {
+        if (nearbyLooking || DateTime.UtcNow - nearbyAt < NearbyEvery) return;
+        nearbyLooking = true;
+        try
+        {
+            var found = await Task.Run(NearbyTvs.FindAsync);
+            if (found is not null || nearbyAt == DateTime.MinValue) nearby = found;
+        }
+        finally { nearbyAt = DateTime.UtcNow; nearbyLooking = false; }
+    }
+
+    /// <summary>
+    /// The server's "connect" (a manager asked this PC to connect that wireless TV): one attempt per request, in the background.
+    /// Once the server no longer asks for that TV, its result is dropped and a new request for it counts as new.
+    /// </summary>
+    private void Connect(string? name)
+    {
+        if (connectDone is { } d && !string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase)) connectDone = null;
+        if (!string.Equals(answered, name, StringComparison.OrdinalIgnoreCase)) answered = null;
+        if (name is null || connecting is not null || answered is not null) return;
+        connecting = answered = name;
+        _ = AttemptAsync(name);
+    }
+
+    private async Task AttemptAsync(string name)
+    {
+        WirelessTv.Result result;
+        try { result = await Task.Run(() => WirelessTv.ConnectAsync(name)); }
+        catch (Exception e) when (e is not OutOfMemoryException) { result = new(false, $"Couldn't connect the TV: {e.Message}"); }
+        connectDone = (name, result.Ok, result.Message);
+        connecting = null;
+        nearbyAt = DateTime.MinValue;   // look again at once: the list now shows it connected (or not)
+        notify($"{name}: {result.Message}", result.Ok ? ToolTipIcon.Info : ToolTipIcon.Warning);
+        _ = RunAsync();
+    }
+
     /// <summary>Keeps each TV window on its screen; a window whose screen went away closes.</summary>
     private void Place(List<TvMonitor> monitors)
     {
@@ -200,6 +269,8 @@ internal sealed class SignageController : IDisposable
         try { return !string.IsNullOrEmpty(CoreWebView2Environment.GetAvailableBrowserVersionString()); }
         catch (Exception e) when (e is not OutOfMemoryException) { return false; }
     }
+
+    private static readonly JsonSerializerOptions SkipNulls = new(JsonSerializerDefaults.Web) { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
     private static string? Text(JsonElement e, string name) =>
         e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString()) ? v.GetString() : null;

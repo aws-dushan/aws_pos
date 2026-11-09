@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CopyIcon, Loader2Icon, PencilIcon, PlusIcon, Trash2Icon, TvIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { EmptyState, ErrorNote, LoadingRows, ObjectStatus, PageHeader, Switch, T
 import { SignageStage } from "@/components/signage/stage";
 import { previewUrls } from "@/components/signage/preview";
 import { MediaThumb, UploadButton, type MediaRow } from "@/components/signage/media";
+import { NearbyTvs, type Till } from "@/components/signage/nearby";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -21,7 +22,7 @@ type Screen = {
   designId: string | null; designName: string | null; width: number | null; height: number | null; lastSeen: string | null; online: boolean;
 };
 type DesignRow = { id: string; branchId: string | null; name: string; updatedAt: string; screens: number };
-type Overview = { enabled: boolean; screens: Screen[]; designs: DesignRow[]; media: MediaRow[] };
+type Overview = { enabled: boolean; screens: Screen[]; designs: DesignRow[]; media: MediaRow[]; devices?: Till[] };
 
 /**
  * TV screens: switch them on for the branch, see the TVs the tills found (name, on/off, what each plays), the designs and the
@@ -31,6 +32,8 @@ export default function SignagePage() {
   const { data, error, loading, reload } = useApi<Overview>("/signage");
   const preview = useApi<PlayData>(data?.enabled ? "/signage/preview-data" : null);
   useLiveEvent(["signage.changed"], () => reload());
+  // Tills report every few seconds (nearby TVs, connect results, online): keep the page current while it is open.
+  useEffect(() => { if (!data?.enabled) return; const t = window.setInterval(reload, 4000); return () => window.clearInterval(t); }, [data?.enabled, reload]);
 
   const setEnabled = async (on: boolean) => {
     try { await api("/signage/enabled", "PUT", { on }); toast.success(on ? "TV screens are on for this branch." : "TV screens are off for this branch."); reload(); }
@@ -50,10 +53,11 @@ export default function SignagePage() {
       <ErrorNote message={error} />
       {loading && !data ? <LoadingRows /> : data && !data.enabled ? (
         <EmptyState icon={TvIcon} title="TV screens are off at this branch">
-          Switch them on above. Then connect a TV to a till (cable, or wireless display with Win+K, set to Extend): the till finds it by itself and it shows up here.
+          Switch them on above. Wireless TVs near each till then show here to connect with one tap; a TV on a cable shows up by itself.
         </EmptyState>
       ) : data && (
         <>
+          <NearbyTvs tills={data.devices ?? []} reload={reload} />
           <Tvs screens={data.screens} designs={data.designs} reload={reload} />
           <Designs designs={data.designs} preview={preview.data ?? null} media={data.media} reload={reload} />
           <Media media={data.media} companyId={preview.data?.companyId ?? null} reload={reload} />
@@ -81,7 +85,7 @@ function Tvs({ screens, designs, reload }: { screens: Screen[]; designs: DesignR
       </div>
       {screens.length === 0 ? (
         <p className="px-5 py-6 text-sm text-muted-foreground">
-          No TVs yet. Connect a TV to a till as a second screen (Extend). With the One POS Device Service 1.4 or later on that till, it appears here within a few seconds.
+          No TVs yet. Connect a wireless TV under Nearby TVs above, or plug a TV into a till: it appears here within a few seconds.
         </p>
       ) : (
         <div className="overflow-x-auto">

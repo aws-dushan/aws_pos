@@ -83,6 +83,22 @@ About 20 seconds after the tray starts, if that TV isn't connected, it tries onc
 the TV becomes a screen of its own. **Connect wireless TV** in the tray menu does the same; with no TV remembered it opens
 the Cast panel for the user to pick one. It never retries by itself.
 
+**Nearby wireless TVs.** Each report to the server also carries `nearby`: the wireless (Miracast) TVs this PC can see now
+(`NearbyTvs.cs`), as `[{ "name": "Hisense VIDAA TV", "connected": false }]`. The list comes from Windows' Wi-Fi Direct display
+devices (`DeviceInformation.FindAllAsync`, Miracast protocol, association endpoints) that are in reach (`IsPresent`); TVs paired
+before but not around now are left out, and so are Wi-Fi Direct printers (names starting with `DIRECT-`). `connected` is true
+when that TV is a screen of this PC right now (display configuration, as above); a connected TV is always in the list. Looking
+the TVs up takes a few seconds, so it runs in the background at most every 20 seconds (and at once after a connect attempt);
+each report sends the last result. An empty list is `[]`; `nearby` is left out only when Windows can't list them.
+
+**Connect on request.** A manager picks a nearby TV on the One POS web page and clicks Connect; the server's answer then holds
+`"connect": "<TV name>"`. The tray makes one attempt in the background for that request (not while TV screens are switched off,
+and not while another attempt runs): it connects that TV through the Cast panel as above, extends onto it and remembers it as
+this PC's wireless TV. It then sends `"connectDone": { "name", "ok", "message" }` with every report until the server stops
+asking for that TV; `message` is a plain sentence for the manager, e.g. "Connected and playing." or "The TV didn't answer.
+Check it is on with Screen Mirroring open.". A new request for the same TV after the server cleared the old one is a new
+attempt. The tray also shows the result as a note by the clock.
+
 ## Installer and updates
 
 - MSI built with WiX 5 (`installer/DeviceService/`) by
@@ -93,8 +109,8 @@ the Cast panel for the user to pick one. It never retries by itself.
 - Tills download it from **Devices** the first time. Afterwards the service checks every 6 hours with the server its web
   app came from (only that address), verifies the SHA-256 and installs quietly with msiexec. **Update by itself** can be
   switched off per PC; **Update now** forces it.
-- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.0; the tray is
-  1.2.0). Both programs are single self-contained files; the tray's WebView2 libraries are inside its exe.
+- Raise `<Version>` in `src/OnePos.DeviceService/OnePos.DeviceService.csproj` for every change (now 1.4.1; the tray is
+  1.3.0). Both programs are single self-contained files; the tray's WebView2 libraries are inside its exe.
 - The MSI is not code-signed yet, so Windows SmartScreen warns on first install.
 
 ## Device status

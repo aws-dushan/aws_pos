@@ -7,9 +7,10 @@ namespace OnePos.DeviceTray;
 
 /// <summary>
 /// Wireless (Miracast) TVs, best effort. The tray remembers the name of a TV that was connected wirelessly
-/// (%LOCALAPPDATA%\OnePos\tray.json). "Connect wireless TV" (and one try about 20 seconds after the tray starts, when that TV
-/// isn't connected) opens Windows' Cast panel (Win+K), picks the remembered TV in it, waits up to 20 seconds for it to connect,
-/// closes the panel and extends the desktop onto it, so it becomes a screen of its own. One attempt each time; never in a loop.
+/// (%LOCALAPPDATA%\OnePos\tray.json). Connecting a TV (one a manager picked in One POS, or the remembered one from "Connect
+/// wireless TV" and one try about 20 seconds after the tray starts) opens Windows' Cast panel (Win+K), picks that TV in it, waits
+/// up to 20 seconds for it to connect, closes the panel and extends the desktop onto it, so it becomes a screen of its own.
+/// One attempt each time; never in a loop.
 /// </summary>
 internal static class WirelessTv
 {
@@ -34,7 +35,13 @@ internal static class WirelessTv
     public static void RememberConnected()
     {
         var name = Displays.WirelessNames().FirstOrDefault();
-        if (name is null || name == Remembered) return;
+        if (name is not null) Remember(name);
+    }
+
+    /// <summary>Remembers this TV as the one to bring back after a restart.</summary>
+    public static void Remember(string name)
+    {
+        if (string.Equals(name, Remembered, StringComparison.Ordinal)) return;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(File)!);
@@ -45,38 +52,44 @@ internal static class WirelessTv
 
     public static bool Connected(string name) => Displays.WirelessNames().Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>How a connect attempt ended: <see cref="Message"/> is a plain sentence for a manager (without the TV's name).</summary>
+    public sealed record Result(bool Ok, string Message);
+
     /// <summary>
-    /// Connects the remembered TV; with none remembered, opens the Cast panel for the user to pick one and extends onto it once it
-    /// connects. Returns a line for the user. Runs off the screen's thread.
+    /// Connects this TV (by its name, as the Cast panel shows it) and extends the desktop onto it, then remembers it. With no name,
+    /// opens the Cast panel for the user to pick one and extends onto it once it connects. Runs off the screen's thread.
     /// </summary>
-    public static async Task<string> ConnectAsync()
+    public static async Task<Result> ConnectAsync(string? name)
     {
-        if (Interlocked.Exchange(ref busy, 1) == 1) return "Already connecting a wireless TV.";
+        if (Interlocked.Exchange(ref busy, 1) == 1) return new(false, "This till is already connecting a wireless TV. Try again in a minute.");
         try
         {
-            var name = Remembered;
-            if (name is not null && Connected(name)) { Extend(); return $"{name} is connected."; }
+            if (name is not null && Connected(name)) { Extend(); Remember(name); return new(true, "Connected and playing."); }
             var before = GetForegroundWindow();
             OpenCastPanel();
             if (name is null)
             {
-                // Nothing remembered: the user picks the TV in the panel.
-                if (!await WaitForWirelessAsync(null, TimeSpan.FromSeconds(60))) return "No wireless TV was connected.";
+                // Nothing named: the user picks the TV in the panel.
+                if (!await WaitForWirelessAsync(null, TimeSpan.FromSeconds(60))) return new(false, "No wireless TV was connected.");
                 RememberConnected();
                 Extend();
-                return "Wireless TV connected.";
+                return new(true, "Wireless TV connected.");
             }
             var picked = await Task.Run(() => Pick(name, before, TimeSpan.FromSeconds(15)));
             var connected = picked && await WaitForWirelessAsync(name, TimeSpan.FromSeconds(20));
             if (GetForegroundWindow() != before) Key(VkEscape);   // close the Cast panel if it's still open
-            if (!connected) return picked ? $"{name} didn't connect." : $"{name} wasn't found. Is the TV on?";
+            if (!connected)
+                return new(false, picked
+                    ? "The TV didn't answer. Check it is on with Screen Mirroring open."
+                    : "The TV wasn't found. Check it is on with Screen Mirroring open, near this till.");
             await Task.Delay(1000);
             Extend();
-            return $"{name} connected.";
+            Remember(name);
+            return new(true, "Connected and playing.");
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
-            return $"Couldn't connect the wireless TV: {e.Message}";
+            return new(false, $"Couldn't connect the TV: {e.Message}");
         }
         finally { Interlocked.Exchange(ref busy, 0); }
     }
