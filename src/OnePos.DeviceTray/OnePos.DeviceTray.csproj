@@ -9,18 +9,11 @@
     <RootNamespace>OnePos.DeviceTray</RootNamespace>
     <AssemblyName>OnePos.DeviceTray</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.3.2</Version>
-    <!-- Real pixels per screen, so a TV window covers its TV exactly and sharply whatever each screen's scaling. -->
-    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>1.4.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="app.ico" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- TV screens: each TV window shows the One POS TV page in Edge WebView2 (the runtime comes with Windows 11). -->
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
   </ItemGroup>
 
 </Project>

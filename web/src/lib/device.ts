@@ -17,8 +17,6 @@ export type DeviceStatus = {
   printMode?: "escpos" | "driver";
   /** Self-update (REQ HW-01): on or off on this PC, the newest release the server has, when it last looked, what happened. */
   update?: { autoUpdate: boolean; latest: string | null; lastCheck: string | null; result: string | null; paired: boolean };
-  /** TV screens (Device Service 1.4+): whether this PC holds a TV key, and for which branch. */
-  signage?: { configured: boolean; branchId: string | null };
 };
 
 /** One printed line; `ar`: an Arabic label on the same row (bilingual receipts), right-aligned before the amount. */
@@ -111,8 +109,6 @@ export async function openDrawerForCash(): Promise<boolean> {
 export const printTest = () => call("/print/test", "POST", {});
 /** Tells the service which One POS server this web app is (updates come only from there). */
 export const pairServer = (api: string) => call("/server", "PUT", { api }, 2000);
-/** Gives this PC's tray app its TV screens key (null clears it). */
-export const setSignage = (token: string | null, branchId: string | null) => call("/signage", "PUT", { token, branchId }, 2000);
 export const setAutoUpdate = (on: boolean) => call("/update/auto", "PUT", { on });
 /** Asks the server for a newer Device Service; with install, a newer one is downloaded, checked and installed. */
 export const checkUpdate = (install: boolean) => call<{ result: string }>("/update/check", "POST", { install }, 120_000);

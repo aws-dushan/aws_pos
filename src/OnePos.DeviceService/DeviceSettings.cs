@@ -26,10 +26,6 @@ public sealed class DeviceSettings
     public bool AutoUpdate { get; set; } = true;
     /// <summary>The One POS server's API address (e.g. https://pos.example.com/api), told by the web app; updates come only from there.</summary>
     public string? ServerApi { get; set; }
-    /// <summary>TV screens: this PC's token for the One POS server (the web app hands it over while someone is signed in); null = not set up.</summary>
-    public string? SignageToken { get; set; }
-    /// <summary>The branch the TV screens token belongs to.</summary>
-    public string? SignageBranch { get; set; }
 
     public int Dots => PaperWidth <= 58 ? 384 : 576;
 }

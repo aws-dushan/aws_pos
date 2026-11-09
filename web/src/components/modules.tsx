@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon, LandmarkIcon, TagIcon, TvIcon } from "lucide-react";
+import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, CalendarClockIcon, CalendarDaysIcon, ContactRoundIcon, CookingPotIcon, GiftIcon, NotebookPenIcon, Building2Icon, ChefHatIcon, HomeIcon, LayoutGridIcon, MessageSquareWarningIcon, PrinterIcon, ReceiptTextIcon, ScrollTextIcon, ShieldCheckIcon, ShoppingBasketIcon, UsersRoundIcon, UtensilsCrossedIcon, BikeIcon, NewspaperIcon, CloudUploadIcon, LandmarkIcon, TagIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -56,7 +56,6 @@ export const SCREENS: Screen[] = [
   { href: "/admin/companies", label: "Companies & branches", icon: Building2Icon, module: "admin", hint: "Outlets, tax, ERP, table service", group: "Administration", perm: "branch.manage" },
   { href: "/devices", label: "Devices", icon: PrinterIcon, module: "admin", hint: "Printer, cash drawer, customer display", group: "Administration", perm: "branch.manage" },
   { href: "/branding", label: "Receipt & display", icon: ReceiptTextIcon, module: "admin", hint: "Logo, receipt header, customer display pictures", group: "Administration", perm: "branch.manage" },
-  { href: "/signage", label: "TV screens", icon: TvIcon, module: "admin", hint: "Menus and offers on TVs, with animations", group: "Administration", perm: "branch.manage" },
   { href: "/admin/platforms", label: "Delivery platforms", icon: BikeIcon, module: "bank", hint: "Talabat, Deliveroo… and their commission", group: "Administration", perm: "branch.manage" },
   { href: "/admin/facts-posting", label: "FACTS posting", icon: CloudUploadIcon, module: "admin", hint: "Bills to FACTS, dry run, posting log", group: "Administration", perm: "facts.post|branch.manage" },
   { href: "/admin/alerts", label: "Daily summary & alerts", icon: NewspaperIcon, module: "appr", hint: "Day-close summary, exception alerts, email", group: "Administration", perm: "branch.manage" },

@@ -7,7 +7,7 @@ namespace OnePos.DeviceTray;
 /// <summary>
 /// The icon by the clock (REQ HW-01): every 15 seconds it asks the Device Service on this PC how it is, shows that in the tooltip,
 /// and pops up a note when something changes (the service stopped, the printer ran out of paper…). Its menu opens One POS,
-/// prints a test page and checks for updates. It also shows the TV screens connected to this PC (SignageController).
+/// prints a test page and checks for updates.
 /// </summary>
 internal static class Program
 {
@@ -27,9 +27,6 @@ internal sealed class TrayContext : ApplicationContext
     private readonly NotifyIcon icon;
     private readonly ToolStripMenuItem statusItem = new("Checking…") { Enabled = false };
     private readonly ToolStripMenuItem updateItem = new("Check for updates");
-    private readonly ToolStripMenuItem tvItem = new("TV screens: off") { Enabled = false };
-    private readonly SignageController signage;
-    private string serviceText = "Checking…";
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 15_000 };
     private string? lastState;
     private string? server;
@@ -39,18 +36,14 @@ internal sealed class TrayContext : ApplicationContext
         using var stream = typeof(TrayContext).Assembly.GetManifestResourceStream("OnePos.DeviceTray.app.ico");
         var menu = new ContextMenuStrip();
         menu.Items.Add(statusItem);
-        menu.Items.Add(tvItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Open One POS", null, (_, _) => { if (server is not null) Process.Start(new ProcessStartInfo(server) { UseShellExecute = true }); });
         menu.Items.Add("Print a test page", null, async (_, _) => await PostAsync("/print/test", new { }, "Test page sent to the printer."));
         updateItem.Click += async (_, _) => await PostAsync("/update/check", new { install = true }, null);
         menu.Items.Add(updateItem);
         menu.Items.Add(new ToolStripSeparator());
-        // Hides only the icon: the app keeps running (it shows the TV screens) until the next sign-in.
-        menu.Items.Add("Hide this icon", null, (_, _) => icon!.Visible = false);
+        menu.Items.Add("Hide this icon", null, (_, _) => { icon!.Visible = false; ExitThread(); });
         icon = new NotifyIcon { Icon = stream is null ? SystemIcons.Application : new Icon(stream), Text = "One POS", ContextMenuStrip = menu, Visible = true };
-        signage = new SignageController((text, kind) => { if (icon.Visible) icon.ShowBalloonTip(5000, "One POS", text, kind); });
-        signage.StatusChanged += ShowText;
         timer.Tick += async (_, _) => await RefreshAsync();
         timer.Start();
         _ = RefreshAsync();
@@ -96,25 +89,11 @@ internal sealed class TrayContext : ApplicationContext
             state = "stopped";
             text = "One POS Device Service isn't running";
         }
-        serviceText = text;
-        ShowText();
+        // A tooltip holds 127 characters at most.
+        icon.Text = text.Length > 127 ? text[..127] : text;
+        statusItem.Text = text.Replace("\n", " · ");
         if (lastState is not null && state != lastState && state is "stopped" or "paper out" or "offline" or "error" or "cover open" or "paper jam")
             icon.ShowBalloonTip(5000, "One POS", state == "stopped" ? "The Device Service stopped: receipts won't print on this till." : $"Receipt printer: {state}.", ToolTipIcon.Warning);
         lastState = state;
-    }
-
-    private void ShowText()
-    {
-        tvItem.Text = signage.Status;
-        var text = $"{serviceText}\n{signage.Status}";
-        // A tooltip holds 127 characters at most.
-        icon.Text = text.Length > 127 ? text[..127] : text;
-        statusItem.Text = serviceText.Replace("\n", " · ");
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing) { signage.Dispose(); timer.Dispose(); icon.Dispose(); }
-        base.Dispose(disposing);
     }
 }

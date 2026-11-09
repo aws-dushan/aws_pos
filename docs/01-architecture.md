@@ -36,11 +36,11 @@ flowchart LR
 
 | Part | Technology | Source | Job |
 | --- | --- | --- | --- |
-| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), TV screens player (`/tv`), digital receipt (`/r/<token>`) |
+| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), digital receipt (`/r/<token>`) |
 | API | ASP.NET Core, .NET 10, Dapper, Npgsql, Microsoft.Data.SqlClient | `src/OnePos.Api/` | All business rules, numbering, FACTS sync and posting, emails, live events |
 | Database | PostgreSQL 17 | `db/migrations/` | All data, one database for all companies, separated by row-level security |
-| Device Service | .NET Windows service | `src/OnePos.DeviceService/` | Receipt printing (ESC/POS raster, Arabic), cash drawer, pole display, self-update, keeps the tray app running |
-| Tray app | .NET WinForms, WebView2 | `src/OnePos.DeviceTray/` | Shows the service state, test print, check for updates; finds the TVs connected to the till and plays their TV screens full screen |
+| Device Service | .NET Windows service | `src/OnePos.DeviceService/` | Receipt printing (ESC/POS raster, Arabic), cash drawer, pole display, self-update |
+| Tray app | .NET WinForms | `src/OnePos.DeviceTray/` | Shows the service state, test print, check for updates |
 | FACTS procedures | T-SQL | `db/facts/` | One POS' own procedures in FACTS for posting stock documents |
 
 The UI theme, components and animations are the same as AWS One (`web/src/components/ui`, `motion.tsx`, `kit.tsx`).
@@ -55,7 +55,7 @@ The UI theme, components and animations are the same as AWS One (`web/src/compon
 | `Data/` | `Db` (one transaction per unit of work, company context for RLS), `Migrator` |
 
 Every endpoint lives under `/api` and needs a signed-in user, except sign-in, `/health`, the public receipt and the
-customer display feed and the TV screens endpoints under `/api/public/signage` (a per-PC key instead of a session). Each endpoint checks a permission key (`scope.Require("pos.refund")`); the keys and the preset roles
+customer display feed. Each endpoint checks a permission key (`scope.Require("pos.refund")`); the keys and the preset roles
 are in `src/OnePos.Api/Platform/Permissions.cs`.
 
 ## How a sale flows
