@@ -55,6 +55,15 @@ public static class Returns
 
     private static async Task<string> NextAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, string series)
     {
+        // The company's shared series, when switched on and its start time has come: one counter for all branches, a plain number
+        // (200000, 200001 …) or its prefix and 6 digits (CN000001). The update locks the counter row, so two tills never get the same number.
+        var shared = await c.QuerySingleOrDefaultAsync<(long No, string? Prefix)?>("""
+            update company_number_series set next_no = coalesce(next_no, start_no) + 1, first_at = coalesce(first_at, now())
+            where company_id = @companyId and series = @series and shared and from_at <= now()
+            returning next_no - 1, prefix
+            """, new { companyId, series }, tx);
+        if (shared is { } s) return Platform.NumberSeries.Format(s.Prefix, s.No);
+
         var n = await c.ExecuteScalarAsync<long>("""
             insert into number_series (company_id, branch_id, series, next_no) values (@companyId, @branchId, @series, 2)
             on conflict (branch_id, series) do update set next_no = number_series.next_no + 1 returning next_no - 1

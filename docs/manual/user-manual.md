@@ -511,6 +511,8 @@ Administrators set up companies, branches, people and the link to FACTS. Most se
 
 Company settings (administrators): name, legal names in English and Arabic, TRN, currency, VAT rate, whether menu prices include VAT, the ERP (**Standalone**, **AWS One** or **FACTS**), and the **Gift vouchers** and **Loyalty points** switches. **Request stores** lists the FACTS stores branches may request stock from.
 
+**Invoice and credit note numbers** (in the company's settings): by default each branch numbers its own bills (INV-EBL-01-000001) and credit notes (CN-EBL-01-000001). Switch on **One series for all branches** for invoices, credit notes or both, enter the date and time it starts **From**, an optional **Prefix** and the **Starting number**, and **Save**. Without a prefix the numbers are plain (200000, 200001 …); with one they are the prefix and 6 digits (prefix CN, start 1: CN000001, CN000002 …; prefix CN-: CN-000001). The screen shows the first number before you save. From that moment every branch takes the next number from the one series, the same number on the bill and in FACTS; bills before it keep their numbers. The starting number must be above every number with that prefix already used in One POS and in FACTS (for example the old outlet POS's bills); saving checks this. Once the first number is given, the prefix and starting number can't change. Switched off, each branch goes back to its own numbers; switched on again, the series continues where it stopped.
+
 ![Companies & branches](images/companies.jpg)
 
 Key branch settings:

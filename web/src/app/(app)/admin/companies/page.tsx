@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ErpConnectionDialog } from "@/components/erp-connection";
-import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon, TagIcon } from "lucide-react";
+import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon, TagIcon, HashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { useSession } from "@/components/session";
@@ -261,6 +261,7 @@ function CompanyDialog({ value, onClose, onSaved }: { value: Company | "new" | n
               )}
             </div>
           )}
+          {value && value !== "new" && <NumberSeriesBox company={value} />}
           {value && value !== "new" && value.erpConnector === "facts" && <RequestStoresBox company={value} />}
           {!isNew && (
             <div className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
@@ -816,6 +817,91 @@ function RequestStoresBox({ company }: { company: Company }) {
           <PlusIcon /> Add store
         </Button>
       </div>
+    </div>
+  );
+}
+
+type Series = { series: "INV" | "CN"; label: string; factsType: string; shared: boolean; from: string | null; prefix: string | null; start: number | null;
+  next: number | null; nextNo: string | null; started: boolean; highest: number | null; active: boolean };
+/** A shared number as One POS writes it: plain (200000), or the prefix and at least 6 digits (CN000001). */
+const fmtNo = (prefix: string, n: number) => (prefix ? prefix + String(n).padStart(6, "0") : String(n));
+
+/** Invoice and credit note numbers: per branch (INV-EBL-01-000221), or one plain series for all branches from a date and time. */
+function NumberSeriesBox({ company }: { company: Company }) {
+  const data = useApi<{ timeZone: string; series: Series[] }>(`/companies/${company.id}/number-series`);
+  return (
+    <div data-module="admin" className="rounded-2xl border p-4">
+      <div className="mb-3 flex items-start gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-mod-grad text-white shadow-[0_6px_16px_-6px_var(--mod)]"><HashIcon className="size-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="font-medium">Invoice and credit note numbers</div>
+          <p className="text-xs text-muted-foreground">
+            Each branch has its own numbers (INV-<i>branch</i>-000001), or one series for all branches: plain numbers from a start date and time
+            {company.erpConnector === "facts" ? ", the same number in FACTS" : ""}. Each saves on its own.
+          </p>
+        </div>
+      </div>
+      <ErrorNote message={data.error} />
+      {data.data ? (
+        <div className="grid gap-3">
+          {data.data.series.map((x) => <SeriesRow key={x.series} company={company} s={x} timeZone={data.data!.timeZone} onSaved={data.reload} />)}
+        </div>
+      ) : !data.error && <LoadingRows rows={2} />}
+    </div>
+  );
+}
+
+function SeriesRow({ company, s, timeZone, onSaved }: { company: Company; s: Series; timeZone: string; onSaved: () => void }) {
+  const [shared, setShared] = useState(s.shared);
+  const [from, setFrom] = useState(s.from ?? "");
+  const [start, setStart] = useState(s.start ? String(s.start) : "");
+  const [pre, setPre] = useState(s.prefix ?? "");
+  const [busy, setBusy] = useState(false);
+  const changed = shared !== s.shared || (shared && (from !== (s.from ?? "") || start !== (s.start ? String(s.start) : "") || pre !== (s.prefix ?? "")));
+  const prefix = s.series === "INV" ? "INV" : "CN";
+  // "2026-11-10T06:00" (the company's local time) as "10 Nov 2026, 06:00".
+  const when = (v: string) => { const [d, t] = v.split("T"); const [y, m, day] = d.split("-").map(Number); return `${day} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][m - 1]} ${y}, ${t}`; };
+  async function save() {
+    setBusy(true);
+    try {
+      await api(`/companies/${company.id}/number-series`, "PUT", { series: s.series, shared, from: shared ? from : null, start: shared && start ? Number(start) : null, prefix: shared ? pre || null : null });
+      toast.success(`${s.label}: ${shared ? `one series for all branches from ${when(from)}` : "each branch its own numbers"}.`);
+      onSaved();
+    } catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
+  }
+  return (
+    <div className="rounded-xl border p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">{s.label}</div>
+          <div className="text-xs text-muted-foreground">{shared ? "One series for all branches" : <>Each branch its own: {prefix}-<i>branch</i>-000001</>}</div>
+        </div>
+        <Switch on={shared} onChange={setShared} label={`${s.label}: one series for all branches`} />
+      </div>
+      {shared && (
+        <div className="mt-3 grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_6rem_9rem_auto]">
+          <Field label={`From (${timeZone})`}><Input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+          <Field label="Prefix">
+            <Input value={pre} disabled={s.started} maxLength={8} placeholder="none" onChange={(e) => setPre(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""))} />
+          </Field>
+          <Field label="Starting number">
+            <Input value={start} disabled={s.started} inputMode="numeric" maxLength={12} placeholder="e.g. 200000" onChange={(e) => setStart(e.target.value.replace(/\D/g, ""))} />
+          </Field>
+          <Button type="button" className="h-10" disabled={busy || !changed || !from || !start} onClick={() => void save()}>Save</Button>
+        </div>
+      )}
+      {shared && start && !s.started && (
+        <p className="mt-2 text-xs">First number: <b className="font-mono">{fmtNo(pre, Number(start))}</b>, then <span className="font-mono">{fmtNo(pre, Number(start) + 1)}</span> …</p>
+      )}
+      {!shared && s.shared && (
+        <div className="mt-3 flex justify-end"><Button type="button" disabled={busy} onClick={() => void save()}>Save</Button></div>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">
+        {s.shared && s.started ? <>Running: the next is <b className="font-mono text-foreground">{s.nextNo}</b>. The prefix and starting number can&apos;t change any more; switched off and on again, it continues.</>
+          : s.shared && s.from ? <>Not started yet: the first {s.label.toLowerCase().replace(/s$/, "")} from {when(s.from)} gets <b className="font-mono text-foreground">{s.nextNo}</b>; until then each branch its own.</>
+          : `Plain numbers, or a prefix (e.g. CN) and 6 digits. The starting number must be above every number with that prefix already used${company.erpConnector === "facts" ? ` here and in FACTS (${s.factsType}), checked when you save` : ""}.`}
+        {s.highest !== null && <> Highest {s.prefix ? `${s.prefix} ` : "plain "}number in One POS now: {fmtNo(s.prefix ?? "", s.highest)}.</>}
+      </p>
     </div>
   );
 }

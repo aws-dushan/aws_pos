@@ -61,7 +61,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 
 | One POS event | Queue kind | FACTS document | Procedure | Posted as |
 | --- | --- | --- | --- | --- |
-| Bill paid (and paper slip keyed in) | `invoice` | **POS51**, numbered with the invoice number | `usp_FQAPI_PWA_POS_SaveInvoice` (FACTS' own), or `usp_ONEPOS_SaveInvoice` (same, then FIFO batches per line) | ONEPOS |
+| Bill paid (and paper slip keyed in) | `invoice` | **POS51**, numbered with the invoice number (`INV-<branch>-000001`, or the company's shared plain number) | `usp_FQAPI_PWA_POS_SaveInvoice` (FACTS' own), or `usp_ONEPOS_SaveInvoice` (same, then FIFO batches per line) | ONEPOS |
 | Whole bill returned | `refund` | **PSR51** copied from the bill's POS51, numbered with the credit note number | `usp_ONEPOS_PostReturn` | POSBAKERY |
 | Bill with BOM items | `repacking` | **RPO50** repacking voucher, posted per bill (or one draft per day) | `usp_ONEPOS_PostRepacking` / `usp_ONEPOS_SaveRepacking` | POSBAKERY |
 | Wastage approved | `wastage` | **STV50** location → wastage location, FIFO batches | `usp_ONEPOS_PostWastageTransfer` (or draft `usp_ONEPOS_SaveWastageTransfer`) | Approver's FACTS user |

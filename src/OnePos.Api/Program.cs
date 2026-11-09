@@ -126,6 +126,7 @@ Discounts.Map(api);
 Platforms.Map(api);
 CashToBank.Map(api);
 Prices.Map(api);
+NumberSeries.Map(api);
 Pickup.Map(api);
 Exceptions.Map(api);
 OnePos.Api.Erp.ErpConnections.Map(api);

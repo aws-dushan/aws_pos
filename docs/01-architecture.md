@@ -192,7 +192,11 @@ delete an entry. Only administrators and users with the `audit.view` permission 
   converts money to `double` (`BannedSymbols.txt`); rounding is always half away from zero, as on the receipt and in FACTS.
   Local time comes from the branch's time zone, never from the server's clock settings.
 - **Tax invoice numbers:** `INV-<branch>-000001` is given in the same transaction that records the last payment, so a
-  failure leaves no gap and a number is never given twice. A paid bill can't be changed or deleted; it is corrected only by
+  failure leaves no gap and a number is never given twice. A company can instead run invoices and credit notes each as one
+  series for all its branches (`company_number_series`: on/off, start date and time, optional prefix, starting number; plain
+  200000, 200001 … or prefix + 6 digits, CN000001 …): from the start time the number comes from that one counter row, locked by the update that takes it. The
+  starting number must be above every number with that prefix already used in One POS and in FACTS (POS51 / PSR51); prefix
+  and start can't change once the first number is given; switched off, branches go back to their own numbers, and switched on again it continues. A paid bill can't be changed or deleted; it is corrected only by
   a credit note (`CN-<branch>-…`) that refers to it. The receipt carries the words TAX INVOICE / فاتورة ضريبية, the
   company's TRN, legal name and address in English and Arabic, the invoice number, date and time, the amount before VAT and
   the VAT.

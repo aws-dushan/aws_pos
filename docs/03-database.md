@@ -18,7 +18,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 
 | Area | Tables |
 | --- | --- |
-| Platform | `company`, `branch`, `currency`, `app_user`, `role`, `user_company`, `user_branch`, `audit_log`, `number_series`, `idempotency_key`, `feedback*` |
+| Platform | `company`, `branch`, `currency`, `app_user`, `role`, `user_company`, `user_branch`, `audit_log`, `number_series`, `company_number_series`, `idempotency_key`, `feedback*` |
 | Menu | `menu_category`, `menu_item` (a combo: one branch each), `item_unit`, `modifier_group` (one branch each), `modifier_option`, `menu_item_modifier`, `branch_item`, `item_price_history`, `platform_item_price`, `discount` |
 | Orders | `register`, `pos_order`, `order_line`, `payment`, `credit_note`, `credit_note_line`, `receipt_link`, `no_sale`, `approval`, `approval_code` |
 | Tables and kitchen | `floor`, `dining_table`, `order_table`, `reservation`, `reservation_table`, `kitchen_station`, `kitchen_ticket`, `kitchen_ticket_line` |
@@ -72,9 +72,9 @@ kept on purpose. The full list of tables and columns is the [Data dictionary](re
 - **Surrogate keys.** Nearly every table's primary key is `id uuid DEFAULT gen_random_uuid()`. Business numbers (invoice
   number, FACTS item code, branch code) are kept as **unique** columns, not keys, so they can be corrected without
   rewriting every reference.
-- **Composite keys** (15 tables) are used where a row is exactly "one A with one B": `user_company`, `user_branch`,
+- **Composite keys** (16 tables) are used where a row is exactly "one A with one B": `user_company`, `user_branch`,
   `branch_item`, `branch_ingredient`, `menu_item_modifier`, `platform_item_price (platform_id, location, item_id)`, `order_table`, `reservation_table`,
-  `notice_read`, `number_series (branch_id, series)`, `erp_payment_mode (branch_id, code)`,
+  `notice_read`, `number_series (branch_id, series)`, `company_number_series (company_id, series)`, `erp_payment_mode (branch_id, code)`,
   `material_unit (company_id, item_code, unit)`, `item_unit (item_id, unit)`, `approval_reminder`, `sales_day_built`.
 - **Foreign keys** (237) tie every reference to its parent, so a row can't point at something that isn't there.
 - **Natural rules as unique keys**, often partial, e.g. one invoice number per company
@@ -87,7 +87,7 @@ These break strict 3NF deliberately. Each is written once and never updated from
 
 | Copy | Where | Why |
 | --- | --- | --- |
-| `company_id` on every company-owned table, including child rows such as `order_line` | 66 tables | Row-level security filters each table on its own `company_id` without a join. Child rows also carry it so a policy never depends on a parent lookup |
+| `company_id` on every company-owned table, including child rows such as `order_line` | 67 tables | Row-level security filters each table on its own `company_id` without a join. Child rows also carry it so a policy never depends on a parent lookup |
 | The sale as it was: item `name`/`name_ar`, `unit_price`, `vat`, `line_total`, discount name/type/value | `order_line`, `credit_note_line` | A tax invoice must reprint exactly as issued, even after the menu item is renamed or repriced |
 | The bill's rates and totals: `vat_rate`, `prices_include_vat`, `service_pct`, `subtotal`, `discount_total`, `vat`, `total`, `paid`, `refunded` | `pos_order` | Same reason, and the totals are read on every screen and report; the API recalculates them (`Orders.RecalcAsync`) in the same transaction as every change to the lines |
 | `branch_id`, `business_date` on payments, cash movements, postings | `payment`, `cash_movement`, `erp_post`, … | Day-end (X/Z) and reports sum a branch's day without joining back through the order |
@@ -139,7 +139,7 @@ When adding a column, follow the same types: money `numeric(14,2)`, quantities `
 
 ## Indexes and speed
 
-The database has **202 indexes** on 79 tables: 121 unique (they also enforce a business rule) and 46 partial. Every index
+The database has **203 indexes** on 80 tables: 122 unique (they also enforce a business rule) and 46 partial. Every index
 is listed under its table in the [Data dictionary](reference/data-dictionary.md). The everyday queries are timed in
 [Query speed](reference/query-speed.md).
 
@@ -162,7 +162,7 @@ PostgreSQL indexes a primary key automatically, but not the column that points a
 matters in two cases: when the app finds the child rows from the parent (a bill's lines), and when it **deletes a
 parent**, because PostgreSQL then checks every table that points at it.
 
-- **105 of the 248 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
+- **106 of the 249 foreign keys** start an index. These cover every parent the app looks up from or deletes: bills, lines,
   payments, returns, shifts, days, customers, vouchers, option groups, floors and tables.
 - **The other 139 are left without an index on purpose.** Each extra index slows every insert a little, and these give
   nothing back:
