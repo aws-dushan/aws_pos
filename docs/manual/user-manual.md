@@ -620,7 +620,7 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
 
 **Make a design**
 
-1. Under **Designs**, tap **New design**. It starts with four slides made from your menu.
+1. Under **Designs**, tap **New design**. It starts with five slides made from your menu.
 2. On the left are the slides in the order they play. Tap one to change it; use the arrows to move it, the eye to switch it off, and copy or delete it. **Add slide** adds another.
 3. The middle shows exactly what the TV will show. **Replay animation** plays the slide again; **Play the loop** plays them all in turn.
 4. On the right, set the slide:
@@ -630,7 +630,17 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
    - **Menu list**: a category or items in two columns with prices, in English and Arabic.
    - **Fresh now**: freshly made items with rolling words, the next batch time and an add-on line (for example "Add one to any coffee +6 AED").
    - **Picture or video**: full screen, with a caption if you want one.
-   - For every slide: **Animation** (Rise, Fade, Zoom, Slide in, Pop, Focus or None), **Speed**, how many seconds it stays on screen, **Background** (theme, a colour, or a picture darkened for readable text) and **When it plays** (all day, or set days and times).
+   - **Hero zoom**: one item's photo slowly zooming, a big two-colour title and a price sticker that slams in.
+   - **Kinetic words**: up to 4 big words slam in one by one on colour flashes, then the item with its price.
+   - **Flash sale**: moving warning stripes, a shaking title, the old price struck through, the new price and a countdown.
+   - **Top 5 today**: today's best sellers as growing bars with live counts (or 5 items you pick).
+   - **Combo builder**: up to 3 items drop in with + signs, then the combo price (empty: the items added up).
+   - **Neon menu**: a category or picked items in glowing neon, with an optional neon sign such as OPEN TILL 1 AM.
+   - **Polaroid wall**: up to 4 items as pinned photos with price tags.
+   - **This or that**: two items side by side with a pulsing VS and a question at the top.
+   - **Story cards**: up to 3 items, one after another, with progress bars like social media stories.
+   - For every slide: **Animation** (Rise, Fade, Zoom, Slide in, Pop, Focus or None; the newer layouts have their own), **Speed**, how many seconds it stays on screen, **Background** (theme, a colour, or a picture darkened for readable text) and **When it plays** (all day, or set days and times).
+   - **Pictures on this slide**: **Add a picture** (upload, or choose one already added) puts a logo, sticker or photo on top of the slide. Drag it into place on the preview; set its **Size**, **Turn** and **Motion** (Still, Float, Spin, Pulse or Swing). Up to 12 per slide; PNG pictures with a clear background work best.
 5. **Theme, ticker and clock** sets the colours (ready-made or your own), the lettering, Arabic names, the move between slides, the background movement, and the bottom strip: logo and branch name, scrolling messages and the clock.
 6. Tap **Save**. TVs playing the design change within a few seconds. **All branches** makes the design available at every branch.
 

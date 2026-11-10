@@ -3,7 +3,8 @@
  * follows (which slides play now, how long an offer has left). The server stores a design as it is (signage_design.content).
  */
 
-export type Layout = "hero" | "offer" | "grid" | "list" | "fresh" | "media";
+export type Layout = "hero" | "offer" | "grid" | "list" | "fresh" | "media"
+  | "zoom" | "kinetic" | "flash" | "top5" | "combo" | "neon" | "polaroid" | "versus" | "story";
 export type Anim = "rise" | "fade" | "zoom" | "slide" | "pop" | "blur" | "none";
 export type Speed = "slow" | "normal" | "fast";
 export type Transition = "flash" | "fade" | "slide" | "zoom" | "none";
@@ -14,6 +15,10 @@ export type Ambient = "glow" | "rays" | "none";
 export type Colors = { bg: string; bg2: string; text: string; accent: string; hot: string; muted: string };
 
 export type Schedule = { days: number[]; from: string; to: string };
+
+export type StickerAnim = "none" | "float" | "spin" | "pulse" | "swing";
+/** A picture placed on a slide: its centre (x, y) and width in % of the screen; r = height / width of the picture. */
+export type Sticker = { id: string; mediaId: string; x: number; y: number; w: number; r: number; rotate: number; anim: StickerAnim };
 
 export type Slide = {
   id: string;
@@ -54,6 +59,8 @@ export type Slide = {
   tags?: Record<string, string>;
   /** Offer picture, or the picture or video of a media slide. */
   mediaId?: string | null;
+  /** Pictures placed on top of the slide. */
+  stickers?: Sticker[];
 };
 
 export type Theme = {
@@ -100,7 +107,18 @@ export const LAYOUTS: Record<Layout, { label: string; hint: string }> = {
   list: { label: "Menu list", hint: "Two columns of items and prices, English and Arabic" },
   fresh: { label: "Fresh now", hint: "Freshly made, rolling words, next batch time and an add-on" },
   media: { label: "Picture or video", hint: "Full screen, with an optional caption" },
+  zoom: { label: "Hero zoom", hint: "One item's photo slowly zooming, big title and a price sticker that slams in" },
+  kinetic: { label: "Kinetic words", hint: "Big words slam in one by one on colour flashes, then the item" },
+  flash: { label: "Flash sale", hint: "Moving warning stripes, shaking title, price drop and a countdown" },
+  top5: { label: "Top 5 today", hint: "Today's best sellers as growing bars with live counts" },
+  combo: { label: "Combo builder", hint: "Up to 3 items drop in with + signs, then the combo price" },
+  neon: { label: "Neon menu", hint: "Glowing neon sign style menu in two columns" },
+  polaroid: { label: "Polaroid wall", hint: "Up to 4 items as pinned photos with price tags" },
+  versus: { label: "This or that", hint: "Two items side by side with a pulsing VS" },
+  story: { label: "Story cards", hint: "Up to 3 items, one after another, like social media stories" },
 };
+
+export const STICKER_ANIMS: Record<StickerAnim, string> = { none: "Still", float: "Float", spin: "Spin", pulse: "Pulse", swing: "Swing" };
 
 export const ANIMS: Record<Anim, string> = { rise: "Rise", fade: "Fade", zoom: "Zoom", slide: "Slide in", pop: "Pop", blur: "Focus", none: "None" };
 export const TRANSITIONS: Record<Transition, string> = { flash: "Flash", fade: "Fade", slide: "Slide", zoom: "Zoom", none: "Cut" };
@@ -137,11 +155,29 @@ export function newSlide(layout: Layout, data?: PlayData | null): Slide {
       return { ...base, kicker: "Fresh batch just out", title: "Warm from the oven", words: ["Flaky.", "Buttery.", "Still warm."], nextAt: null, upsell: "Add one to any coffee", upsellPrice: null, itemId: (top[2] ?? first)?.id ?? null };
     case "media":
       return { ...base, mediaId: null, title: "", animation: "fade", seconds: 8 };
+    case "zoom":
+      return { ...base, kicker: "Baked this morning", itemId: first?.id ?? null, seconds: 9 };
+    case "kinetic":
+      return { ...base, words: ["Fresh.", "Flaky.", "Buttery."], itemId: first?.id ?? null, text: "", seconds: 9 };
+    case "flash":
+      return { ...base, title: "FLASH SALE", itemId: second?.id ?? null, price: null, oldPrice: null, endsAt: null, seconds: 9 };
+    case "top5":
+      return { ...base, title: "TODAY'S TOP 5", itemIds: [], seconds: 10 };
+    case "combo":
+      return { ...base, title: "Build your breakfast", itemIds: top.slice(0, 3).map((i) => i.id), price: null, oldPrice: null, seconds: 10 };
+    case "neon":
+      return { ...base, title: "Tonight", source: "category", categoryId: cats[0]?.id ?? null, itemIds: [], badge: "", seconds: 10 };
+    case "polaroid":
+      return { ...base, title: "Fresh from our kitchen", itemIds: top.slice(0, 4).map((i) => i.id), seconds: 10 };
+    case "versus":
+      return { ...base, title: "WHICH TEAM ARE YOU?", itemIds: top.slice(0, 2).map((i) => i.id), badge: "VS", seconds: 9 };
+    case "story":
+      return { ...base, itemIds: top.slice(0, 3).map((i) => i.id), seconds: 12 };
   }
 }
 
 export function starterDesign(data?: PlayData | null): DesignContent {
-  return { version: 1, theme: defaultTheme(), slides: [newSlide("hero", data), newSlide("offer", data), newSlide("grid", data), newSlide("fresh", data)] };
+  return { version: 1, theme: defaultTheme(), slides: [newSlide("zoom", data), newSlide("kinetic", data), newSlide("grid", data), newSlide("polaroid", data), newSlide("versus", data)] };
 }
 
 /** Fills anything an older or hand-made design lacks, so the TV never meets a missing field. */

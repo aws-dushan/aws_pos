@@ -1,23 +1,24 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, CopyIcon, EyeIcon, EyeOffIcon, Loader2Icon, PaletteIcon, PlayIcon, PlusIcon, RotateCcwIcon,
-  SaveIcon, SquareIcon, Trash2Icon, XIcon,
+  ImagePlusIcon, SaveIcon, SquareIcon, Trash2Icon, XIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  ANIMS, DAY_NAMES, FONTS, LAYOUTS, PALETTES, TRANSITIONS, newId, newSlide, normalize, slideItems,
-  type Anim, type Ambient, type DesignContent, type FontKey, type Layout, type PaletteKey, type PlayData, type Slide, type Speed, type Theme, type Transition,
+  ANIMS, DAY_NAMES, FONTS, LAYOUTS, PALETTES, STICKER_ANIMS, TRANSITIONS, newId, newSlide, normalize, slideItems,
+  type Anim, type Ambient, type DesignContent, type FontKey, type Layout, type PaletteKey, type PlayData, type Slide, type Speed, type Sticker, type StickerAnim,
+  type Theme, type Transition,
 } from "@/lib/signage";
+import { withBase } from "@/lib/base-path";
 import { confirmDialog } from "@/components/confirm";
 import { ErrorNote, Field, LoadingRows, Segmented, Switch, selectClass } from "@/components/kit";
-import { SignageStage } from "@/components/signage/stage";
-import { previewUrls } from "@/components/signage/preview";
+import { TvFrame } from "@/components/signage/tv-frame";
 import { MediaThumb, UploadButton, type MediaRow } from "@/components/signage/media";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,8 +31,12 @@ const TAGS = ["", "Bestseller", "New", "Hot", "Chef's pick", "Limited", "Vegan",
 
 /**
  * The TV design editor: the slides in order on the left (add, reorder, copy, switch off, delete), the live preview in the middle
- * (exactly what the TV plays, with the branch's menu), and the selected slide's or the theme's settings on the right.
+ * (the TV player itself, with the branch's menu; pictures placed on a slide are dragged into place there), and the selected
+ * slide's or the theme's settings on the right.
  */
+
+/** Layouts that are older and take the Animation choice; the newer ones have their own built-in motion. */
+const CLASSIC: Layout[] = ["hero", "offer", "grid", "list", "fresh", "media"];
 export default function DesignEditorPage() {
   return <Suspense fallback={<LoadingRows />}><Loader /></Suspense>;
 }
@@ -60,6 +65,7 @@ function Editor({ initial }: { initial: Loaded }) {
   const [playAll, setPlayAll] = useState(false);
   const [replay, setReplay] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [sticker, setSticker] = useState<string | null>(null);
 
   useEffect(() => {
     if (!dirty) return;
@@ -91,8 +97,11 @@ function Editor({ initial }: { initial: Loaded }) {
 
   const media = useMemo(() => overview.data?.media ?? [], [overview.data]);
   const data = preview.data ?? null;
-  const urls = useMemo(() => previewUrls(data, media.filter((m) => m.kind === "video").map((m) => m.id)), [data, media]);
   const slide = content?.slides.find((s) => s.id === selected) ?? null;
+  // Dragging a placed picture changes the design many times a second: keep the animation still while it moves.
+  const moveSticker = useCallback((sid: string, kid: string, x: number, y: number) => {
+    change((c) => ({ ...c, slides: c.slides.map((s) => (s.id === sid ? { ...s, stickers: (s.stickers ?? []).map((k) => (k.id === kid ? { ...k, x, y } : k)) } : s)) }));
+  }, [change]);
 
   const move = (sid: string, by: number) => change((c) => {
     const i = c.slides.findIndex((s) => s.id === sid), j = i + by;
@@ -165,7 +174,11 @@ function Editor({ initial }: { initial: Loaded }) {
         {/* Preview */}
         <div className="min-w-0 space-y-2">
           <div className="overflow-hidden rounded-xl bg-black shadow-lg ring-1 ring-border">
-            <SignageStage content={content} data={data} urls={urls} lock={playAll ? null : selected} replay={replay} />
+            <TvFrame content={content} data={data} lock={playAll ? null : selected} replay={replay}>
+              {!playAll && slide && (slide.stickers?.length ?? 0) > 0 && (
+                <StickerLayer slide={slide} picked={sticker} onPick={setSticker} onMove={(kid, x, y) => moveSticker(slide.id, kid, x, y)} onDrop={() => setReplay((r) => r + 1)} />
+              )}
+            </TvFrame>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => setReplay((r) => r + 1)} disabled={playAll}><RotateCcwIcon />Replay animation</Button>
@@ -180,7 +193,8 @@ function Editor({ initial }: { initial: Loaded }) {
         {/* Settings */}
         <aside className="surface h-max space-y-4 p-4">
           {tab === "theme" ? <ThemePanel theme={content.theme} set={setTheme} /> : slide ? (
-            <SlidePanel s={slide} set={(p) => setSlide(slide.id, p)} data={data} media={media} companyId={data?.companyId ?? null} onMedia={overview.reload} />
+            <SlidePanel s={slide} set={(p) => setSlide(slide.id, p)} data={data} media={media} companyId={data?.companyId ?? null} onMedia={overview.reload}
+              sticker={sticker} setSticker={setSticker} />
           ) : <p className="text-sm text-muted-foreground">Add a slide to start.</p>}
         </aside>
       </div>
@@ -212,23 +226,26 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function SlidePanel({ s, set, data, media, companyId, onMedia }: {
+function SlidePanel({ s, set, data, media, companyId, onMedia, sticker, setSticker }: {
   s: Slide; set: (p: Partial<Slide>) => void; data: PlayData | null; media: MediaRow[]; companyId: string | null; onMedia: () => void;
+  sticker: string | null; setSticker: (id: string | null) => void;
 }) {
   const L = s.layout;
+  const oneItem = L === "hero" || L === "offer" || L === "fresh" || L === "zoom" || L === "kinetic" || L === "flash";
+  const pickMax = L === "combo" ? 3 : L === "versus" ? 2 : L === "polaroid" ? 4 : L === "story" ? 3 : L === "top5" ? 5 : 0;
   return (
     <>
       <Section title={`${LAYOUTS[L].label} slide`}>
         <p className="-mt-1 text-xs text-muted-foreground">{LAYOUTS[L].hint}</p>
-        {(L === "hero" || L === "offer" || L === "fresh") && (
+        {oneItem && (
           <Field label={L === "hero" ? "Item" : "Item (photo and price)"}>
             <ItemSelect value={s.itemId ?? null} data={data} onChange={(itemId) => set({ itemId })} />
           </Field>
         )}
-        {L !== "grid" && L !== "list" && L !== "media" && <Field label="Small heading"><Input value={s.kicker ?? ""} onChange={(e) => set({ kicker: e.target.value })} maxLength={50} /></Field>}
-        <Field label={L === "hero" ? "Title (empty: the item's name)" : L === "media" ? "Caption" : "Title"}><Input value={s.title ?? ""} onChange={(e) => set({ title: e.target.value })} maxLength={60} /></Field>
-        {L !== "media" && <Field label="Title in Arabic"><Input dir="rtl" value={s.titleAr ?? ""} onChange={(e) => set({ titleAr: e.target.value })} maxLength={60} /></Field>}
-        {(L === "offer" || L === "media") && <Field label="Text"><Textarea value={s.text ?? ""} onChange={(e) => set({ text: e.target.value })} maxLength={160} rows={2} /></Field>}
+        {(L === "hero" || L === "offer" || L === "fresh" || L === "zoom") && <Field label="Small heading"><Input value={s.kicker ?? ""} onChange={(e) => set({ kicker: e.target.value })} maxLength={50} /></Field>}
+        {L !== "story" && <Field label={L === "hero" || L === "zoom" || L === "kinetic" ? "Title (empty: the item's name)" : L === "media" ? "Caption" : L === "versus" ? "Question at the top" : "Title"}><Input value={s.title ?? ""} onChange={(e) => set({ title: e.target.value })} maxLength={60} /></Field>}
+        {CLASSIC.includes(L) && L !== "media" && <Field label="Title in Arabic"><Input dir="rtl" value={s.titleAr ?? ""} onChange={(e) => set({ titleAr: e.target.value })} maxLength={60} /></Field>}
+        {(L === "offer" || L === "media" || L === "kinetic") && <Field label="Text"><Textarea value={s.text ?? ""} onChange={(e) => set({ text: e.target.value })} maxLength={160} rows={2} /></Field>}
       </Section>
 
       {L === "hero" && (
@@ -268,7 +285,7 @@ function SlidePanel({ s, set, data, media, companyId, onMedia }: {
         </Section>
       )}
 
-      {(L === "grid" || L === "list") && (
+      {(L === "grid" || L === "list" || L === "neon") && (
         <Section title="Items">
           <Segmented id={`src-${s.id}`} value={s.source ?? "category"} onChange={(v) => set({ source: v })} options={[{ value: "category", label: "A category" }, { value: "items", label: "Pick items" }]} />
           {(s.source ?? "category") === "category" ? (
@@ -282,7 +299,7 @@ function SlidePanel({ s, set, data, media, companyId, onMedia }: {
               </select>
             </Field>
           ) : (
-            <ItemsPick ids={s.itemIds ?? []} data={data} max={L === "grid" ? 12 : 16} set={(itemIds) => set({ itemIds })} />
+            <ItemsPick ids={s.itemIds ?? []} data={data} max={L === "grid" ? 12 : L === "neon" ? 10 : 16} set={(itemIds) => set({ itemIds })} />
           )}
           {L === "grid" && (
             <>
@@ -292,7 +309,52 @@ function SlidePanel({ s, set, data, media, companyId, onMedia }: {
             </>
           )}
           <Toggle label="Hide sold-out items" on={!!s.hideSoldOut} set={(v) => set({ hideSoldOut: v })} />
-          <TagsEdit s={s} data={data} set={set} />
+          {L !== "neon" && <TagsEdit s={s} data={data} set={set} />}
+        </Section>
+      )}
+
+      {L === "kinetic" && (
+        <Section title="Words">
+          <Field label="Words that slam in" hint="Separate with commas (up to 4), e.g. Fresh, Flaky, Buttery">
+            <Input value={(s.words ?? []).join(", ")} onChange={(e) => set({ words: e.target.value.split(",").map((w) => w.trimStart()).slice(0, 4) })} />
+          </Field>
+          <Field label="Price" hint="Empty: menu price"><Input type="number" min={0} step="0.25" value={s.price ?? ""} onChange={(e) => set({ price: num(e.target.value) })} /></Field>
+        </Section>
+      )}
+
+      {L === "zoom" && (
+        <Section title="Price sticker">
+          <Field label="Price" hint="Empty: menu price"><Input type="number" min={0} step="0.25" value={s.price ?? ""} onChange={(e) => set({ price: num(e.target.value) })} /></Field>
+        </Section>
+      )}
+
+      {(L === "flash" || L === "combo") && (
+        <Section title={L === "flash" ? "Price drop" : "Combo price"}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={L === "flash" ? "Now" : "Combo price"} hint={L === "flash" ? "Empty: menu price" : "Empty: the items added up"}><Input type="number" min={0} step="0.25" value={s.price ?? ""} onChange={(e) => set({ price: num(e.target.value) })} /></Field>
+            <Field label="Was"><Input type="number" min={0} step="0.25" value={s.oldPrice ?? ""} onChange={(e) => set({ oldPrice: num(e.target.value) })} /></Field>
+          </div>
+          {L === "flash" && (
+            <Field label="Ends at (today)" hint="A countdown shows; after this time the slide stops playing. Empty: no countdown.">
+              <Input type="time" value={s.endsAt ?? ""} onChange={(e) => set({ endsAt: e.target.value || null })} />
+            </Field>
+          )}
+        </Section>
+      )}
+
+      {pickMax > 0 && (
+        <Section title="Items">
+          {L === "top5" && <p className="-mt-1 text-xs text-muted-foreground">Empty: today&apos;s best sellers by themselves.</p>}
+          {(L === "combo" || L === "polaroid" || L === "story" || L === "versus") && <p className="-mt-1 text-xs text-muted-foreground">Empty: your best sellers with photos.</p>}
+          <ItemsPick ids={s.itemIds ?? []} data={data} max={pickMax} set={(itemIds) => set({ itemIds })} />
+        </Section>
+      )}
+
+      {(L === "neon" || L === "versus") && (
+        <Section title={L === "neon" ? "Neon sign" : "Middle badge"}>
+          <Field label={L === "neon" ? "Sign at the bottom" : "Badge text"} hint={L === "neon" ? "e.g. OPEN TILL 1 AM. Empty: no sign." : "e.g. VS or OR"}>
+            <Input value={s.badge ?? ""} onChange={(e) => set({ badge: e.target.value })} maxLength={24} />
+          </Field>
         </Section>
       )}
 
@@ -302,16 +364,18 @@ function SlidePanel({ s, set, data, media, companyId, onMedia }: {
         </Section>
       )}
 
+      <Stickers s={s} set={set} media={media} companyId={companyId} onMedia={onMedia} picked={sticker} setPicked={setSticker} />
+
       <Section title="Motion">
-        <Field label="Animation">
+        {CLASSIC.includes(L) ? <Field label="Animation">
           <div className="grid grid-cols-4 gap-1.5">
             {(Object.keys(ANIMS) as Anim[]).map((a) => (
               <button key={a} type="button" onClick={() => set({ animation: a })}
                 className={cn("rounded-md border px-1 py-1.5 text-xs font-medium", s.animation === a ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted")}>{ANIMS[a]}</button>
             ))}
           </div>
-        </Field>
-        <Field label="Speed"><Segmented id={`spd-${s.id}`} value={s.speed} onChange={(v: Speed) => set({ speed: v })} options={[{ value: "slow", label: "Slow" }, { value: "normal", label: "Normal" }, { value: "fast", label: "Fast" }]} /></Field>
+        </Field> : <p className="text-xs text-muted-foreground">This layout has its own animation.</p>}
+        {CLASSIC.includes(L) && <Field label="Speed"><Segmented id={`spd-${s.id}`} value={s.speed} onChange={(v: Speed) => set({ speed: v })} options={[{ value: "slow", label: "Slow" }, { value: "normal", label: "Normal" }, { value: "fast", label: "Fast" }]} /></Field>}
         <Field label={`On screen for ${s.seconds} seconds`}>
           <input type="range" min={4} max={60} value={s.seconds} onChange={(e) => set({ seconds: Number(e.target.value) })} className="w-full accent-[var(--primary)]" />
         </Field>
@@ -356,6 +420,102 @@ function SlidePanel({ s, set, data, media, companyId, onMedia }: {
         )}
       </Section>
     </>
+  );
+}
+
+/** Pictures placed on the slide: add (upload or choose), size, turn, motion, remove; dragged into place on the preview. */
+function Stickers({ s, set, media, companyId, onMedia, picked, setPicked }: {
+  s: Slide; set: (p: Partial<Slide>) => void; media: MediaRow[]; companyId: string | null; onMedia: () => void; picked: string | null; setPicked: (id: string | null) => void;
+}) {
+  const list = s.stickers ?? [];
+  const [choosing, setChoosing] = useState(false);
+  const one = list.find((k) => k.id === picked) ?? null;
+  const patch = (id: string, p: Partial<Sticker>) => set({ stickers: list.map((k) => (k.id === id ? { ...k, ...p } : k)) });
+  const add = (mediaId: string) => {
+    const m = media.find((x) => x.id === mediaId);
+    const place = (r: number) => {
+      const k: Sticker = { id: newId(), mediaId, x: 50, y: 45, w: 22, r, rotate: 0, anim: "float" };
+      set({ stickers: [...list, k].slice(0, 12) }); setPicked(k.id); setChoosing(false);
+    };
+    if (m?.kind === "video") { place(9 / 16); return; }
+    const img = new Image();
+    img.onload = () => place(img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1);
+    img.onerror = () => place(1);
+    img.src = withBase(`/api/public/signage/media/${mediaId}?co=${companyId ?? ""}`);
+  };
+  return (
+    <Section title="Pictures on this slide">
+      <p className="-mt-1 text-xs text-muted-foreground">Logos, stickers, food photos… Drag them into place on the preview.</p>
+      {list.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {list.map((k, i) => (
+            <button key={k.id} type="button" onClick={() => setPicked(k.id === picked ? null : k.id)}
+              className={cn("rounded-md border px-2 py-1 text-xs font-medium", k.id === picked ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted")}>Picture {i + 1}</button>
+          ))}
+        </div>
+      )}
+      {one && (
+        <div className="space-y-3 rounded-lg border p-3">
+          <Field label={`Size ${Math.round(one.w)}% of the screen width`}>
+            <input type="range" min={4} max={90} value={one.w} onChange={(e) => patch(one.id, { w: Number(e.target.value) })} className="w-full accent-[var(--primary)]" />
+          </Field>
+          <Field label={`Turn ${one.rotate}°`}>
+            <input type="range" min={-45} max={45} value={one.rotate} onChange={(e) => patch(one.id, { rotate: Number(e.target.value) })} className="w-full accent-[var(--primary)]" />
+          </Field>
+          <Field label="Motion">
+            <div className="grid grid-cols-5 gap-1">
+              {(Object.keys(STICKER_ANIMS) as StickerAnim[]).map((a) => (
+                <button key={a} type="button" onClick={() => patch(one.id, { anim: a })}
+                  className={cn("rounded-md border px-1 py-1.5 text-xs font-medium", one.anim === a ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted")}>{STICKER_ANIMS[a]}</button>
+              ))}
+            </div>
+          </Field>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => patch(one.id, { x: 50, y: 50 })}>Centre</Button>
+            <Button variant="ghost" size="sm" onClick={() => { set({ stickers: list.filter((k) => k.id !== one.id) }); setPicked(null); }}><Trash2Icon />Remove</Button>
+          </div>
+        </div>
+      )}
+      {choosing ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            {media.map((m) => <MediaThumb key={m.id} m={m} companyId={companyId} onPick={() => add(m.id)} />)}
+          </div>
+          <div className="flex gap-2">
+            <UploadButton label="Upload" onDone={(row) => { onMedia(); add(row.id); }} />
+            <Button variant="ghost" onClick={() => setChoosing(false)}><XIcon />Cancel</Button>
+          </div>
+        </div>
+      ) : list.length < 12 && <Button variant="outline" className="w-full" onClick={() => setChoosing(true)}><ImagePlusIcon />Add a picture</Button>}
+    </Section>
+  );
+}
+
+/** Outlines of the placed pictures over the preview; drag one to move it (its centre, in % of the screen). */
+function StickerLayer({ slide, picked, onPick, onMove, onDrop }: {
+  slide: Slide; picked: string | null; onPick: (id: string) => void; onMove: (id: string, x: number, y: number) => void; onDrop: () => void;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
+  const at = (e: React.PointerEvent) => {
+    const r = box.current!.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * 100, y: ((e.clientY - r.top) / r.height) * 100 };
+  };
+  const clamp = (v: number) => Math.round(Math.max(0, Math.min(100, v)) * 10) / 10;
+  return (
+    <div ref={box} className="absolute inset-0"
+      onPointerMove={(e) => { const d = drag.current; if (!d) return; const p = at(e); onMove(d.id, clamp(p.x - d.dx), clamp(p.y - d.dy)); }}
+      onPointerUp={() => { if (drag.current) { drag.current = null; onDrop(); } }}>
+      {(slide.stickers ?? []).map((k) => {
+        const h = k.w * (k.r || 1) * (16 / 9);
+        return (
+          <div key={k.id} role="button" tabIndex={-1} aria-label="Move picture"
+            onPointerDown={(e) => { e.preventDefault(); (e.currentTarget.parentElement as HTMLElement).setPointerCapture(e.pointerId); const p = at(e); drag.current = { id: k.id, dx: p.x - k.x, dy: p.y - k.y }; onPick(k.id); }}
+            className={cn("absolute cursor-move rounded-sm border-2 border-dashed", k.id === picked ? "border-primary bg-primary/10" : "border-white/60 hover:border-white")}
+            style={{ left: `${k.x - k.w / 2}%`, top: `${k.y - h / 2}%`, width: `${k.w}%`, height: `${h}%`, transform: `rotate(${k.rotate}deg)` }} />
+        );
+      })}
+    </div>
   );
 }
 

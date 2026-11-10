@@ -10,8 +10,7 @@ import { normalize, starterDesign, type DesignContent, type PlayData } from "@/l
 import { useLiveEvent } from "@/components/live";
 import { confirmDialog } from "@/components/confirm";
 import { EmptyState, ErrorNote, LoadingRows, ObjectStatus, PageHeader, Switch, TONE, selectClass } from "@/components/kit";
-import { SignageStage } from "@/components/signage/stage";
-import { previewUrls } from "@/components/signage/preview";
+import { TvFrame } from "@/components/signage/tv-frame";
 import { MediaThumb, UploadButton, type MediaRow } from "@/components/signage/media";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +56,7 @@ export default function SignagePage() {
       ) : data && (
         <>
           <Tvs screens={data.screens} designs={data.designs} reload={reload} />
-          <Designs designs={data.designs} preview={preview.data ?? null} media={data.media} reload={reload} />
+          <Designs designs={data.designs} preview={preview.data ?? null} reload={reload} />
           <Media media={data.media} companyId={preview.data?.companyId ?? null} reload={reload} />
         </>
       )}
@@ -165,7 +164,7 @@ function NameCell({ value, onSave }: { value: string; onSave: (v: string) => voi
   );
 }
 
-function Designs({ designs, preview, media, reload }: { designs: DesignRow[]; preview: PlayData | null; media: MediaRow[]; reload: () => void }) {
+function Designs({ designs, preview, reload }: { designs: DesignRow[]; preview: PlayData | null; reload: () => void }) {
   const [busy, setBusy] = useState(false);
   const create = async () => {
     setBusy(true);
@@ -195,24 +194,23 @@ function Designs({ designs, preview, media, reload }: { designs: DesignRow[]; pr
         <Button onClick={() => void create()} disabled={busy}>{busy ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}New design</Button>
       </div>
       {designs.length === 0 ? (
-        <p className="px-5 py-6 text-sm text-muted-foreground">No designs yet. <b>New design</b> starts one with four ready-made slides from your menu.</p>
+        <p className="px-5 py-6 text-sm text-muted-foreground">No designs yet. <b>New design</b> starts one with five ready-made slides from your menu.</p>
       ) : (
         <div className="grid gap-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
-          {designs.map((d) => <DesignCard key={d.id} d={d} preview={preview} media={media} onCopy={() => void copy(d)} onDelete={() => void remove(d)} />)}
+          {designs.map((d) => <DesignCard key={d.id} d={d} preview={preview} onCopy={() => void copy(d)} onDelete={() => void remove(d)} />)}
         </div>
       )}
     </section>
   );
 }
 
-function DesignCard({ d, preview, media, onCopy, onDelete }: { d: DesignRow; preview: PlayData | null; media: MediaRow[]; onCopy: () => void; onDelete: () => void }) {
+function DesignCard({ d, preview, onCopy, onDelete }: { d: DesignRow; preview: PlayData | null; onCopy: () => void; onDelete: () => void }) {
   const full = useApi<{ content: DesignContent }>(`/signage/designs/${d.id}?v=${encodeURIComponent(d.updatedAt)}`);
   const content = useMemo(() => (full.data ? normalize(full.data.content) : null), [full.data]);
-  const urls = useMemo(() => previewUrls(preview, media.filter((m) => m.kind === "video").map((m) => m.id)), [preview, media]);
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
       <Link href={`/signage/design?id=${d.id}`} className="block bg-black">
-        {content ? <SignageStage content={content} data={preview} urls={urls} /> : <div className="aspect-video" />}
+        <TvFrame content={content} data={preview} />
       </Link>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <div className="min-w-0 flex-1">
