@@ -102,7 +102,7 @@ public static class Prices
             });
         });
 
-        api.MapPost("/prices/post", async (PostBody body, HttpContext http, Db db, Erp.ErpConnections erp, Erp.FactsSync facts, Live live) =>
+        api.MapPost("/prices/post", async (PostBody body, HttpContext http, Db db, Erp.ErpConnections erp, Erp.FactsSync facts, Live live, ILoggerFactory logs) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("prices.post");
@@ -167,12 +167,12 @@ public static class Prices
                 return id;
             });
             var result = await PostDocsAsync(db, erp, scope.CompanyId, changeId, null);
-            if (result.Posted > 0) await RefreshAsync(facts, live, scope, db);
+            if (result.Posted > 0) RefreshSoon(facts, live, logs, scope);
             return Results.Ok(new { id = changeId, result.Posted, result.Failed });
         });
 
         // A document FACTS refused (or that couldn't reach FACTS), posted again with the same reference (FACTS finds it if it did go).
-        api.MapPost("/prices/docs/{id:guid}/retry", async (Guid id, HttpContext http, Db db, Erp.ErpConnections erp, Erp.FactsSync facts, Live live) =>
+        api.MapPost("/prices/docs/{id:guid}/retry", async (Guid id, HttpContext http, Db db, Erp.ErpConnections erp, Erp.FactsSync facts, Live live, ILoggerFactory logs) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("prices.post");
@@ -180,7 +180,7 @@ public static class Prices
                 select d.change_id from price_change_doc d join price_change pc on pc.id = d.change_id where d.id = @id and pc.branch_id = @b and d.status <> 'posted'
                 """, new { id, b = scope.Branch }, tx)) ?? throw new DomainException("Only a document FACTS refused can be posted again.");
             var result = await PostDocsAsync(db, erp, scope.CompanyId, changeId, id);
-            if (result.Posted > 0) await RefreshAsync(facts, live, scope, db);
+            if (result.Posted > 0) RefreshSoon(facts, live, logs, scope);
             return Results.Ok(new { id = changeId, result.Posted, result.Failed });
         });
     }
@@ -273,11 +273,17 @@ public static class Prices
         return (posted, failed);
     }
 
-    /// <summary>Reads the prices back from FACTS now, so the till has them at once (the sync runs every 5 minutes anyway).</summary>
-    private static async Task RefreshAsync(Erp.FactsSync facts, Live live, Scope scope, Db db)
+    /// <summary>Reads the prices back from FACTS in the background, so the till has them in a few seconds (the sync runs every 5 minutes anyway).
+    /// The post answers as soon as FACTS has posted; the till and the Prices page reload on "menu.changed" when the read is done.</summary>
+    private static void RefreshSoon(Erp.FactsSync facts, Live live, ILoggerFactory logs, Scope scope)
     {
-        try { await facts.SyncPricesAsync(scope.CompanyId, scope.UserId); }
-        catch (DomainException) { /* the next sync brings them */ }
-        await live.ToBranch(scope.Branch, "menu.changed");
+        var (companyId, userId, branchId) = (scope.CompanyId, scope.UserId, scope.Branch);
+        _ = Task.Run(async () =>
+        {
+            try { await facts.SyncPricesAsync(companyId, userId); }
+            catch (Exception e) { logs.CreateLogger("OnePos.Erp").LogWarning("Reading FACTS prices for {Company} after a price post failed: {Message}", companyId, e.Message); }
+            try { await live.ToBranch(branchId, "menu.changed"); }
+            catch (Exception e) { logs.CreateLogger("OnePos.Erp").LogWarning("Telling branch {Branch} about new prices failed: {Message}", branchId, e.Message); }
+        });
     }
 }

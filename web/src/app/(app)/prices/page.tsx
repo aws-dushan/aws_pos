@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DownloadIcon, RotateCcwIcon, SearchIcon, TagIcon, UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
@@ -36,8 +36,13 @@ const parse = (s: string) => (/^\d+(\.\d{1,2})?$/.test(s.trim()) ? Number(s) : n
 export default function PricesPage() {
   const { branch } = useSession();
   const data = useApi<PricesData>("/prices");
+  const reloadData = data.reload;
   const history = useApi<PriceChange[]>("/prices/changes");
-  useLiveEvent(["menu.changed"], () => data.reload());
+  // After a post the till's prices are read back from FACTS in the background: the posted prices stay on the screen until they arrive.
+  const [updating, setUpdating] = useState(false);
+  const updatingRef = useRef(false);
+  const clearOnLoad = useRef(false);
+  useLiveEvent(["menu.changed"], () => { if (updatingRef.current) clearOnLoad.current = true; data.reload(); });
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [filter, setFilter] = useState<"all" | "missing" | "changed">("all");
   const [q, setQ] = useState("");
@@ -47,6 +52,16 @@ export default function PricesPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [upload, setUpload] = useState<{ file: string; result: XResult } | null>(null);
   const [excelBusy, setExcelBusy] = useState(false);
+  useEffect(() => {
+    if (!clearOnLoad.current || data.loading) return;
+    clearOnLoad.current = false; updatingRef.current = false;
+    setEdits({}); setUpdating(false);
+  }, [data.loading, data.data]);
+  useEffect(() => {
+    if (!updating) return;
+    const t = setTimeout(() => { clearOnLoad.current = true; reloadData(); }, 90_000);
+    return () => clearTimeout(t);
+  }, [updating, reloadData]);
   const d = data.data;
   const platforms = useMemo(() => d?.platforms ?? [], [d]);
 
@@ -181,8 +196,8 @@ export default function PricesPage() {
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
             <span className="text-sm"><b>{changes.length} change{changes.length === 1 ? "" : "s"}</b>{invalid > 0 && <span className="text-danger"> · {invalid} not a price (use e.g. 7.50)</span>}</span>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setEdits({})}><RotateCcwIcon className="size-4" /> Undo all</Button>
-              <Button disabled={changes.length === 0 || invalid > 0 || blockers.length > 0} onClick={() => setPosting(true)}>Post to FACTS…</Button>
+              <Button variant="outline" disabled={updating} onClick={() => setEdits({})}><RotateCcwIcon className="size-4" /> Undo all</Button>
+              <Button disabled={updating || changes.length === 0 || invalid > 0 || blockers.length > 0} onClick={() => setPosting(true)}>{updating ? "Updating the till…" : "Post to FACTS…"}</Button>
             </div>
           </div>
         </div>
@@ -197,10 +212,10 @@ export default function PricesPage() {
           const r = await api<{ posted: number; failed: number }>("/prices/post", "POST",
             { remark, changes: changes.map((c) => ({ itemId: c.item.id, platformId: c.platformId || null, price: c.price })) });
           setPosting(false);
-          if (r.failed === 0) { toast.success(`Posted in FACTS (${r.posted} document${r.posted === 1 ? "" : "s"}). The till has the new prices now.`); setEdits({}); }
+          if (r.failed === 0) toast.success(`Posted in FACTS (${r.posted} document${r.posted === 1 ? "" : "s"}). The till gets the new prices in a few seconds.`);
           else toast.error(`${r.failed} document${r.failed === 1 ? "" : "s"} refused by FACTS: see History. ${r.posted ? `${r.posted} posted.` : ""}`);
-          if (r.failed === 0 || r.posted > 0) setEdits({});
-          history.reload(); data.reload();
+          if (r.posted > 0) { updatingRef.current = true; setUpdating(true); }
+          history.reload();
         }} />
     </div>
   );
