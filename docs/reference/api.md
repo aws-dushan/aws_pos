@@ -416,11 +416,11 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:722 |
-| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:656 |
-| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:703 |
+| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:724 |
+| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:658 |
+| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:705 |
 | POST | `/api/shifts/{id:guid}/deposit` | day.manage, day.deposit, day.shift | src/OnePos.Api/Pos/Days.cs:631 |
-| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:691 |
+| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:693 |
 | POST | `/api/shifts/open` | day.shift | src/OnePos.Api/Pos/Days.cs:586 |
 
 ## stock

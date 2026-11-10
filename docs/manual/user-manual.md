@@ -240,7 +240,7 @@ With your shift open, tap **Cash in / out**, pick a tab, a reason, the amount, t
 | Safe drop | Cash moved to the safe. |
 | Cash in | Change from the safe, float top-up (float), or **Cash to deposit to bank**: cash owed to the bank (e.g. held from before One POS), added to Cash to bank with the note typed. |
 | Cash out | Supplier paid, petty cash, staff advance. Over your limit needs approval. |
-| Bank deposit | Cash taken to the bank, with the bag or slip number. |
+| Bank deposit | Cash taken to the bank. The bag or bank slip number and who takes it are required. |
 
 A bank deposit is recorded only here, on the till, before the shift is counted: it comes off the drawer's expected cash, so the count balances. Cash from the safe goes back into a drawer first (**Cash in**, Change from the safe) and is then deposited from it.
 

@@ -633,6 +633,8 @@ public static class Days
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("day.manage")) scope.Require("day.deposit");
             if (body.Amount <= 0) throw new DomainException("Enter the amount deposited.");
+            if (string.IsNullOrWhiteSpace(body.BagNo)) throw new DomainException("Enter the bag or bank slip number.");
+            if (body.BagNo.Trim().Length > 50) throw new DomainException("The bag or bank slip number is at most 50 characters.");
             if (string.IsNullOrWhiteSpace(body.TakenBy)) throw new DomainException("Who takes it to the bank?");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {

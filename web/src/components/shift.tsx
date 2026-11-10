@@ -200,11 +200,11 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
   const [toBank, setToBank] = useState(false);
   const deposit = kind === "deposit";
   const bank = kind === "in" && toBank;
-  const ready = Number(amount) > 0 && (deposit ? takenBy.trim() : bank || reason.trim());
+  const ready = Number(amount) > 0 && (deposit ? bagNo.trim() && takenBy.trim() : bank || reason.trim());
   async function submit() {
     setBusy(true);
     try {
-      if (deposit) await api(`/shifts/${shiftId}/deposit`, "POST", { amount: Number(amount), bagNo: bagNo || null, takenBy: takenBy.trim() });
+      if (deposit) await api(`/shifts/${shiftId}/deposit`, "POST", { amount: Number(amount), bagNo: bagNo.trim(), takenBy: takenBy.trim() });
       else if (bank) await api(`/shifts/${shiftId}/cash`, "POST", { kind, amount: Number(amount), reason: `${TO_BANK}${reason.trim() ? ` · ${reason.trim()}` : ""}`, toBank: true });
       else await api(`/shifts/${shiftId}/cash`, "POST", { kind, amount: Number(amount), reason });
       // Money goes into or out of the drawer, so it opens.
@@ -225,7 +225,7 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
         <Numpad value={amount} onChange={setAmount} onEnter={() => { if (!busy && ready) void submit(); }} />
         {deposit ? (
           <>
-            <Input value={bagNo} onChange={(e) => setBagNo(e.target.value)} placeholder="Bag or slip number" className="h-11" />
+            <Input value={bagNo} onChange={(e) => setBagNo(e.target.value)} maxLength={50} placeholder="Bag or bank slip number (required)" aria-required className="h-11" />
             <Input value={takenBy} onChange={(e) => setTakenBy(e.target.value)} placeholder="Taken by (name or cash-in-transit company)" className="h-11" />
             <p className="text-xs text-muted-foreground">Leaves the drawer and is recorded as the day&apos;s bank deposit.</p>
           </>

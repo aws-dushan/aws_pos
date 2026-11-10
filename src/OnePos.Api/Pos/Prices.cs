@@ -231,8 +231,10 @@ public static class Prices
                 string status, error = "", doc = "", docType = d.Kind == "outlet" ? "OSMPI" : "CPL50";
                 if (f is null) { status = "failed"; error = connectError ?? "FACTS can't be reached."; }
                 else
+                    for (var attempt = 1; ; attempt++)
                     try
                     {
+                        error = ""; doc = "";
                         var lines = JsonSerializer.Deserialize<List<Line>>(d.Lines, Json) ?? [];
                         var today = DateTime.UtcNow.AddHours(4).ToString("yyyy-MM-dd", Inv);
                         var xml = new XElement("data", new XElement("Prices",
@@ -257,9 +259,21 @@ public static class Prices
                         while (await r.NextResultAsync());
                         status = !bad && ok ? "posted" : "failed";
                         if (status == "failed" && error == "") error = "FACTS gave no answer.";
+                        break;
                     }
-                    catch (SqlException e) when (e.Number == 2812) { status = "failed"; error = $"FACTS has no {Proc} yet: run db/facts/{Proc}.sql in FACTS first."; }
-                    catch (Exception e) when (e is SqlException or InvalidOperationException or JsonException) { status = "failed"; error = e.Message.Split('\n')[0]; }
+                    catch (SqlException e) when (e.Number == 2812) { status = "failed"; error = $"FACTS has no {Proc} yet: run db/facts/{Proc}.sql in FACTS first."; break; }
+                    // The first call after a quiet spell can get a pooled connection the network has already dropped ("transport-level
+                    // error"); FACTS' refusals come back as FAILED rows, not errors. So once more on a fresh connection: the same Reference
+                    // is safe to send again (FACTS answers "Already posted", or removes an unposted leftover and saves it again).
+                    catch (Exception e) when (attempt == 1 && e is SqlException or InvalidOperationException)
+                    {
+                        SqlConnection.ClearPool(f);
+                        await f.DisposeAsync(); f = null;
+                        f = new SqlConnection(new SqlConnectionStringBuilder(cs) { ApplicationName = "One POS prices" }.ConnectionString);
+                        try { await f.OpenAsync(); }
+                        catch (SqlException oe) { status = "failed"; error = $"Couldn't reach FACTS: {oe.Message.Split('\n')[0].Trim()}"; await f.DisposeAsync(); f = null; connectError = error; break; }
+                    }
+                    catch (Exception e) when (e is SqlException or InvalidOperationException or JsonException) { status = "failed"; error = e.Message.Split('\n')[0]; break; }
                 if (status == "posted") posted++; else failed++;
                 await db.Company(companyId, (c, tx) => c.ExecuteAsync("""
                     update price_change_doc set status = @status, error = nullif(@error, ''), facts_doc = nullif(@doc, ''), facts_doc_type = @docType,
