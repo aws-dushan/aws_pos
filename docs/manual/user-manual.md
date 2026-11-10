@@ -595,7 +595,7 @@ The **Receipt** tab sets the language, the name printed, which header lines show
 
 ## TV screens
 
-TV screens show menus, offers and pictures with animations on the branch's smart TVs. Each TV shows them in its own web browser, on any Wi-Fi with internet; no cable to a till and no extra box are needed. Prices, photos, sold-out items and today's counts come from the menu, so the TVs keep up by themselves.
+TV screens show menus, offers and pictures with animations on the branch's smart TVs. Each TV shows them in its own web browser, on any Wi-Fi with internet; no cable to a till and no extra box are needed. Prices, photos, sold-out items and today's counts come from the menu, so the TVs keep up by themselves. Designs offer only the categories and items the branch in the header sells, the same as its till.
 
 **Switch it on**
 

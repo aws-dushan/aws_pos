@@ -459,16 +459,24 @@ public static class Signage
                    coalesce(bi.sold_out_date = @today, false) as sold_out, case when i.image_file is null then null else i.image_at end as image_at,
                    coalesce(s.qty, 0) as sold_today
             from menu_item i join menu_category cat on cat.id = i.category_id and cat.is_active
+            join branch br on br.id = @branchId
             left join branch_item bi on bi.item_id = i.id and bi.branch_id = @branchId
             left join sold s on s.item_id = i.id
-            where i.is_active and coalesce(bi.is_sold, i.erp_item_code is null) and (i.branch_id is null or i.branch_id = @branchId)
+            -- What this branch sells, by the same rule as its register (Menu.cs): switched on here, a combo only at its own branch,
+            -- and FACTS items only of the branch's item types, item master and division.
+            where i.is_active and coalesce(bi.is_sold, i.erp_item_code is null)
+              and (not i.is_combo or i.branch_id = @branchId) and (i.branch_id is null or i.branch_id = @branchId)
+              and (i.erp_item_code is null or ((i.erp_stock_type is null or i.erp_stock_type = any(string_to_array(coalesce(br.facts_item_types, 'FG'), ',')))
+                   and (br.facts_item_master is null or i.erp_item_type is null or i.erp_item_type = br.facts_item_master)
+                   and (br.facts_division is null or i.erp_division is null or i.erp_division = br.facts_division)))
             order by cat.sort, i.sort, i.name
             """, new { branchId, today }, tx);
         return new
         {
             companyId, branchId, branch = branch.Name, branchAr = branch.NameAr, timeZone = branch.TimeZone, currency = branch.Currency,
             logoAt = branch.LogoFile is null ? null : branch.LogoAt,
-            categories = categories.Select(x => new { x.Id, x.Name, x.NameAr }),
+            // Only categories with something this branch sells.
+            categories = categories.Where(x => items.Any(i => i.CategoryId == x.Id)).Select(x => new { x.Id, x.Name, x.NameAr }),
             items, serverTime = DateTime.UtcNow,
             // Minutes the branch is ahead of UTC now: older TV browsers can't work out a time zone themselves (schedules, countdowns, clock).
             utcOffset = (int)BusinessClock.Zone(branch.TimeZone).GetUtcOffset(DateTime.UtcNow).TotalMinutes,
