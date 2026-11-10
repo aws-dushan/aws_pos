@@ -654,7 +654,9 @@ public static partial class FactsPosting
                     {
                         while (await r.ReadAsync(stop))
                         {
-                            var cols = Enumerable.Range(0, r.FieldCount).ToDictionary(i => r.GetName(i), i => r.IsDBNull(i) ? "" : Convert.ToString(r.GetValue(i), Inv) ?? "", StringComparer.OrdinalIgnoreCase);
+                            // FACTS' own steps can answer rows with the same column twice (OSMPI's check: DFESDET_MESSAGE): the first one counts.
+                            var cols = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                            for (var i = 0; i < r.FieldCount; i++) cols.TryAdd(r.GetName(i), r.IsDBNull(i) ? "" : Convert.ToString(r.GetValue(i), Inv) ?? "");
                             if (cols.TryGetValue("DocumentNo", out var d)) doc = d;
                             if (cols.TryGetValue("status", out var s) && s.Equals("FAILED", StringComparison.OrdinalIgnoreCase)) { failed = true; error = cols.GetValueOrDefault("description") ?? "FACTS said FAILED."; }
                             // One POS' procedure: how many lines got their batch (FIFO), and any left without.

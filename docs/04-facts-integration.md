@@ -68,7 +68,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 | Return to store approved, check-in shortfall | `return` | **STV50** back to the origin location | `usp_ONEPOS_PostWastageTransfer` | Approver's FACTS user |
 | Marketing give-away approved | `marketing` | **MCV50** to the marketing expense account at batch cost | `usp_ONEPOS_PostConsumption` | Marketing FACTS user |
 | Stock request approved | `request` | **STR50** store → outlet | `usp_ONEPOS_PostTransferRequest` | Approver's FACTS user |
-| Prices posted (Prices page, not queued: posted at once, `Pos/Prices.cs`) | — | **OSMPI** outlet price import (the branch's price type, written to STOCK_PRICE by FACTS' own `usp_SIT_XLSTOCKPRICE_INSERT`) and one **CPL50** customer price list per platform at the branch's platform price location, changed items only, valid from today to 31 Dec 2030; a dropped FACTS connection is tried once more on a fresh one (the same reference is safe to resend) | `usp_ONEPOS_PostPrices` | Branch's FACTS user for price posting |
+| Prices posted (Prices page, not queued: posted at once, `Pos/Prices.cs`) | — | **OSMPI** outlet price import (the branch's price type, written to STOCK_PRICE by FACTS' own `usp_SIT_XLSTOCKPRICE_INSERT`) and one **CPL50** customer price list per platform at the branch's platform price location, changed items only, valid from today to 31 Dec 2030; FACTS' OSMPI check answers rows with a column twice (DFESDET_MESSAGE), so replies are read first-column-wins | `usp_ONEPOS_PostPrices` | Branch's FACTS user for price posting |
 
 ```mermaid
 flowchart TB
