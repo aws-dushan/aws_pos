@@ -470,6 +470,8 @@ public static class Signage
             logoAt = branch.LogoFile is null ? null : branch.LogoAt,
             categories = categories.Select(x => new { x.Id, x.Name, x.NameAr }),
             items, serverTime = DateTime.UtcNow,
+            // Minutes the branch is ahead of UTC now: older TV browsers can't work out a time zone themselves (schedules, countdowns, clock).
+            utcOffset = (int)BusinessClock.Zone(branch.TimeZone).GetUtcOffset(DateTime.UtcNow).TotalMinutes,
             videos = await c.QueryAsync<Guid>("select id from signage_media where kind = 'video'", transaction: tx),
         };
     }

@@ -1,7 +1,7 @@
 {
   "name": "One POS Menu",
   "short_name": "One POS Menu",
-  "start_url": "tv",
+  "start_url": "tv.html",
   "scope": "./",
   "display": "fullscreen",
   "orientation": "landscape",
