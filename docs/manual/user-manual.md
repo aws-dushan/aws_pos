@@ -593,6 +593,49 @@ The **Receipt** tab sets the language, the name printed, which header lines show
 
 ![Receipt & display, with the live receipt preview](images/branding.jpg)
 
+## TV screens
+
+TV screens show menus, offers and pictures with animations on the branch's smart TVs. Each TV shows them in its own web browser, on any Wi-Fi with internet; no cable to a till and no extra box are needed. Prices, photos, sold-out items and today's counts come from the menu, so the TVs keep up by themselves.
+
+**Switch it on**
+
+1. Open **TV screens** and switch **On at this branch**.
+
+**Add a TV (once per TV)**
+
+1. On the TV, open its web browser (on many TVs: **Home** → **Apps** → **Browser**) and type the address shown under **TVs** on the TV screens page (it ends in `/tv`).
+2. The TV shows **Link this TV** and a 6-digit code.
+3. On **TV screens**, type the code under **TVs**, give the TV a name if you like (for example "Counter TV") and tap **Add TV**. A few seconds later the TV shows the menu.
+4. On the TV, add the page to its home screen with the browser's own option (for example **Add to launcher** on Hisense, **Add to Home** on Samsung). From then on staff turn the TV on and press that icon.
+
+The TV goes full screen by itself where it allows it; otherwise press **OK** on the remote once. A code is good for 30 minutes; after that the TV shows a new one by itself.
+
+**Choose what each TV plays**
+
+- Type a name for the TV (for example "Counter left").
+- **Plays**: the design it shows; **Nothing (black)** leaves it dark.
+- **On**: switch a TV off and it goes black within a few seconds; switch it on and it plays again.
+- **Status** says **Showing**, **Black** or **Not showing** (the TV is off, or its page is closed).
+- The bin removes a TV: it shows a new code, and can be added again with that code.
+
+**Make a design**
+
+1. Under **Designs**, tap **New design**. It starts with four slides made from your menu.
+2. On the left are the slides in the order they play. Tap one to change it; use the arrows to move it, the eye to switch it off, and copy or delete it. **Add slide** adds another.
+3. The middle shows exactly what the TV will show. **Replay animation** plays the slide again; **Play the loop** plays them all in turn.
+4. On the right, set the slide:
+   - **Bestseller**: one item, big, with its photo and price, words under the title, a spinning badge and, if you like, how many sold today.
+   - **Offer**: an item or picture, the offer price and the price before (shown crossed out with "Save"), and **Ends at**: a countdown runs, and after that time the slide stops playing.
+   - **Menu grid**: a category or items you pick, 2 to 4 cards per row, photos, a spotlight that moves from item to item, and tags such as Bestseller or New.
+   - **Menu list**: a category or items in two columns with prices, in English and Arabic.
+   - **Fresh now**: freshly made items with rolling words, the next batch time and an add-on line (for example "Add one to any coffee +6 AED").
+   - **Picture or video**: full screen, with a caption if you want one.
+   - For every slide: **Animation** (Rise, Fade, Zoom, Slide in, Pop, Focus or None), **Speed**, how many seconds it stays on screen, **Background** (theme, a colour, or a picture darkened for readable text) and **When it plays** (all day, or set days and times).
+5. **Theme, ticker and clock** sets the colours (ready-made or your own), the lettering, Arabic names, the move between slides, the background movement, and the bottom strip: logo and branch name, scrolling messages and the clock.
+6. Tap **Save**. TVs playing the design change within a few seconds. **All branches** makes the design available at every branch.
+
+Pictures and videos for designs go under **Pictures and videos** (pictures up to 5 MB, MP4 or WebM videos up to 25 MB), or straight from a slide with **Upload**.
+
 ## Daily summary & alerts
 
 When a branch closes its day, a summary goes to the newspaper icon (and by email once an email server is set). Set the alert limits (voids, refunds, no-sales, discount %, cash variance, shifts closed without a count), the email list, approval reminders and the **Email server (SMTP)**.

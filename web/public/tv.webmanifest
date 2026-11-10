@@ -1,0 +1,13 @@
+{
+  "name": "One POS Menu",
+  "short_name": "One POS Menu",
+  "start_url": "tv",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    { "src": "tv-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -28,6 +28,7 @@ The live database runs in the container `onepos-live-db` on AWS-Data (172.30.0.2
 | Stock | `wastage` (also marketing give-aways), `delivery_check`, `stock_return`, `request_store`, `stock_request`, `stock_request_line`, `ingredient`, `recipe_line`, `branch_ingredient`, `ingredient_move`, `bom`, `bom_version`, `bom_line`, `material_unit` |
 | Delivery platforms | `delivery_platform`, `platform_payout` (one branch each) |
 | FACTS | `company_erp` (encrypted connection), `erp_sync` (sync log), `erp_payment_mode`, `erp_post` (posting queue and log) |
+| TV screens | `signage_design` (theme and slides as JSON), `signage_media` (pictures and videos), `signage_pairing` (a TV waiting to be linked: its 6-digit code and the SHA-256 of its key, 30 minutes), `signage_screen` (a linked TV: branch, the SHA-256 of its key, name, on/off, design, last seen); the last two have no row-level security (found by key); `branch.signage_enabled` |
 | Reports and notices | `sales_day_item`, `sales_day_built`, `notice`, `notice_read`, `approval_reminder`, `device_status`, `display_image` |
 
 Option groups (`modifier_group.branch_id`) and combos (`menu_item.branch_id`, set only on combos) belong to the branch

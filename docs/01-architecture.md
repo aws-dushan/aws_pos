@@ -36,7 +36,7 @@ flowchart LR
 
 | Part | Technology | Source | Job |
 | --- | --- | --- | --- |
-| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), digital receipt (`/r/<token>`) |
+| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), TV screens player (`/tv`), digital receipt (`/r/<token>`) |
 | API | ASP.NET Core, .NET 10, Dapper, Npgsql, Microsoft.Data.SqlClient | `src/OnePos.Api/` | All business rules, numbering, FACTS sync and posting, emails, live events |
 | Database | PostgreSQL 17 | `db/migrations/` | All data, one database for all companies, separated by row-level security |
 | Device Service | .NET Windows service | `src/OnePos.DeviceService/` | Receipt printing (ESC/POS raster, Arabic), cash drawer, pole display, self-update |
@@ -55,7 +55,8 @@ The UI theme, components and animations are the same as AWS One (`web/src/compon
 | `Data/` | `Db` (one transaction per unit of work, company context for RLS), `Migrator` |
 
 Every endpoint lives under `/api` and needs a signed-in user, except sign-in, `/health`, the public receipt and the
-customer display feed. Each endpoint checks a permission key (`scope.Require("pos.refund")`); the keys and the preset roles
+customer display feed and the TV screens endpoints under `/api/public/signage` (each TV's own key instead of a session: a TV gets
+a key and a 6-digit code, and a manager links it to a branch by typing the code). Each endpoint checks a permission key (`scope.Require("pos.refund")`); the keys and the preset roles
 are in `src/OnePos.Api/Platform/Permissions.cs`.
 
 ## How a sale flows
