@@ -347,11 +347,11 @@
 | GET | `/api/public/device-service/latest` |  | src/OnePos.Api/Platform/DeviceReleases.cs:16 |
 | GET | `/api/public/receipts/{token}` |  | src/OnePos.Api/Pos/PublicReceipts.cs:14 |
 | GET | `/api/public/receipts/{token}/logo` |  | src/OnePos.Api/Pos/Branding.cs:163 |
-| GET | `/api/public/signage/items/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:384 |
-| GET | `/api/public/signage/logo/{branchId:guid}` |  | src/OnePos.Api/Pos/Signage.cs:391 |
-| GET | `/api/public/signage/media/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:377 |
+| GET | `/api/public/signage/items/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:386 |
+| GET | `/api/public/signage/logo/{branchId:guid}` |  | src/OnePos.Api/Pos/Signage.cs:393 |
+| GET | `/api/public/signage/media/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:379 |
 | POST | `/api/public/signage/pair` |  | src/OnePos.Api/Pos/Signage.cs:320 |
-| GET | `/api/public/signage/play` |  | src/OnePos.Api/Pos/Signage.cs:346 |
+| GET | `/api/public/signage/play` |  | src/OnePos.Api/Pos/Signage.cs:348 |
 
 ## recipes
 
@@ -381,7 +381,7 @@
 | GET | `/api/reports/returns` | reports.view | src/OnePos.Api/Pos/Reports.cs:190 |
 | GET | `/api/reports/sales` | reports.view | src/OnePos.Api/Pos/Reports.cs:23 |
 | GET | `/api/reports/stock` | reports.view | src/OnePos.Api/Pos/StockReport.cs:30 |
-| GET | `/api/reports/stock-activity` | reports.view, facts.post | src/OnePos.Api/Pos/StockActivity.cs:51 |
+| GET | `/api/reports/stock-activity` | reports.view, facts.post | src/OnePos.Api/Pos/StockActivity.cs:53 |
 | GET | `/api/reports/summary` | facts.post | src/OnePos.Api/Pos/Reports.cs:229 |
 
 ## requests
