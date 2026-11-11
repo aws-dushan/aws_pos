@@ -449,9 +449,9 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/stock/deliveries` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:280 |
-| POST | `/api/stock/deliveries/check` | kitchen.view, pos.sell | src/OnePos.Api/Pos/Stock.cs:342 |
-| POST | `/api/stock/deliveries/uncheck` | day.manage | src/OnePos.Api/Pos/Stock.cs:398 |
+| GET | `/api/stock/deliveries` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:309 |
+| POST | `/api/stock/deliveries/check` | kitchen.view, pos.sell | src/OnePos.Api/Pos/Stock.cs:371 |
+| POST | `/api/stock/deliveries/uncheck` | day.manage | src/OnePos.Api/Pos/Stock.cs:427 |
 | GET | `/api/stock/requests` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/StockRequests.cs:319 |
 | POST | `/api/stock/requests` |  | src/OnePos.Api/Pos/StockRequests.cs:371 |
 | PUT | `/api/stock/requests/{id:guid}` |  | src/OnePos.Api/Pos/StockRequests.cs:374 |
@@ -461,12 +461,12 @@
 | POST | `/api/stock/returns` | kitchen.view, pos.sell | src/OnePos.Api/Pos/StockReturns.cs:276 |
 | POST | `/api/stock/returns/{id:guid}/cancel` | day.manage | src/OnePos.Api/Pos/StockReturns.cs:302 |
 | GET | `/api/stock/returns/items` | kitchen.view, pos.sell | src/OnePos.Api/Pos/StockReturns.cs:265 |
-| GET | `/api/stock/wastage` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:64 |
-| POST | `/api/stock/wastage` | kitchen.view, pos.sell | src/OnePos.Api/Pos/Stock.cs:94 |
-| POST | `/api/stock/wastage/{id:guid}/posted` | facts.post, day.manage | src/OnePos.Api/Pos/Stock.cs:262 |
-| POST | `/api/stock/wastage/{id:guid}/void` | day.manage | src/OnePos.Api/Pos/Stock.cs:143 |
-| GET | `/api/stock/wastage/moves` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:170 |
-| POST | `/api/stock/wastage/send` | facts.post, day.manage | src/OnePos.Api/Pos/Stock.cs:244 |
+| GET | `/api/stock/wastage` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:66 |
+| POST | `/api/stock/wastage` | kitchen.view, pos.sell | src/OnePos.Api/Pos/Stock.cs:96 |
+| POST | `/api/stock/wastage/{id:guid}/posted` | facts.post, day.manage | src/OnePos.Api/Pos/Stock.cs:291 |
+| POST | `/api/stock/wastage/{id:guid}/void` | day.manage | src/OnePos.Api/Pos/Stock.cs:172 |
+| GET | `/api/stock/wastage/moves` | kitchen.view, facts.post, pos.sell | src/OnePos.Api/Pos/Stock.cs:199 |
+| POST | `/api/stock/wastage/send` | facts.post, day.manage | src/OnePos.Api/Pos/Stock.cs:273 |
 
 ## tables
 
