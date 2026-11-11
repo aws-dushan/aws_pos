@@ -24,6 +24,8 @@ public static class StockActivity
         public string? Doc { get; set; }
         public string? Code { get; set; }
         public string Item { get; set; } = "";
+        /// <summary>The item's category: its One POS menu category, else its FACTS sub-category, else "Other".</summary>
+        public string Category { get; set; } = "";
         public string? Unit { get; set; }
         /// <summary>Wasted / given / approved (requests) / sent (deliveries) / returned.</summary>
         public decimal Qty { get; set; }
@@ -68,13 +70,13 @@ public static class StockActivity
                 {
                     // A line's status: voided, waiting for / refused by its approver, then where it is in FACTS.
                     "wastage" or "marketing" => (await c.QueryAsync<Line>("""
-                        select w.business_date as date, b.code as branch, i.erp_item_code as code, w.name as item, w.unit, w.qty, w.requested_qty as requested,
+                        select w.business_date as date, b.code as branch, i.erp_item_code as code, w.name as item, coalesce(k.name, '') as category, w.unit, w.qty, w.requested_qty as requested,
                                w.reason, w.note, u.display_name as "by", d.display_name as approved_by, w.erp_doc as facts_doc,
                                case when w.voided_at is not null then 'Voided' when w.approval = 'waiting' then 'Waiting approval' when w.approval = 'rejected' then 'Rejected'
                                     when w.erp_status = 'posted' then 'Posted' when w.erp_status = 'draft' then 'Draft in FACTS' when w.erp_status = 'failed' then 'FACTS failed'
                                     when w.erp_status = 'pending' then 'Waiting for FACTS' else 'Recorded' end as status
                         from wastage w join branch b on b.id = w.branch_id join app_user u on u.id = w.recorded_by
-                        left join app_user d on d.id = w.decided_by left join menu_item i on i.id = w.item_id
+                        left join app_user d on d.id = w.decided_by left join menu_item i on i.id = w.item_id left join menu_category k on k.id = i.category_id
                         where w.branch_id = any(@ids) and w.business_date between @f and @t and w.kind = @kind
                         order by w.business_date, w.recorded_at
                         """, args, tx)).ToList(),
@@ -115,6 +117,7 @@ public static class StockActivity
             if (kind == "requests") await DeliveredAsync(lines, facts, scope.CompanyId);
             if (kind == "deliveries") lines = await DeliveriesAsync(facts, db, scope.CompanyId, places, f, t);
             if (showValue) await ValueAsync(lines, facts, scope.CompanyId);
+            await CategoriesAsync(lines, db, facts, scope.CompanyId);
             return Results.Ok(new { kind, from = f, to = t, showValue, lines });
         });
     }
@@ -182,6 +185,39 @@ public static class StockActivity
             }
         }
         return lines;
+    }
+
+    /// <summary>Each line's category: the One POS menu category of the item with that FACTS code; items not on the menu (store items) get
+    /// their FACTS sub-category, named as the menu import names it; "Other" when neither is known (or FACTS can't be reached).</summary>
+    private static async Task CategoriesAsync(List<Line> lines, Db db, FactsSync facts, Guid companyId)
+    {
+        var codes = lines.Where(l => l.Category.Length == 0).Select(l => l.Code?.Trim()).OfType<string>().Where(x => x.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var cat = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (codes.Length > 0)
+        {
+            foreach (var (code, name) in await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, string Name)>("""
+                select distinct on (upper(trim(i.erp_item_code))) trim(i.erp_item_code), k.name
+                from menu_item i join menu_category k on k.id = i.category_id
+                where upper(trim(i.erp_item_code)) = any(@codes) order by upper(trim(i.erp_item_code)), i.is_active desc
+                """, new { codes = codes.Select(x => x.ToUpperInvariant()).ToArray() }, tx)))
+                cat[code] = name;
+            var rest = codes.Where(x => !cat.ContainsKey(x)).ToArray();
+            if (rest.Length > 0)
+                try
+                {
+                    await using var fc = await facts.OpenAsync(companyId);
+                    foreach (var (code, name) in await fc.QueryAsync<(string Code, string? Name)>("""
+                        select ltrim(rtrim(m.STKMST_DOCNO)), max(g.STK_GRP2_DESC)
+                        from STOCK_MASTER m left join STK_GRP2 g on g.STK_GRP2_DOCNO = m.STKMST_GRP2
+                        where ltrim(rtrim(m.STKMST_DOCNO)) in (select value from string_split(@codes, ',')) group by ltrim(rtrim(m.STKMST_DOCNO))
+                        """, new { codes = string.Join(',', rest) }, commandTimeout: 60))
+                        if (!string.IsNullOrWhiteSpace(name))
+                            cat[code] = System.Globalization.CultureInfo.InvariantCulture.TextInfo.ToTitleCase(name.Trim().ToLowerInvariant());
+                }
+                catch (Exception e) when (e is SqlException or InvalidOperationException) { }   // FACTS away: those show as Other
+        }
+        foreach (var l in lines)   // wastage and marketing already carry their item's own category
+            if (l.Category.Length == 0) l.Category = l.Code?.Trim() is { Length: > 0 } c2 && cat.TryGetValue(c2, out var n) ? n : "Other";
     }
 
     /// <summary>Value at each item's latest FACTS batch landed cost (blank when FACTS has none, or FACTS can't be reached).</summary>

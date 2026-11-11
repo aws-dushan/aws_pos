@@ -460,7 +460,7 @@ Open **Reports**, pick **This branch** or **All my branches** and the dates (**T
 | Discounts | Each discount by kind |
 | Exceptions | Discounts, voided orders and items, refunds, no-sales, with who did and approved each |
 | Returns | Credit notes with their PSR51 number |
-| Stock, Stock activity | Stock now; wastage, marketing, requests, deliveries and returns over the days |
+| Stock, Stock activity | Stock now; wastage, marketing, requests, deliveries and returns over the days, by item, by category or every line |
 | Finance invoices, Summary, Branch comparison, Closed days, Gross profit | Finance users only (FACTS posting right) |
 
 ## Delivery platform report

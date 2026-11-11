@@ -46,11 +46,11 @@ type Gp = {
   pending: { bills: number; sales: number }; noCost: { lines: number; sales: number }; refunds: { count: number; amount: number };
 };
 type GpKind = "items" | "categories" | "days" | "branches";
-// Stock activity: what the branch threw away, gave away, asked the stores for, received and sent back; by item or line by line.
+// Stock activity: what the branch threw away, gave away, asked the stores for, received and sent back; by item, by category or line by line.
 type ActKind = "wastage" | "marketing" | "requests" | "deliveries" | "returns";
-type ActView = "items" | "lines";
+type ActView = "items" | "categories" | "lines";
 type ActLine = {
-  date: string; branch: string; doc: string | null; code: string | null; item: string; unit: string | null; qty: number; requested: number | null; received: number | null;
+  date: string; branch: string; doc: string | null; code: string | null; item: string; category: string; unit: string | null; qty: number; requested: number | null; received: number | null;
   place: string | null; reason: string | null; note: string | null; by: string | null; approvedBy: string | null; status: string; factsDoc: string | null; value: number | null;
 };
 type Activity = { showValue: boolean; lines: ActLine[] };
@@ -291,10 +291,38 @@ export default function ReportsPage() {
               rows: a.lines.map((x) => [...day(x), x.doc ?? "—", x.place ?? "—", ...item(x), fmtQty(x.qty), x.unit ?? "—", reason(x), x.note ?? "—", x.by ?? "—", x.approvedBy ?? "—", x.status, x.factsDoc ?? "—", ...(val ? [m(x.value)] : [])]) };
           }
         }
+        const sum = (xs: ActLine[], f: (x: ActLine) => number | null) => xs.reduce((t, x) => t + (f(x) ?? 0), 0);
+        if (actView === "categories") {
+          // By category: one row per category, biggest first; quantities add up the items' own units.
+          const byCat = new Map<string, ActLine[]>();
+          for (const x of a.lines) byCat.set(x.category || "Other", [...(byCat.get(x.category || "Other") ?? []), x]);
+          const cats = [...byCat.entries()].map(([name, xs]) => ({ name, xs, on: xs.filter(actCounts), items: new Set(xs.map((x) => `${x.code ?? ""}|${x.item}`)).size }));
+          const docs = (xs: ActLine[]) => new Set(xs.map((x) => x.doc ?? "")).size;
+          switch (actKind) {
+            case "wastage": case "marketing": case "returns": {
+              const rows = cats.filter((g) => g.on.length).map((g) => ({ g, qty: sum(g.on, (x) => x.qty), value: sum(g.on, (x) => x.value) }))
+                .sort((p, r) => (val ? r.value - p.value : 0) || r.qty - p.qty);
+              const total = rows.reduce((t, r) => t + r.value, 0);
+              return { share: val && total > 0 ? rows.map((r) => r.value / total) : null,
+                head: ["Category", "Items", "Times", "Qty", ...(val ? ["Value", "Share"] : [])],
+                rows: rows.map(({ g, qty, value }) => [g.name, new Set(g.on.map((x) => `${x.code ?? ""}|${x.item}`)).size, g.on.length, fmtQty(qty),
+                  ...(val ? [money(value), total > 0 ? `${(value / total * 100).toFixed(1)}%` : "—"] : [])]) };
+            }
+            case "requests": return { share: null,
+              head: ["Category", "Items", "Requests", "Requested", "Approved", "Delivered", "Short"],
+              rows: cats.map((g) => {
+                const ok = g.xs.filter((x) => !["Rejected", "Cancelled", "Waiting approval"].includes(x.status));
+                return { g, req: sum(g.xs.filter((x) => x.status !== "Cancelled"), (x) => x.requested), appr: sum(ok, (x) => x.qty), got: sum(ok, (x) => x.received), sh: sum(ok.filter((x) => x.received != null), short) };
+              }).sort((p, r) => r.req - p.req).map(({ g, req, appr, got, sh }) => [g.name, g.items, docs(g.xs), fmtQty(req), fmtQty(appr), fmtQty(got), fmtQty(sh)]) };
+            case "deliveries": return { share: null,
+              head: ["Category", "Items", "Deliveries", "Sent", "Received", "Short", "Not checked in"],
+              rows: cats.map((g) => ({ g, sent: sum(g.xs, (x) => x.qty), got: sum(g.xs, (x) => x.received), sh: sum(g.xs, short), open: sum(g.xs.filter((x) => x.received == null), (x) => x.qty) }))
+                .sort((p, r) => r.sh - p.sh || r.sent - p.sent).map(({ g, sent, got, sh, open }) => [g.name, g.items, docs(g.xs), fmtQty(sent), fmtQty(got), fmtQty(sh), fmtQty(open)]) };
+          }
+        }
         // By item: one row per item, biggest first (by value where shown, else quantity).
         const groups = new Map<string, ActLine[]>();
         for (const x of a.lines) { const k = `${x.code ?? ""}|${x.item}`; groups.set(k, [...(groups.get(k) ?? []), x]); }
-        const sum = (xs: ActLine[], f: (x: ActLine) => number | null) => xs.reduce((t, x) => t + (f(x) ?? 0), 0);
         const items = [...groups.values()].map((xs) => ({ x: xs[0], xs, on: xs.filter(actCounts) }));
         switch (actKind) {
           case "wastage": case "marketing": case "returns": {
@@ -365,7 +393,7 @@ export default function ReportsPage() {
       })
     : null;
   const exportTable = table ? {
-    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "gp" ? ` · ${gpTitles[gpKind]}` : tab === "activity" ? ` · ${ACT_TITLES[actKind]} · ${actView === "items" ? "by item" : "every line"}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
+    title: `${titles[tab]}${tab === "exceptions" ? ` · ${exTitles[exKind]}` : tab === "gp" ? ` · ${gpTitles[gpKind]}` : tab === "activity" ? ` · ${ACT_TITLES[actKind]} · ${actView === "items" ? "by item" : actView === "categories" ? "by category" : "every line"}` : tab === "stock" && stockKind !== "all" ? ` · ${stockTitles[stockKind]}` : ""}`,
     subtitle: tab === "stock"
       ? `${company?.name ?? ""} · ${branch?.name ?? ""} · stock now, ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
       : `${where === "all" ? company?.name ?? "" : `${company?.name ?? ""} · ${branch?.name ?? ""}`} · ${from} to ${to}${tab === "gp" ? ` · sales before VAT, cost from FACTS${gpNote ? ` · ${gpNote}` : ""}` : tab === "activity" && act.data?.showValue ? " · value at the latest FACTS landed cost" : ""}`,
@@ -457,7 +485,7 @@ export default function ReportsPage() {
               <div className="mb-3 grid gap-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <Segmented id="act-kind" size="sm" value={actKind} onChange={setActKind} options={(Object.keys(ACT_TITLES) as ActKind[]).map((k) => ({ value: k, label: ACT_TITLES[k] }))} />
-                  <Segmented id="act-view" size="sm" value={actView} onChange={setActView} options={[{ value: "items", label: "By item" }, { value: "lines", label: "Every line" }]} />
+                  <Segmented id="act-view" size="sm" value={actView} onChange={setActView} options={[{ value: "items", label: "By item" }, { value: "categories", label: "By category" }, { value: "lines", label: "Every line" }]} />
                   {act.data && (() => {
                     const on = act.data.lines.filter(actCounts);
                     const value = on.reduce((t, x) => t + (x.value ?? 0), 0);
