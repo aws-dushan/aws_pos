@@ -156,15 +156,15 @@
 | --- | --- | --- | --- |
 | POST | `/api/erp/enable-sold` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:653 |
 | GET | `/api/erp/payment-modes` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:595 |
-| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:385 |
-| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:506 |
-| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:546 |
-| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:497 |
-| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:445 |
-| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:414 |
-| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:486 |
-| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:463 |
-| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:525 |
+| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:388 |
+| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:509 |
+| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:549 |
+| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:500 |
+| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:448 |
+| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:417 |
+| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:489 |
+| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:466 |
+| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:528 |
 | PUT | `/api/erp/settings` |  | src/OnePos.Api/Erp/FactsSync.cs:551 |
 | GET | `/api/erp/status` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:517 |
 | GET | `/api/erp/stock-items` |  | src/OnePos.Api/Pos/Boms.cs:186 |
@@ -493,7 +493,7 @@
 | --- | --- | --- | --- |
 | GET | `/api/wastage/approvals` |  | src/OnePos.Api/Pos/WastageApproval.cs:126 |
 | POST | `/api/wastage/approvals/approve` |  | src/OnePos.Api/Pos/WastageApproval.cs:145 |
-| POST | `/api/wastage/approvals/reject` |  | src/OnePos.Api/Pos/WastageApproval.cs:245 |
+| POST | `/api/wastage/approvals/reject` |  | src/OnePos.Api/Pos/WastageApproval.cs:259 |
 
 ## health
 
