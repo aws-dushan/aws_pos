@@ -40,6 +40,7 @@
   var token = null, play = null, designKey = null, theme = null, slides = [], data = null;
   var idx = -1, slideTimer = null, pollTimer = null, current = null, round = 0, runTimers = [];
   var PREVIEW = /[?&]preview=1/.test(location.search), lockId = null;
+  var version = null, reloadDue = false, reloading = false, newSeen = false;
 
   // ---------- small helpers ----------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -703,6 +704,28 @@
     if (fc) { var l2 = secondsLeft(fc.getAttribute('data-ends'), clock()); if (l2 !== null && l2 > 0) fc.innerHTML = flashCd(l2); }
   }
 
+  // ---------- a new One POS version: load the page again at a quiet moment ----------
+  function videosOn() { var sl = document.getElementById('slot'); return sl ? sl.getElementsByTagName('video') : []; }
+  function reloadNow() {   // only once the server answers, so the TV never lands on an error page
+    if (reloading) return;
+    reloading = true;
+    var x = new XMLHttpRequest();
+    x.open('GET', BASE + '/tv.html?_=' + new Date().getTime(), true);
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status === 200) location.reload(); else { reloading = false; setTimeout(reloadNow, 30000); }
+    };
+    x.send(null);
+  }
+  function reloadSoon() {   // between slides; on a video, when it reaches its end (at most 10 minutes later)
+    if (reloadDue || PREVIEW) return;
+    reloadDue = true;
+    var v = videosOn();
+    if (!v.length || !current) { reloadNow(); return; }
+    for (var i = 0; i < v.length; i++) v[i].loop = false;   // its "ended" then reloads instead of looping
+    setTimeout(reloadNow, 10 * 60 * 1000);
+  }
+
   function build() {   // the design changed: draw the frame again and start the loop
     applyCss(theme);
     stage.innerHTML = (theme.ambient === 'none' ? '' : '<div class="amb"></div>') + '<div id="slot"></div><div id="fx"></div>' + barHtml();
@@ -715,6 +738,7 @@
     var c = clock(), list = lockId ? slides.filter(function (s) { return s.id === lockId; }) : slides.filter(function (s) { return playsNow(s, c); });
     var slot = document.getElementById('slot'), fx = document.getElementById('fx');
     if (!slot) return;
+    if (reloadDue && (list.length !== 1 || !videosOn().length)) { reloadNow(); return; }   // between slides (one video alone: at its end)
     // Only one slide to show and it is already on screen: leave it alone, so a video keeps looping instead of starting over.
     if (!lockId && list.length === 1 && current && current.id === list[0].id && slot.firstChild) { slideTimer = setTimeout(next, 30000); return; }
     stopRun();
@@ -733,7 +757,7 @@
     fx.innerHTML = lockId ? '' : (theme.transition === 'flash' ? '<div class="flash"></div>' : '') + (list.length < 2 ? '' :
       '<div class="prog" style="-webkit-animation-duration:' + secs + 's;animation-duration:' + secs + 's"></div>');
     var vids = slot.getElementsByTagName('video');   // older TV browsers may ignore "loop": start it again when it ends
-    for (var v = 0; v < vids.length; v++) vids[v].addEventListener('ended', function () { try { this.currentTime = 0; this.play(); } catch (e) {} });
+    for (var v = 0; v < vids.length; v++) vids[v].addEventListener('ended', function () { if (reloadDue) { reloadNow(); return; } try { this.currentTime = 0; this.play(); } catch (e) {} });
     runSlide(s, slot);
     if (!lockId) slideTimer = setTimeout(next, list.length < 2 ? 30000 : secs * 1000);
   }
@@ -774,6 +798,7 @@
     req('GET', '/api/public/signage/play?w=' + sz.w + '&h=' + sz.h + '&_=' + new Date().getTime(), null, function (status, j) {
       if (status === 401) { store(KEY, null); play = null; designKey = null; pair(); return; }
       if (status !== 200 || !j) { if (!play) show('<div class="err">Can\'t reach One POS (' + status + '). Trying again&hellip;</div>'); return; }
+      if (j.version) { if (!version) version = j.version; else if (j.version !== version && !newSeen) { newSeen = true; setTimeout(reloadSoon, 60000); } }   // a minute: the update finishes first
       if (!j.linked) { play = null; designKey = null; showCode(j.code); return; }
       show('');
       play = j; data = j.data;
@@ -823,7 +848,7 @@
   token = load(KEY);
   poll();
   pollTimer = setInterval(poll, 10000);
-  setTimeout(function () { location.reload(); }, 6 * 60 * 60 * 1000);   // pick up a new One POS version now and then
+  setTimeout(reloadSoon, 6 * 60 * 60 * 1000);   // a fresh page now and then, also at a quiet moment
 })();
 </script>
 </body>

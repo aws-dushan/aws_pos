@@ -646,6 +646,8 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
 
 To play just a video on a TV, make a design with one **Picture or video** slide and turn off the clock, logo and ticker. The video then loops without stopping.
 
+When One POS itself is updated, the TVs load the new version by themselves within about a minute: between two slides, or when a video reaches its end. Nobody needs to touch the TV.
+
 Pictures and videos for designs go under **Pictures and videos** (pictures up to 5 MB, MP4 or WebM videos up to 25 MB), or straight from a slide with **Upload**.
 
 ## Daily summary & alerts

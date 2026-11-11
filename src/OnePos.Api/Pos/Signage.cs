@@ -343,6 +343,8 @@ public static class Signage
 
         // The TV page every few seconds: what this TV shows now (its design and the branch's menu, prices, sold-out and sold-today
         // counts); while it is not linked yet, its code. 401: the key is unknown (the TV was removed or its code expired): get a new one.
+        // The One POS version: a TV whose player came from another version loads the page again (between slides, or when its video ends).
+        var version = Environment.GetEnvironmentVariable("ONEPOS_VERSION") ?? "dev";
         app.MapGet("/api/public/signage/play", async (HttpContext http, Db db, int? w, int? h) =>
         {
             http.Response.Headers.CacheControl = "no-store";
@@ -354,7 +356,7 @@ public static class Signage
                 var p = await db.Platform((c, tx) => c.QuerySingleOrDefaultAsync<(string? Code, DateTime ExpiresAt)>(
                     "select code, expires_at from signage_pairing where token_hash = @hash and expires_at > now()", new { hash }, tx));
                 return p.Code is null ? Results.Json(new { error = "This TV isn't linked." }, statusCode: 401)
-                    : Results.Ok(new { linked = false, code = p.Code, expiresAt = p.ExpiresAt });
+                    : Results.Ok(new { linked = false, code = p.Code, expiresAt = p.ExpiresAt, version });
             }
             return Results.Ok(await db.Company(tv.CompanyId, async (c, tx) =>
             {
@@ -369,7 +371,7 @@ public static class Signage
                         "select id, name, content::text as content, updated_at from signage_design where id = @d", new { d }, tx);
                     if (g.Id != Guid.Empty) design = new { g.Id, g.Name, content = JsonDocument.Parse(g.Content).RootElement, g.UpdatedAt };
                 }
-                return new { linked = true, screen = new { s.Id, s.Name, isOn = s.IsOn && s.Enabled && design is not null }, design, data = await PlayDataAsync(c, tx, tv.CompanyId, tv.BranchId) };
+                return new { linked = true, version, screen = new { s.Id, s.Name, isOn = s.IsOn && s.Enabled && design is not null }, design, data = await PlayDataAsync(c, tx, tv.CompanyId, tv.BranchId) };
             }));
         });
 

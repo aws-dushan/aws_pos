@@ -36,7 +36,7 @@ flowchart LR
 
 | Part | Technology | Source | Job |
 | --- | --- | --- | --- |
-| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), TV screens player (`/tv`, a plain page `public/tv.html` in old-browser JavaScript so any smart TV's own browser runs it; the designer's preview shows the same page in a frame), digital receipt (`/r/<token>`) |
+| Web app | Next.js 16, React 19, Tailwind 4, motion | `web/` | Every screen: back office, till (`/till`), kitchen, customer display (`/display`), order-ready TV (`/pickup`), TV screens player (`/tv`, a plain page `public/tv.html` in old-browser JavaScript so any smart TV's own browser runs it; the designer's preview shows the same page in a frame; the play answer carries the server's version and a TV on another version reloads between slides or at the end of a video), digital receipt (`/r/<token>`) |
 | API | ASP.NET Core, .NET 10, Dapper, Npgsql, Microsoft.Data.SqlClient | `src/OnePos.Api/` | All business rules, numbering, FACTS sync and posting, emails, live events |
 | Database | PostgreSQL 17 | `db/migrations/` | All data, one database for all companies, separated by row-level security |
 | Device Service | .NET Windows service | `src/OnePos.DeviceService/` | Receipt printing (ESC/POS raster, Arabic), cash drawer, pole display, self-update |
