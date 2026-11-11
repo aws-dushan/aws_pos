@@ -61,7 +61,7 @@ public static class WastageApproval
     {
         var s = await SetupAsync(c, tx, branchId);
         var w = await c.QuerySingleAsync<(string Name, decimal Qty, string? Unit, string Reason, string? Note, decimal? Value, DateOnly Day, string By, string? Code, string Kind)>("""
-            select w.name, w.qty, w.unit, w.reason, w.note, w.cost_value, w.business_date, u.display_name, i.erp_item_code, w.kind
+            select w.name, w.qty, w.unit, w.reason, w.note, w.cost_value, w.business_date, u.display_name, coalesce(w.item_code, i.erp_item_code), w.kind
             from wastage w join app_user u on u.id = w.recorded_by left join menu_item i on i.id = w.item_id where w.id = @wastageId
             """, new { wastageId }, tx);
         if (!Applies(s, w.Code, w.Kind)) return;
@@ -93,7 +93,7 @@ public static class WastageApproval
         public string BranchCode { get; set; } = "";
         public string BranchName { get; set; } = "";
         public DateOnly BusinessDate { get; set; }
-        public Guid ItemId { get; set; }
+        public Guid? ItemId { get; set; }
         public string Name { get; set; } = "";
         public decimal Qty { get; set; }
         public string? Unit { get; set; }
@@ -111,7 +111,7 @@ public static class WastageApproval
 
     private const string WaitingSql = """
         select w.id, w.branch_id, b.code as branch_code, b.name as branch_name, w.business_date, w.item_id, w.name, w.qty, w.unit, w.reason, w.kind, w.note, w.cost_value,
-               u.display_name as recorded_by_name, w.recorded_at, i.erp_item_code as item_code, i.erp_item_type as item_type, i.erp_unit,
+               u.display_name as recorded_by_name, w.recorded_at, coalesce(w.item_code, i.erp_item_code) as item_code, coalesce(w.item_type, i.erp_item_type) as item_type, i.erp_unit,
                case when w.kind = 'marketing' then b.marketing_approver_id else b.wastage_approver_id end as approver_id
         from wastage w join branch b on b.id = w.branch_id join app_user u on u.id = w.recorded_by left join menu_item i on i.id = w.item_id
         where w.approval = 'waiting' and w.voided_at is null
@@ -199,7 +199,7 @@ public static class WastageApproval
                         await c.ExecuteAsync("update wastage set requested_qty = qty, qty = @q, cost_value = @value where id = @Id",
                             new { q, value = price is { } p ? Money.Round(p * q) : (decimal?)null, r.Id }, tx);
                         await Recipes.UnwasteItemAsync(c, tx, r.Id, scope.UserId);
-                        await Recipes.WasteItemAsync(c, tx, scope.CompanyId, r.BranchId, r.BusinessDate, r.ItemId, q, r.Id, scope.UserId);
+                        if (r.ItemId is { } itemId) await Recipes.WasteItemAsync(c, tx, scope.CompanyId, r.BranchId, r.BusinessDate, itemId, q, r.Id, scope.UserId);
                     }
                     await c.ExecuteAsync("update wastage set approval = 'approved', decided_by = @u, decided_at = now(), decision_note = @note where id = @Id",
                         new { u = scope.UserId, note, r.Id }, tx);

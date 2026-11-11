@@ -332,7 +332,7 @@ public static partial class FactsPosting
             """, new { branchId }, tx);
         if (b.Mode != "draft" || b.Connector != "facts" || b.Loc is null || b.Waste is null) return 0;
         var lines = (await c.QueryAsync<(Guid Id, string? Code, string? Type, string Name, decimal Qty, string? Unit, decimal? Cost)>("""
-            select w.id, i.erp_item_code, i.erp_item_type, w.name, w.qty, coalesce(w.unit, i.erp_unit), w.cost_value
+            select w.id, coalesce(w.item_code, i.erp_item_code), coalesce(w.item_type, i.erp_item_type), w.name, w.qty, coalesce(w.unit, i.erp_unit), w.cost_value
             from wastage w left join menu_item i on i.id = w.item_id
             where w.branch_id = @branchId and w.business_date = @day and w.kind = 'wastage' and w.voided_at is null and w.erp_status = 'pending' and w.erp_post_id is null and w.approval = 'none'
             order by w.recorded_at for update of w

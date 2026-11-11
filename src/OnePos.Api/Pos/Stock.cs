@@ -15,7 +15,8 @@ namespace OnePos.Api.Pos;
 /// </summary>
 public static class Stock
 {
-    public sealed record WasteBody(Guid ItemId, decimal Qty, string Reason, string? Note, string? Kind = null);
+    /// <summary>A menu item (ItemId), or any FACTS item by its code and item type (e.g. a raw material used in recipes).</summary>
+    public sealed record WasteBody(Guid? ItemId, decimal Qty, string Reason, string? Note, string? Kind = null, string? ItemCode = null, string? ItemType = null);
     /// <summary>A line that arrived differently. `Line`: its line on the transfer (an item can be on it twice, e.g. two batches).</summary>
     public sealed record Difference(string Code, string Name, decimal Sent, decimal Received, string? Note, int? Line = null);
     public sealed record PostedBody(string Doc);
@@ -29,7 +30,8 @@ public static class Stock
     {
         public Guid Id { get; set; }
         public DateOnly BusinessDate { get; set; }
-        public Guid ItemId { get; set; }
+        public Guid? ItemId { get; set; }
+        public string? ItemCode { get; set; }
         public string Name { get; set; } = "";
         public decimal Qty { get; set; }
         public string? Unit { get; set; }
@@ -91,7 +93,7 @@ public static class Stock
             });
         });
 
-        api.MapPost("/stock/wastage", async (WasteBody body, HttpContext http, Db db, Live live) =>
+        api.MapPost("/stock/wastage", async (WasteBody body, HttpContext http, Db db, FactsSync facts, Live live) =>
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("kitchen.view")) scope.Require("pos.sell");
@@ -99,13 +101,40 @@ public static class Stock
             var marketing = body.Kind == "marketing";
             if (!(marketing ? MarketingReasons : Reasons).Contains(reason)) throw new DomainException(marketing ? "Choose what it was given away for." : "Choose why it was thrown away.");
             if (reason == "other" && string.IsNullOrWhiteSpace(body.Note)) throw new DomainException("Say what happened.");
+            var code = body.ItemCode?.Trim();
+            if (body.ItemId is null && string.IsNullOrEmpty(code)) throw new DomainException("Choose the item.");
+            // A FACTS item with no menu item (a raw material): its name, item type and unit come from FACTS itself.
+            (string Code, string Type, string Name, string Unit, int Decimals)? raw = null;
+            if (body.ItemId is null)
+            {
+                var onMenu = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<Guid?>(
+                    "select id from menu_item where upper(trim(erp_item_code)) = upper(@code) and (@type::text is null or erp_item_type = @type) order by is_active desc limit 1",
+                    new { code, type = body.ItemType?.Trim() }, tx));
+                if (onMenu is { } menuId) body = body with { ItemId = menuId };
+                else
+                {
+                    var master = await db.Company(scope.CompanyId, (c, tx) => c.ExecuteScalarAsync<string?>("select facts_item_master from branch where id = @b", new { b = scope.Branch }, tx));
+                    await using var f = await facts.OpenAsync(scope.CompanyId);
+                    var m = await f.QueryFirstOrDefaultAsync<(string Code, string Type, string Name, string Unit, int Decimals)>("""
+                        select top 1 ltrim(rtrim(m.STKMST_DOCNO)), ltrim(rtrim(m.STKMST_DOCTYPE)), ltrim(rtrim(m.STKMST_DESC)), ltrim(rtrim(m.STKMST_UNIT_DOCNO)),
+                               cast(case when isnull(u.UNIT_DECIMAL, 0) > 3 then 3 when isnull(u.UNIT_DECIMAL, 0) < 0 then 0 else isnull(u.UNIT_DECIMAL, 0) end as int)
+                        from STOCK_MASTER m with (nolock) left join UNIT_MASTER u on u.UNIT_DOCNO = m.STKMST_UNIT_DOCNO
+                        where m.STKMST_ACTIVE_STATUS = 0 and m.STKMST_DOCNO = @code and (@type is null or m.STKMST_DOCTYPE = @type) and (@master is null or m.STKMST_DOCTYPE = @master)
+                        """, new { code, type = body.ItemType?.Trim(), master }, commandTimeout: 20);
+                    if (string.IsNullOrEmpty(m.Code)) throw new DomainException($"FACTS has no active item {code}.");
+                    // FACTS units with no decimals set: raw materials are often weighed or measured, so allow 3.
+                    raw = m with { Decimals = m.Decimals == 0 && m.Unit is not ("PCS" or "NOS" or "EA") ? 3 : m.Decimals };
+                }
+            }
             var row = await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var item = await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, decimal? BranchPrice, int Decimals, string? Unit, string? Code)>("""
-                    select i.id, i.name, i.price, bi.price, i.qty_decimals, i.erp_unit, i.erp_item_code from menu_item i
-                    left join branch_item bi on bi.item_id = i.id and bi.branch_id = @b where i.id = @ItemId
-                    """, new { b = scope.Branch, body.ItemId }, tx);
-                if (item.Id == Guid.Empty) throw new DomainException("That item isn't on the menu.");
+                var item = raw is { } r
+                    ? (Id: Guid.Empty, r.Name, Price: 0m, BranchPrice: (decimal?)null, r.Decimals, Unit: (string?)r.Unit, Code: (string?)r.Code)
+                    : await c.QuerySingleOrDefaultAsync<(Guid Id, string Name, decimal Price, decimal? BranchPrice, int Decimals, string? Unit, string? Code)>("""
+                        select i.id, i.name, i.price, bi.price, i.qty_decimals, i.erp_unit, i.erp_item_code from menu_item i
+                        left join branch_item bi on bi.item_id = i.id and bi.branch_id = @b where i.id = @ItemId
+                        """, new { b = scope.Branch, body.ItemId }, tx);
+                if (raw is null && item.Id == Guid.Empty) throw new DomainException("That item isn't on the menu.");
                 Orders.CheckQty(body.Qty, item.Decimals, item.Name);
                 var day = (await Days.CurrentAsync(c, tx, scope.Branch, scope.UserId)).Date;
                 var linked = await c.ExecuteScalarAsync<bool>("select erp_location_code is not null from branch where id = @b", new { b = scope.Branch }, tx);
@@ -121,15 +150,15 @@ public static class Stock
                 }
                 var price = item.BranchPrice ?? item.Price;
                 var id = await c.ExecuteScalarAsync<Guid>("""
-                    insert into wastage (company_id, branch_id, business_date, item_id, name, qty, unit, reason, note, cost_value, erp_status, recorded_by, kind)
-                    values (@co, @b, @day, @itemId, @name, @qty, @unit, @reason, @note, @value, @erp, @u, @kind) returning id
+                    insert into wastage (company_id, branch_id, business_date, item_id, item_code, item_type, name, qty, unit, reason, note, cost_value, erp_status, recorded_by, kind)
+                    values (@co, @b, @day, @itemId, @itemCode, @itemType, @name, @qty, @unit, @reason, @note, @value, @erp, @u, @kind) returning id
                     """, new
                     {
-                        co = scope.CompanyId, b = scope.Branch, day, itemId = item.Id, name = item.Name, qty = body.Qty, unit = item.Unit, reason,
+                        co = scope.CompanyId, b = scope.Branch, day, itemId = raw is null ? item.Id : (Guid?)null, itemCode = raw?.Code, itemType = raw?.Type, name = item.Name, qty = body.Qty, unit = item.Unit, reason,
                         note = string.IsNullOrWhiteSpace(body.Note) ? null : body.Note.Trim(), value = price > 0 ? Money.Round(price * body.Qty) : (decimal?)null,
                         erp = linked && item.Code is not null ? "pending" : "none", u = scope.UserId, kind = marketing ? "marketing" : "wastage",
                     }, tx);
-                await Recipes.WasteItemAsync(c, tx, scope.CompanyId, scope.Branch, day, item.Id, body.Qty, id, scope.UserId);
+                if (raw is null) await Recipes.WasteItemAsync(c, tx, scope.CompanyId, scope.Branch, day, item.Id, body.Qty, id, scope.UserId);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "wastage", id.ToString(), "recorded", $"{(marketing ? "Marketing" : "Wastage")}: {body.Qty:0.###} × {item.Name} ({reason})", note: body.Note);
                 // A branch with a wastage approver: it waits for them (bell and email); approved, it is posted in FACTS.
                 await WastageApproval.RequestAsync(c, tx, scope.CompanyId, scope.Branch, id);
@@ -205,7 +234,7 @@ public static class Stock
                     where w.branch_id = @b and w.erp_doc_line is not null
                     """, new { b = scope.Branch }, tx)).ToDictionary(x => (x.Doc, x.Line), x => (x.Name, x.By));
                 var pending = (await c.QueryAsync<(Guid Id, string Name, decimal Qty, DateOnly Day, string? Code)>("""
-                    select w.id, w.name, w.qty, w.business_date, i.erp_item_code from wastage w left join menu_item i on i.id = w.item_id
+                    select w.id, w.name, w.qty, w.business_date, coalesce(w.item_code, i.erp_item_code) from wastage w left join menu_item i on i.id = w.item_id
                     where w.branch_id = @b and w.kind = 'wastage' and w.voided_at is null and w.erp_status = 'pending' and w.business_date >= @from order by w.recorded_at
                     """, new { b = scope.Branch, from = since.AddDays(-7) }, tx)).ToList();
                 var n = 0;

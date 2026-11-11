@@ -70,7 +70,7 @@ public static class StockActivity
                 {
                     // A line's status: voided, waiting for / refused by its approver, then where it is in FACTS.
                     "wastage" or "marketing" => (await c.QueryAsync<Line>("""
-                        select w.business_date as date, b.code as branch, i.erp_item_code as code, w.name as item, coalesce(k.name, '') as category, w.unit, w.qty, w.requested_qty as requested,
+                        select w.business_date as date, b.code as branch, coalesce(w.item_code, i.erp_item_code) as code, w.name as item, coalesce(k.name, '') as category, w.unit, w.qty, w.requested_qty as requested,
                                w.reason, w.note, u.display_name as "by", d.display_name as approved_by, w.erp_doc as facts_doc,
                                case when w.voided_at is not null then 'Voided' when w.approval = 'waiting' then 'Waiting approval' when w.approval = 'rejected' then 'Rejected'
                                     when w.erp_status = 'posted' then 'Posted' when w.erp_status = 'draft' then 'Draft in FACTS' when w.erp_status = 'failed' then 'FACTS failed'

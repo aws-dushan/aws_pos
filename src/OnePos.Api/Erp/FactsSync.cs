@@ -275,10 +275,10 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
             // Wastage still waiting holds back only the stock that was there when it was recorded: what arrived since (posted
             // deliveries to this location, FACTS' local time) can be sold (wastage_held, migration 0083).
             var waiting = (await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, DateTime Since)>("""
-                select i.erp_item_code, min(w.recorded_at at time zone b.time_zone)
-                from wastage w join menu_item i on i.id = w.item_id join branch b on b.id = w.branch_id
-                where w.branch_id = @branchId and w.voided_at is null and w.erp_status not in ('none', 'posted') and i.erp_item_code is not null
-                group by i.erp_item_code
+                select coalesce(w.item_code, i.erp_item_code), min(w.recorded_at at time zone b.time_zone)
+                from wastage w left join menu_item i on i.id = w.item_id join branch b on b.id = w.branch_id
+                where w.branch_id = @branchId and w.voided_at is null and w.erp_status not in ('none', 'posted') and coalesce(w.item_code, i.erp_item_code) is not null
+                group by 1
                 """, new { branchId = b.Id }, tx))).ToDictionary(x => x.Code, x => x.Since);
             var arrived = new Dictionary<string, decimal>();
             if (waiting.Count > 0)

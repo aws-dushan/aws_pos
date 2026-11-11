@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangleIcon, CheckCircle2Icon, ClipboardListIcon, MegaphoneIcon, PackageIcon, PackageOpenIcon, SendIcon, Trash2Icon, TruckIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { StockRequests } from "@/components/stock-requests";
 
 type Waste = {
-  id: string; itemId: string; name: string; qty: number; unit: string | null; reason: Reason; kind: Kind; note: string | null; costValue: number | null;
+  id: string; itemId: string | null; itemCode: string | null; name: string; qty: number; unit: string | null; reason: Reason; kind: Kind; note: string | null; costValue: number | null;
   erpStatus: "none" | "pending" | "draft" | "posted" | "failed"; erpDoc: string | null; recordedByName: string; recordedAt: string; voidedAt: string | null; remindedAt?: string | null;
   approval: "none" | "waiting" | "approved" | "rejected"; requestedQty: number | null; decisionNote: string | null; decidedByName: string | null;
 };
@@ -27,6 +27,9 @@ type Moves = {
   linked: boolean; location: string | null; wasteLocation: string | null; matched: number;
   moves: { docType: string; docNo: string; date: string; posted: boolean; lines: { line: number; code: string; name: string; qty: number; unit: string | null; batch: string | null; matched: string | null }[] }[];
 };
+/** What can be wasted or given away: a menu item, or any FACTS item by its code (e.g. a raw material used in recipes). */
+type Pick = { id: string | null; code: string | null; type: string | null; name: string; erpUnit: string | null; qtyDecimals: number; erpStock: number | null; raw: boolean };
+const fromMenu = (i: MenuItem): Pick => ({ id: i.id, code: i.erpItemCode ?? null, type: null, name: i.name, erpUnit: i.erpUnit ?? null, qtyDecimals: i.qtyDecimals ?? 0, erpStock: i.erpStock ?? null, raw: false });
 type Reason = "expired" | "damaged" | "quality" | "returned" | "staff" | "calibration" | "other" | "tasting" | "promotion" | "influencer" | "gift";
 /** wastage: thrown away; marketing: given away (tasting, promotion…), posted in FACTS as an MCV50 once approved. */
 type Kind = "wastage" | "marketing";
@@ -87,11 +90,20 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
   const menu = useApi<Menu>(records ? "/pos/menu" : null);
   useLiveEvent(["stock.changed"], () => list.reload());
   const [q, setQ] = useState("");
-  const [item, setItem] = useState<MenuItem | null>(null);
+  const [term, setTerm] = useState("");
+  const [item, setItem] = useState<Pick | null>(null);
+  // FACTS items too (raw materials have no menu item), once typing pauses.
+  useEffect(() => { const t = window.setTimeout(() => setTerm(q.trim()), 300); return () => window.clearTimeout(t); }, [q]);
+  const factsFound = useApi<{ code: string; name: string; type: string; unit: string }[]>(records && term.length >= 2 ? `/stock/requests/items?q=${encodeURIComponent(term)}` : null);
   const found = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return t ? (menu.data?.items ?? []).filter((i) => i.name.toLowerCase().includes(t) || (i.erpItemCode ?? "").includes(t)).slice(0, 8) : [];
-  }, [menu.data, q]);
+    if (!t) return [];
+    const onMenu = (menu.data?.items ?? []).filter((i) => i.name.toLowerCase().includes(t) || (i.erpItemCode ?? "").includes(t)).slice(0, 8).map(fromMenu);
+    const codes = new Set((menu.data?.items ?? []).map((i) => i.erpItemCode).filter(Boolean));
+    const raw = term.toLowerCase() === t ? (factsFound.data ?? []).filter((f) => !codes.has(f.code)).slice(0, 8)
+      .map((f): Pick => ({ id: null, code: f.code, type: f.type, name: f.name, erpUnit: f.unit, qtyDecimals: 3, erpStock: null, raw: true })) : [];
+    return [...onMenu, ...raw];
+  }, [menu.data, q, term, factsFound.data]);
   const d = list.data;
 
   // Finance posted it in FACTS: the document number is kept with it.
@@ -127,8 +139,10 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
           {found.length > 0 && (
             <div className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-xl border bg-popover shadow-lg">
               {found.map((i) => (
-                <button key={i.id} type="button" onClick={() => { setItem(i); setQ(""); }} className="flex h-11 w-full items-center justify-between gap-3 px-4 text-left text-sm hover:bg-muted">
-                  <span className="truncate">{i.name}</span>{i.erpStock !== null && <span className="shrink-0 text-xs text-muted-foreground">{fmtQty(i.erpStock)} in stock</span>}
+                <button key={i.id ?? `f-${i.code}`} type="button" onClick={() => { setItem(i); setQ(""); setTerm(""); }} className="flex h-11 w-full items-center justify-between gap-3 px-4 text-left text-sm hover:bg-muted">
+                  <span className="truncate">{i.name}</span>
+                  {i.raw ? <span className="shrink-0 text-xs text-muted-foreground">FACTS item {i.code}{i.erpUnit ? ` · ${i.erpUnit.toLowerCase()}` : ""}</span>
+                    : i.erpStock !== null && <span className="shrink-0 text-xs text-muted-foreground">{fmtQty(i.erpStock)} in stock</span>}
                 </button>
               ))}
             </div>
@@ -221,7 +235,7 @@ function Wastage({ currency, kind }: { currency: string; kind: Kind }) {
   );
 }
 
-function WasteDialog({ kind, item, onClose, onDone }: { kind: Kind; item: MenuItem | null; onClose: () => void; onDone: () => void }) {
+function WasteDialog({ kind, item, onClose, onDone }: { kind: Kind; item: Pick | null; onClose: () => void; onDone: () => void }) {
   const mkt = kind === "marketing";
   const first: Reason = mkt ? "tasting" : "expired";
   const reasons = mkt ? MARKETING_REASONS : WASTE_REASONS;
@@ -230,10 +244,11 @@ function WasteDialog({ kind, item, onClose, onDone }: { kind: Kind; item: MenuIt
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [seen, setSeen] = useState<string | null>(null);
-  if ((item?.id ?? null) !== seen) { setSeen(item?.id ?? null); setQty("1"); setReason(first); setNote(""); }
+  const key = item ? item.id ?? `f-${item.code}` : null;
+  if (key !== seen) { setSeen(key); setQty("1"); setReason(first); setNote(""); }
   async function save() {
     setBusy(true);
-    try { await api("/stock/wastage", "POST", { itemId: item!.id, qty: Number(qty), reason, note: note || null, kind }); toast.success(`${qty} × ${item!.name} recorded as ${mkt ? "given away (marketing)" : "wastage"}`); onDone(); }
+    try { await api("/stock/wastage", "POST", { itemId: item!.id, itemCode: item!.id ? null : item!.code, itemType: item!.id ? null : item!.type, qty: Number(qty), reason, note: note || null, kind }); toast.success(`${qty} × ${item!.name} recorded as ${mkt ? "given away (marketing)" : "wastage"}`); onDone(); }
     catch (e) { toast.error((e as Error).message); } finally { setBusy(false); }
   }
   return (
