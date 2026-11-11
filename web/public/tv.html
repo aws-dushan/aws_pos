@@ -711,10 +711,13 @@
   }
   function stopRun() { for (var i = 0; i < runTimers.length; i++) { clearTimeout(runTimers[i]); clearInterval(runTimers[i]); } runTimers = []; }
   function next() {
-    clearTimeout(slideTimer); stopRun();
+    clearTimeout(slideTimer);
     var c = clock(), list = lockId ? slides.filter(function (s) { return s.id === lockId; }) : slides.filter(function (s) { return playsNow(s, c); });
     var slot = document.getElementById('slot'), fx = document.getElementById('fx');
     if (!slot) return;
+    // Only one slide to show and it is already on screen: leave it alone, so a video keeps looping instead of starting over.
+    if (!lockId && list.length === 1 && current && current.id === list[0].id && slot.firstChild) { slideTimer = setTimeout(next, 30000); return; }
+    stopRun();
     if (!list.length) {
       var logo = logoUrl();
       slot.innerHTML = '<div class="idle">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<div>' + esc((data && data.branch) || '') + '</div>') + '</div>';
@@ -727,10 +730,12 @@
     current = s;
     var tr = lockId ? '' : theme.transition !== 'flash' && theme.transition !== 'none' ? ' t-' + esc(theme.transition) : '';
     slot.innerHTML = '<div class="slide a-' + esc(s.animation) + tr + '">' + slideHtml(s) + '</div>' + stickers(s);
-    fx.innerHTML = lockId ? '' : (theme.transition === 'flash' ? '<div class="flash"></div>' : '') +
-      '<div class="prog" style="-webkit-animation-duration:' + secs + 's;animation-duration:' + secs + 's"></div>';
+    fx.innerHTML = lockId ? '' : (theme.transition === 'flash' ? '<div class="flash"></div>' : '') + (list.length < 2 ? '' :
+      '<div class="prog" style="-webkit-animation-duration:' + secs + 's;animation-duration:' + secs + 's"></div>');
+    var vids = slot.getElementsByTagName('video');   // older TV browsers may ignore "loop": start it again when it ends
+    for (var v = 0; v < vids.length; v++) vids[v].addEventListener('ended', function () { try { this.currentTime = 0; this.play(); } catch (e) {} });
     runSlide(s, slot);
-    if (!lockId) slideTimer = setTimeout(next, secs * 1000);
+    if (!lockId) slideTimer = setTimeout(next, list.length < 2 ? 30000 : secs * 1000);
   }
   function blank() { clearTimeout(slideTimer); stopRun(); stage.innerHTML = ''; current = null; }
 

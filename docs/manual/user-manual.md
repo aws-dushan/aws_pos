@@ -644,6 +644,8 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
 5. **Theme, ticker and clock** sets the colours (ready-made or your own), the lettering, Arabic names, the move between slides, the background movement, and the bottom strip: logo and branch name, scrolling messages and the clock.
 6. Tap **Save**. TVs playing the design change within a few seconds. **All branches** makes the design available at every branch.
 
+To play just a video on a TV, make a design with one **Picture or video** slide and turn off the clock, logo and ticker. The video then loops without stopping.
+
 Pictures and videos for designs go under **Pictures and videos** (pictures up to 5 MB, MP4 or WebM videos up to 25 MB), or straight from a slide with **Upload**.
 
 ## Daily summary & alerts
