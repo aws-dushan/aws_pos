@@ -226,6 +226,7 @@ One row per document to send to FACTS.
 | `attempts`, `next_try_at`, `last_error` | Retry state; waits grow after each failure |
 | `facts_user` | The FACTS user the document is posted as (approver's user for stock documents) |
 | `order_id`, `credit_note_id`, `branch_id` | What the row belongs to |
+| `after_id` | A posting that must be posted first (wastage of BOM items waits for the RPO50 that makes them) |
 
 ## Backups
 

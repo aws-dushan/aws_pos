@@ -351,6 +351,9 @@ public static partial class FactsPosting
             values (@Company, @branchId, 'wastage', @reference, @day, @amount, @xml, 'pending') returning id
             """, new { b.Company, branchId, reference, day, amount = lines.Sum(l => l.Cost ?? 0), xml = xml.ToString(SaveOptions.DisableFormatting) }, tx);
         await c.ExecuteAsync("update wastage set erp_post_id = @postId where id = any(@ids)", new { postId, ids = lines.Select(l => l.Id).ToArray() }, tx);
+        // Made-to-order items in it: a posted RPO50 makes them first, and the draft is saved after it.
+        if (await Pos.Boms.EnqueueWasteRepackingAsync(c, tx, b.Company, branchId, b.Loc, day, lines.Select(l => l.Id).ToArray(), $"One POS repacking {b.Code} {day:yyyy-MM-dd} W#{n}") is { } made)
+            await c.ExecuteAsync("update erp_post set after_id = @made where id = @postId", new { made, postId }, tx);
         return lines.Count;
     }
 
@@ -605,8 +608,9 @@ public static partial class FactsPosting
 
         private async Task SendAsync(Guid companyId, CancellationToken stop)
         {
-            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser, string Refunds)>("""
-                select p.id, p.kind, p.xml, p.attempts, co.facts_refund_proc, co.facts_invoice_proc, p.order_id, p.facts_user, co.facts_refunds from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
+            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser, string Refunds, Guid? AfterId, bool ForWaste)>("""
+                select p.id, p.kind, p.xml, p.attempts, co.facts_refund_proc, co.facts_invoice_proc, p.order_id, p.facts_user, co.facts_refunds, p.after_id,
+                       exists (select 1 from erp_post w where w.after_id = p.id) as for_waste from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
                 where p.status = 'pending' and p.next_try_at <= now() and b.facts_post_from is not null and co.facts_posting
                 order by p.created_at, p.kind <> 'repacking' limit 50
                 """, transaction: tx))).ToList();
@@ -621,6 +625,19 @@ public static partial class FactsPosting
                 if (p.Kind == "invoice" && p.OrderId is { } billId && await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<bool>(
                         "select exists (select 1 from erp_post where kind = 'repacking' and order_id = @billId and status not in ('posted', 'skipped'))", new { billId }, tx)))
                     continue;
+                // Wastage of made-to-order items waits for the RPO50 that makes them (FACTS has none until then).
+                if (p.AfterId is { } afterId)
+                {
+                    var first = await db.Company(companyId, (c, tx) => c.QuerySingleOrDefaultAsync<(string Status, string? Error)>(
+                        "select status, last_error from erp_post where id = @afterId", new { afterId }, tx));
+                    if (first.Status != "posted")
+                    {
+                        if (first.Status == "failed")
+                            await db.Company(companyId, (c, tx) => c.ExecuteAsync("update erp_post set last_error = @e where id = @Id",
+                                new { e = $"Waits for its repacking (RPO50), which FACTS refused: {first.Error}", p.Id }, tx));
+                        continue;
+                    }
+                }
                 // A return waits for its bill's POS51 (it's copied from it); a bill finance enters by hand takes its return with it.
                 if (p.Kind == "refund" && p.Refunds == "psr51" && p.OrderId is { } returnedId)
                 {
@@ -640,7 +657,7 @@ public static partial class FactsPosting
                         : p.Kind == "marketing" ? p.FactsUser is null ? throw new InvalidOperationException("Marketing needs a FACTS user to post it.") : PostConsumptionProc
                         : p.Kind == "return" ? p.FactsUser is null ? throw new InvalidOperationException("A return needs the approver's FACTS username.") : PostWastageProc
                         : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
-                        : p.Kind == "repacking" ? p.OrderId is null ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
+                        : p.Kind == "repacking" ? p.OrderId is null && !p.ForWaste ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
                         : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };

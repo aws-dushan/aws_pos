@@ -64,6 +64,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 | Bill paid (and paper slip keyed in) | `invoice` | **POS51**, numbered with the invoice number (`INV-<branch>-000001`, or the company's shared plain number) | `usp_FQAPI_PWA_POS_SaveInvoice` (FACTS' own), or `usp_ONEPOS_SaveInvoice` (same, then FIFO batches per line) | ONEPOS |
 | Whole bill returned | `refund` | **PSR51** copied from the bill's POS51, numbered with the credit note number | `usp_ONEPOS_PostReturn` | POSBAKERY |
 | Bill with BOM items | `repacking` | **RPO50** repacking voucher, posted per bill (or one draft per day) | `usp_ONEPOS_PostRepacking` / `usp_ONEPOS_SaveRepacking` | POSBAKERY |
+| Wastage or marketing of BOM items | `repacking` | **RPO50** posted first, making the wasted quantity from its BOM materials (FIFO batches), whatever the repacking setting; the STV50 or MCV50 waits for it (`after_id`). On approval, the materials' stock is checked, not the made item's | `usp_ONEPOS_PostRepacking` | POSBAKERY |
 | Wastage approved | `wastage` | **STV50** location → wastage location, FIFO batches | `usp_ONEPOS_PostWastageTransfer` (or draft `usp_ONEPOS_SaveWastageTransfer`) | Approver's FACTS user |
 | Return to store approved, check-in shortfall | `return` | **STV50** back to the origin location | `usp_ONEPOS_PostWastageTransfer` | Approver's FACTS user |
 | Marketing give-away approved | `marketing` | **MCV50** to the marketing expense account at batch cost | `usp_ONEPOS_PostConsumption` | Marketing FACTS user |

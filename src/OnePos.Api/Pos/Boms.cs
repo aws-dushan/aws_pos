@@ -324,6 +324,16 @@ public static class Boms
                     .GroupBy(m => (m.Type, m.Code, m.Name, m.Unit)).Select(x => (x.Key.Type, x.Key.Code, x.Key.Name, x.Key.Unit, Qty: x.Sum(m => m.Qty))).ToList())))
             .Where(x => x.Materials.Count > 0).ToList();
         if (items.Count == 0) return 0;
+        var id = await InsertRepackingAsync(c, tx, b.Company, branchId, b.Loc!, day, orderId, reference, items,
+            sold.Select(s => s.VersionId).Concat(picked.Select(p => p.VersionId)).Distinct().ToArray());
+        return id is null ? 0 : items.Count;
+    }
+
+    /// <summary>One RPO50 in the FACTS queue (finished items in, their materials out); the BOM versions used are locked. Null: already queued.</summary>
+    private static async Task<Guid?> InsertRepackingAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid company, Guid branchId, string loc, DateOnly day, Guid? orderId, string reference,
+        List<(string Type, string Code, string Name, string Unit, decimal Qty, List<(string, string, string, string, decimal Qty)> Materials)> items, Guid[] versionIds)
+    {
+        var b = (Company: company, Loc: loc);
         // A material counted in pieces (PCS) goes as pieces: FACTS turns them into its base unit (KG) by its own unit conversion.
         var xml = new XElement("data", new XElement("Repacking",
             new XElement("DocDate", day.ToString("yyyy-MM-dd", Inv)), new XElement("Location", b.Loc), new XElement("Reference", reference),
@@ -333,15 +343,50 @@ public static class Boms
                 s.Materials.Select(l => new XElement("Material",
                     new XElement("ItemType", l.Item1), new XElement("ItemCode", l.Item2), new XElement("ItemName", l.Item3),
                     new XElement("Qty", Math.Round(l.Qty, 3, MidpointRounding.AwayFromZero).ToString("0.###", Inv)), new XElement("Unit", l.Item4)))))));
-        var added = await c.ExecuteAsync("""
+        var id = await c.ExecuteScalarAsync<Guid?>("""
             insert into erp_post (company_id, branch_id, kind, order_id, doc_no, business_date, amount, xml, status)
             values (@Company, @branchId, 'repacking', @orderId, @reference, @day, 0, @xml, 'pending')
-            on conflict (doc_no) where kind = 'repacking' do nothing
+            on conflict (doc_no) where kind = 'repacking' do nothing returning id
             """, new { b.Company, branchId, orderId, reference, day, xml = xml.ToString(SaveOptions.DisableFormatting) }, tx);
-        if (added == 0) return 0;
+        if (id is null) return null;
         await c.ExecuteAsync("update bom_version set locked_at = coalesce(locked_at, now()), used_until = greatest(used_until, @day) where id = any(@ids)",
-            new { ids = sold.Select(s => s.VersionId).Concat(picked.Select(p => p.VersionId)).Distinct().ToArray(), day }, tx);
-        return items.Count;
+            new { ids = versionIds, day }, tx);
+        return id;
+    }
+
+    /// <summary>A menu item's BOM valid that day (its FACTS item is made to order): the version, the finished item and what ONE unit uses. Null: no BOM.</summary>
+    public static async Task<(Guid VersionId, string Type, string Code, string Name, string Unit, List<(string Type, string Code, string Name, string Unit, decimal Qty)> Materials)?> OfItemAsync(
+        NpgsqlConnection c, NpgsqlTransaction tx, Guid itemId, DateOnly day)
+    {
+        var v = await c.QuerySingleOrDefaultAsync<(Guid VersionId, string Type, string Code, string Name, string Unit)>("""
+            select bv.id, bm.item_type, bm.item_code, bm.item_name, bm.unit
+            from menu_item i join bom bm on bm.item_code = i.erp_item_code and bm.item_type = i.erp_item_type and (bm.ended_from is null or bm.ended_from > @day)
+            join bom_version bv on bv.bom_id = bm.id and bv.valid_from <= @day
+            where i.id = @itemId order by bv.valid_from desc limit 1
+            """, new { itemId, day }, tx);
+        if (v.VersionId == Guid.Empty) return null;
+        var lines = (await c.QueryAsync<LineRow>("select version_id, item_type, item_code, item_name, unit, qty from bom_line where version_id = @id order by sort", new { id = v.VersionId }, tx))
+            .Select(l => (l.ItemType, l.ItemCode, l.ItemName, l.Unit, l.Qty)).ToList();
+        return lines.Count == 0 ? null : (v.VersionId, v.Type, v.Code, v.Name, v.Unit, lines);
+    }
+
+    /// <summary>
+    /// Wastage (or marketing) of made-to-order items: FACTS holds none of them until they're made, so one POSTED RPO50 makes the wasted
+    /// quantity from its BOM materials (batches FIFO, as for a sale); the transfer (or consumption) that takes them out waits for it
+    /// (erp_post.after_id). Whatever the company's repacking setting: without it the wastage can't post. Null: none of them has a BOM.
+    /// </summary>
+    public static async Task<Guid?> EnqueueWasteRepackingAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, string loc, DateOnly day, Guid[] wastageIds, string reference)
+    {
+        var rows = (await c.QueryAsync<(Guid ItemId, decimal Qty)>("select item_id, qty from wastage where id = any(@wastageIds) and item_id is not null and voided_at is null",
+            new { wastageIds }, tx)).ToList();
+        var made = new List<(Guid VersionId, string Type, string Code, string Name, string Unit, decimal Qty, List<(string Type, string Code, string Name, string Unit, decimal Qty)> Materials)>();
+        foreach (var r in rows)
+            if (await OfItemAsync(c, tx, r.ItemId, day) is { } bom) made.Add((bom.VersionId, bom.Type, bom.Code, bom.Name, bom.Unit, r.Qty, bom.Materials));
+        if (made.Count == 0) return null;
+        var items = made.GroupBy(m => (m.VersionId, m.Type, m.Code, m.Name, m.Unit)).Select(g => (g.Key.Type, g.Key.Code, g.Key.Name, g.Key.Unit, Qty: g.Sum(m => m.Qty),
+                Materials: g.First().Materials.Select(l => (l.Type, l.Code, l.Name, l.Unit, Qty: l.Qty * g.Sum(m => m.Qty))).ToList()))
+            .Select(x => (x.Type, x.Code, x.Name, x.Unit, x.Qty, Materials: x.Materials.Select(l => (l.Type, l.Code, l.Name, l.Unit, l.Qty)).ToList())).ToList();
+        return await InsertRepackingAsync(c, tx, companyId, branchId, loc, day, null, reference, items, made.Select(m => m.VersionId).Distinct().ToArray());
     }
 
     /// <summary>What a bill line's chosen contents are (from its modifiers: the entries with "content").</summary>

@@ -442,6 +442,8 @@ flowchart LR
 
 **Find the item** on Wastage and Marketing lists the menu items first, then other FACTS items such as raw materials used in recipes (e.g. a carton of oat drink), marked **FACTS item** with their code and unit. A FACTS item is recorded in its FACTS unit (e.g. 0.5 ltr) and has no value shown, since it has no menu price.
 
+An item made from a BOM (e.g. a cappuccino) is wasted like any other item. On approval, One POS checks that the branch has its materials in FACTS, then FACTS first makes it from them (a repacking voucher, RPO50, as for a sale) and then moves it to the wastage location.
+
 A wastage entry can be taken off the same day by whoever recorded it or by a manager, until it is approved. **Undo check-in** (manager, with a reason) changes only One POS, never FACTS.
 
 ## Ingredients

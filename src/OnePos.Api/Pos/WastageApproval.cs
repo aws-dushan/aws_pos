@@ -157,9 +157,13 @@ public static class WastageApproval
             decimal Qty(WaitingRow r) => qtyOf.TryGetValue(r.Id, out var q) ? q : r.Qty;
 
             var setups = new Dictionary<Guid, Setup>();
+            // Made-to-order items (a BOM valid that day): FACTS makes them from their materials first (a posted RPO50), so it's the materials' stock that counts.
+            var boms = new Dictionary<Guid, List<(string Type, string Code, string Name, string Unit, decimal Qty)>>();
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 foreach (var b in list.Select(r => r.BranchId).Distinct()) setups[b] = await SetupAsync(c, tx, b);
+                foreach (var r in list)
+                    if (r.ItemId is { } itemId && await Boms.OfItemAsync(c, tx, itemId, r.BusinessDate) is { } bom) boms[r.Id] = bom.Materials;
                 return 0;
             });
             foreach (var r in list)
@@ -176,8 +180,14 @@ public static class WastageApproval
             var short_ = new List<string>();
             await using (var f = await facts.OpenAsync(scope.CompanyId))
             {
-                foreach (var g in list.GroupBy(r => (r.BranchId, r.ItemCode, Unit: r.Unit ?? r.ErpUnit)))
+                foreach (var g in list.Where(r => !boms.ContainsKey(r.Id)).GroupBy(r => (r.BranchId, r.ItemCode, Unit: r.Unit ?? r.ErpUnit)))
                     if (await ShortAsync(f, g.Key.ItemCode!, setups[g.Key.BranchId].Loc!, g.Max(r => r.BusinessDate), g.Key.Unit, g.Sum(Qty), g.First().Name) is { } s)
+                        short_.Add(s);
+                var materials = list.Where(r => boms.ContainsKey(r.Id))
+                    .SelectMany(r => boms[r.Id].Select(m => (r.BranchId, r.BusinessDate, Made: r.Name, m.Code, m.Name, m.Unit, Qty: m.Qty * Qty(r))));
+                foreach (var g in materials.GroupBy(m => (m.BranchId, m.Code, m.Unit)))
+                    if (await ShortAsync(f, g.Key.Code, setups[g.Key.BranchId].Loc!, g.Max(m => m.BusinessDate), g.Key.Unit, Math.Round(g.Sum(m => m.Qty), 3, MidpointRounding.AwayFromZero),
+                            $"{g.First().Name} (to make {string.Join(", ", g.Select(m => m.Made).Distinct())})") is { } s)
                         short_.Add(s);
             }
             if (short_.Count > 0)
@@ -232,6 +242,10 @@ public static class WastageApproval
                             amount = (await c.ExecuteScalarAsync<decimal?>("select sum(cost_value) from wastage where id = any(@ids)", new { ids = g.Select(r => r.Id).ToArray() }, tx)) ?? 0,
                         }, tx);
                     await c.ExecuteAsync("update wastage set erp_post_id = @postId, erp_status = 'pending' where id = any(@ids)", new { postId, ids = g.Select(r => r.Id).ToArray() }, tx);
+                    // Made-to-order items: a posted RPO50 makes them from their materials first; the transfer (consumption) waits for it.
+                    if (g.Any(r => boms.ContainsKey(r.Id))
+                        && await Boms.EnqueueWasteRepackingAsync(c, tx, scope.CompanyId, g.Key.BranchId, s.Loc!, g.Key.BusinessDate, g.Where(r => boms.ContainsKey(r.Id)).Select(r => r.Id).ToArray(), $"One POS repacking {s.Code} {g.Key.BusinessDate:yyyy-MM-dd} {reference[^10..]}") is { } made)
+                        await c.ExecuteAsync("update erp_post set after_id = @made where id = @postId", new { made, postId }, tx);
                     n++;
                 }
                 return n;
