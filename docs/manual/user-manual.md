@@ -629,7 +629,7 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
    - **Menu grid**: a category or items you pick, 2 to 4 cards per row, photos, a spotlight that moves from item to item, and tags such as Bestseller or New.
    - **Menu list**: a category or items in two columns with prices, in English and Arabic.
    - **Fresh now**: freshly made items with rolling words, the next batch time and an add-on line (for example "Add one to any coffee +6 AED").
-   - **Picture or video**: full screen, with a caption if you want one.
+   - **Picture or video**: the whole picture or video, nothing cut off, with a caption if you want one. On these slides the bottom bar is slimmer and sits below the video, not on top of it; where the video's shape differs from the screen, the sides are filled in the bar's colour. A video made at 1920 × 1020 fills the space exactly.
    - **Hero zoom**: one item's photo slowly zooming, a big two-colour title and a price sticker that slams in.
    - **Kinetic words**: up to 4 big words slam in one by one on colour flashes, then the item with its price.
    - **Flash sale**: moving warning stripes, a shaking title, the old price struck through, the new price and a countdown.
@@ -644,7 +644,7 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
 5. **Theme, ticker and clock** sets the colours (ready-made or your own), the lettering, Arabic names, the move between slides, the background movement, and the bottom strip: logo and branch name, scrolling messages and the clock.
 6. Tap **Save**. TVs playing the design change within a few seconds. **All branches** makes the design available at every branch.
 
-To play just a video on a TV, make a design with one **Picture or video** slide and turn off the clock, logo and ticker. The video then loops without stopping.
+To play just a video on a TV, make a design with one **Picture or video** slide. The video then loops without stopping. Turn off the clock, logo and ticker to give it the whole screen.
 
 When One POS itself is updated, the TVs load the new version by themselves within about a minute: between two slides, or when a video reaches its end. Nobody needs to touch the TV.
 

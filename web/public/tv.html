@@ -141,7 +141,7 @@
   }
   function buildCss(th) {
     var c = th.colors, D = FONTS[th.font] || FONTS.bricolage, B = 'Arial, Helvetica, sans-serif';
-    var bar = th.ticker.on || th.showClock || th.showLogo, barH = bar ? 123 : 0, H = 1080 - barH;
+    var bar = th.ticker.on || th.showClock || th.showLogo, barH = bar ? 123 : 0, H = 1080 - barH, SLIM = 60;
     var s = '' +
       '#stage{background:' + c.bg + ';color:' + c.text + ';font-family:' + B + '}' +
       '#stage *{box-sizing:border-box}' +
@@ -233,6 +233,12 @@
       '.track{position:absolute;left:0;top:0;height:' + barH + 'px;line-height:' + barH + 'px;white-space:nowrap;animation:scroll linear infinite}' +
       '.track span{font-weight:bold;font-size:36px;padding:0 38px}.track i{font-style:normal;opacity:.5;margin-left:77px}' +
       '@keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}' +
+      // Picture or video slides: a slim bar, and the whole picture fitted above it (strips in the bar's colour where its shape differs).
+      '.bar,.track{-webkit-transition:height .4s,line-height .4s;transition:height .4s,line-height .4s}' +
+      '.slim .bar,.slim .track{height:' + SLIM + 'px;line-height:' + SLIM + 'px}.slim .track span{font-size:26px;padding:0 28px}.slim .track i{margin-left:50px}' +
+      '.slim .brand,.slim .clock{font-size:26px;padding:0 28px}.slim .brand img{height:42px;margin-right:12px}.slim .prog{top:' + (1080 - (bar ? SLIM : 0) - 7) + 'px}' +
+      '.fit{position:absolute;left:0;top:0;width:1920px;height:' + (1080 - (bar ? SLIM : 0)) + 'px;overflow:hidden;background:' + (bar ? c.accent : '#000') + '}' +
+      '.fit .media{object-fit:contain}.slim .slide{height:' + (1080 - (bar ? SLIM : 0)) + 'px}' +
       '.clock{height:100%;display:flex;align-items:center;padding:0 42px;background:' + c.bg + ';color:' + c.text + ';font-size:35px;font-weight:bold;position:relative;z-index:1}' +
       '.flash{position:absolute;left:0;top:0;width:1920px;height:1080px;background:' + c.text + ';opacity:0;z-index:4;animation:flash .5s ease-out}' +
       '@keyframes flash{0%{opacity:.35}100%{opacity:0}}' +
@@ -487,7 +493,7 @@
   }
 
   function mediaSlide(s, sp) {
-    var h = '<div class="full">' + (s.mediaId ? '<div class="full in"' + at(0, sp) + '>' + mediaFill(s.mediaId) + '</div>' : '');
+    var h = '<div class="full">' + (s.mediaId ? '<div class="fit in"' + at(0, sp) + '>' + mediaFill(s.mediaId) + '</div>' : '');
     if (s.title || s.text) h += '<div class="caption in"' + at(2, sp) + '>' + (s.title ? '<h2>' + esc(s.title) + '</h2>' : '') + (s.text ? '<p>' + esc(s.text) + '</p>' : '') + '</div>';
     return h + '</div>';
   }
@@ -745,7 +751,7 @@
     if (!list.length) {
       var logo = logoUrl();
       slot.innerHTML = '<div class="idle">' + (logo ? '<img src="' + esc(logo) + '" alt="">' : '<div>' + esc((data && data.branch) || '') + '</div>') + '</div>';
-      fx.innerHTML = ''; current = null;
+      fx.innerHTML = ''; current = null; stage.className = '';
       slideTimer = setTimeout(next, 30000);
       return;
     }
@@ -753,6 +759,7 @@
     var s = list[idx], secs = Math.max(3, s.seconds || 10);
     current = s;
     var tr = lockId ? '' : theme.transition !== 'flash' && theme.transition !== 'none' ? ' t-' + esc(theme.transition) : '';
+    stage.className = s.layout === 'media' && s.mediaId ? 'slim' : '';
     slot.innerHTML = '<div class="slide a-' + esc(s.animation) + tr + '">' + slideHtml(s) + '</div>' + stickers(s);
     fx.innerHTML = lockId ? '' : (theme.transition === 'flash' ? '<div class="flash"></div>' : '') + (list.length < 2 ? '' :
       '<div class="prog" style="-webkit-animation-duration:' + secs + 's;animation-duration:' + secs + 's"></div>');
@@ -761,7 +768,7 @@
     runSlide(s, slot);
     if (!lockId) slideTimer = setTimeout(next, list.length < 2 ? 30000 : secs * 1000);
   }
-  function blank() { clearTimeout(slideTimer); stopRun(); stage.innerHTML = ''; current = null; }
+  function blank() { clearTimeout(slideTimer); stopRun(); stage.innerHTML = ''; stage.className = ''; current = null; }
 
   // ---------- scale the 1920 x 1080 picture to the screen ----------
   function scale() {
