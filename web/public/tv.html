@@ -374,7 +374,7 @@
       '.bd-r{display:flex;align-items:center;height:55px;font-size:31px}' +
       '.bd-r span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}.bd-r b{font-weight:normal;white-space:nowrap}' +
       '.bd-r.out{opacity:.45}' +
-      '.bd-dh{display:inline-block;width:.6em;height:.7em;margin-left:.3em;vertical-align:-.05em}' +
+      '.bd-dh{display:inline-block;width:.6em;height:.7em;margin-right:.2em;vertical-align:-.05em}' +
       '.bd-ts{margin-right:-12px;overflow:hidden}' +
       '.bd-t{float:left;margin:0 12px 16px 0;font-size:28px;line-height:1.15}' +
       '.bd-ti{position:relative;overflow:hidden;margin-bottom:10px;background:rgba(0,0,0,.06)}' +
@@ -647,7 +647,7 @@
     return '<svg class="bd-dh" viewBox="0 0 62 72"><path d="M14 6V66M14 6H28C50 6 58 20 58 36C58 52 50 66 28 66H14" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>' +
       '<path d="M2 28H60M2 44H60" stroke="currentColor" stroke-width="6"/></svg>';
   }
-  function bdPrice(v) { var c = (data && data.currency) || 'AED'; return price(v) + (/^(AED)?$/i.test(c) ? dirham() : ' <small>' + esc(c) + '</small>'); }
+  function bdPrice(v) { var c = (data && data.currency) || 'AED'; return /^(AED)?$/i.test(c) ? dirham() + price(v) : price(v) + ' <small>' + esc(c) + '</small>'; }   // the dirham sign goes before the amount
   function tornEdge(color, up) {   // a rough paper edge in the column's colour, over the picture's edge
     var d = up ? 'M0 0' : 'M0 44', x, y, seed = 7;
     for (x = 0; x <= 640; x += 8) { seed = (seed * 9301 + 49297) % 233280; y = 4 + Math.round(seed / 233280 * 34); d += 'L' + x + ' ' + (up ? 44 - y : y); }
