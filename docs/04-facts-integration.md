@@ -103,7 +103,9 @@ the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the c
 
 - **Discounts go on the lines only**; the header discount is 0 and header gross is the lines' total after discount. FACTS
   books header and line discounts both, so sending both took discounts off twice (fixed 31 Oct 2026, 124 bills re-sent).
-- A combo sends one line per chosen item with its own code, discount and VAT shared by amount.
+- A combo sends one line per chosen item with its own code, discount and VAT shared by amount. FACTS has no combo of its own,
+  so the combo names go in the narration (`PartyName`, which FACTS reads as at most 200 characters) after the customer and any
+  pre-approved discount reason: "Walk-in - Combo: Burger Meal x2, Kids Box".
 - A platform's order number goes into the POS51's customer LPO field (`SAL_REFNO`).
 - Document numbers are at most 20 characters (`INV-<branch code>-000001`).
 - Sending the same number again makes FACTS **revise** the POS51 (old one deleted, recreated); it never doubles.

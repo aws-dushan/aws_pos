@@ -156,15 +156,15 @@
 | --- | --- | --- | --- |
 | POST | `/api/erp/enable-sold` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:653 |
 | GET | `/api/erp/payment-modes` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:595 |
-| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:388 |
-| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:509 |
-| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:549 |
-| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:500 |
-| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:448 |
-| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:417 |
-| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:489 |
-| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:466 |
-| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:528 |
+| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:395 |
+| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:516 |
+| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:556 |
+| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:507 |
+| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:455 |
+| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:424 |
+| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:496 |
+| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:473 |
+| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:535 |
 | PUT | `/api/erp/settings` |  | src/OnePos.Api/Erp/FactsSync.cs:551 |
 | GET | `/api/erp/status` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:517 |
 | GET | `/api/erp/stock-items` |  | src/OnePos.Api/Pos/Boms.cs:186 |

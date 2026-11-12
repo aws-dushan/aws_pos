@@ -241,6 +241,13 @@ public static partial class FactsPosting
                 mods);
         });
         var at = (o.ClosedAt ?? DateTime.UtcNow).ToString("yyyy-MM-dd HH:mm:ss", Inv);
+        // FACTS' narration (its PartyName, read as at most 200 characters): the customer, a pre-approved discount's reason, and the
+        // combos on the bill, since FACTS only sees a combo's items (e.g. "Walk-in - Combo: Burger Meal x2, Kids Box").
+        var combos = lines.Where(l => l.IsCombo).GroupBy(l => l.Name)
+            .Select(g => g.Sum(l => l.Qty) is var q && q != 1 ? $"{g.Key} x{q.ToString("0.###", Inv)}" : g.Key).ToList();
+        var narration = o.PreapprovedLabel is { } pl ? $"{o.CustomerName} {pl}" : o.CustomerName ?? "Walk-in";
+        if (combos.Count > 0) narration += $" - Combo: {string.Join(", ", combos)}";
+        if (narration.Length > 200) narration = narration[..200];
         var xml = new XElement("data", new XElement("Invoice",
             // The bill's own number (INV-EBL-01-000123), the same on the receipt and in FACTS (20 characters at most).
             new XElement("InvoiceNo", o.FactsNo ?? ""), new XElement("InvoiceDate", o.BusinessDate.ToString("yyyy-MM-dd", Inv)),
@@ -256,8 +263,8 @@ public static partial class FactsPosting
             // FACTS saves the bill's header only when the bill-to address is there, so it always is (empty for walk-ins).
             new XElement("Party",
                 new XElement("PartyCode", ""),
-                // FACTS' narration: the customer, and for a pre-approved discount its reason too (e.g. "Ahmed Complimentary"), as Polaris sends it.
-                new XElement("PartyName", o.PreapprovedLabel is { } pl ? $"{o.CustomerName} {pl}" : o.CustomerName ?? "Walk-in"), new XElement("MobileNo", o.CustomerPhone ?? ""),
+                // FACTS' narration (see above), as Polaris sends the customer's name.
+                new XElement("PartyName", narration), new XElement("MobileNo", o.CustomerPhone ?? ""),
                 new XElement("TRNNumber", ""), new XElement("Telephone", ""), new XElement("Mobile", o.CustomerPhone ?? ""), new XElement("Email", ""),
                 new XElement("VatCategory", "SR"), new XElement("VatRateType", "-1"),
                 new XElement("BillToAddress", new XElement("Street", o.DeliveryAddress ?? ""), new XElement("City", ""), new XElement("State", ""), new XElement("Country", "AE"), new XElement("POBox", ""))),

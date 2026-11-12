@@ -388,7 +388,7 @@ The **Option groups** tab shows each option with its price at this branch (the l
 
 A group added to an item from FACTS is asked for only at this branch: other branches sell the same item with their own groups, or none.
 
-A combo is priced by its choices. FACTS receives one line per chosen item, at the price set on the choice.
+A combo is priced by its choices. FACTS receives one line per chosen item, at the price set on the choice. The combo's name is in the bill's narration in FACTS, after the customer's name (for example "Walk-in - Combo: Burger Meal x2").
 
 ## BOM (raw materials)
 
