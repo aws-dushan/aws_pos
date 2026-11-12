@@ -361,6 +361,25 @@
       '.sy-c h2{position:absolute;left:900px;top:' + Math.round(H / 2 - 230) + 'px;width:920px;margin:0;font-family:' + D + ';font-size:130px;line-height:1;color:#fff}' +
       '.sy-c p{position:absolute;left:905px;top:' + Math.round(H / 2 + 20) + 'px;width:900px;margin:0;font-size:46px;color:rgba(255,255,255,.85)}' +
       '.sy-pr{position:absolute;left:905px;top:' + Math.round(H / 2 + 120) + 'px;background:#fff;color:#111;font-size:76px;font-weight:bold;padding:10px 40px;border-radius:60px}' +
+      // menu board: three 640px columns
+      '.bd-col{position:absolute;top:0;width:640px;height:' + H + 'px;overflow:hidden}' +
+      '.bd-pic{position:absolute;left:0;width:640px;height:0;overflow:hidden}' +
+      '.bd-pic .media,.bd-pic .bd-img{animation:kb 24s ease-out both}' +
+      '.bd-img{position:absolute;left:0;top:0;width:100%;height:100%;background-size:cover;background-position:center}' +
+      '.bd-edge{position:absolute;left:0;width:640px;height:44px;background-repeat:no-repeat;background-size:640px 44px;z-index:1}' +
+      '.bd-body{position:absolute;left:0;top:0;width:640px;height:' + H + 'px;overflow:hidden}' +
+      '.bd-in{padding:46px 46px 24px;transform-origin:50% 0}' +
+      '.bd-h{margin:0 0 24px;text-align:center;font-family:Georgia,"Times New Roman",serif;font-weight:bold;font-size:66px;line-height:1.06;text-transform:uppercase;letter-spacing:1px}' +
+      '.bd-h.b2{margin-top:30px}' +
+      '.bd-r{display:flex;align-items:center;height:55px;font-size:31px}' +
+      '.bd-r span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}.bd-r b{font-weight:normal;white-space:nowrap}' +
+      '.bd-r.out{opacity:.45}' +
+      '.bd-dh{display:inline-block;width:.6em;height:.7em;margin-left:.3em;vertical-align:-.05em}' +
+      '.bd-ts{margin-right:-12px;overflow:hidden}' +
+      '.bd-t{float:left;margin:0 12px 16px 0;font-size:28px;line-height:1.15}' +
+      '.bd-ti{position:relative;overflow:hidden;margin-bottom:10px;background:rgba(0,0,0,.06)}' +
+      '.bd-ti .nophoto{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:0}' +
+      '.bd-tn{height:2.3em;overflow:hidden}.bd-tp{margin-top:4px}' +
       // placed pictures
       '.stk{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;z-index:2}' +
       '.stk>div{position:absolute}.stk img{display:block;width:100%}' +
@@ -623,8 +642,79 @@
     return h + '</div>';
   }
 
-  // After a slide is drawn: counters that count up, story cards in turn, the grid spotlight.
+  // ---------- menu board: three columns, light / dark / light by default ----------
+  function dirham() {   // the UAE dirham sign, drawn (TV fonts don't have it)
+    return '<svg class="bd-dh" viewBox="0 0 62 72"><path d="M14 6V66M14 6H28C50 6 58 20 58 36C58 52 50 66 28 66H14" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/>' +
+      '<path d="M2 28H60M2 44H60" stroke="currentColor" stroke-width="6"/></svg>';
+  }
+  function bdPrice(v) { var c = (data && data.currency) || 'AED'; return price(v) + (/^(AED)?$/i.test(c) ? dirham() : ' <small>' + esc(c) + '</small>'); }
+  function tornEdge(color, up) {   // a rough paper edge in the column's colour, over the picture's edge
+    var d = up ? 'M0 0' : 'M0 44', x, y, seed = 7;
+    for (x = 0; x <= 640; x += 8) { seed = (seed * 9301 + 49297) % 233280; y = 4 + Math.round(seed / 233280 * 34); d += 'L' + x + ' ' + (up ? 44 - y : y); }
+    d += up ? 'L640 0Z' : 'L640 44Z';
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="44" viewBox="0 0 640 44"><path d="' + d + '" fill="' + color + '"/></svg>';
+    return "url('data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) + "')";   // single quotes: it goes inside a style="…"
+  }
+  function blockItems(b) {
+    if (!data) return [];
+    if (b.source === 'items') { var l = []; (b.itemIds || []).forEach(function (id) { var it = itemOf(id); if (it) l.push(it); }); return l; }
+    return b.categoryId ? data.items.filter(function (i) { return i.categoryId === b.categoryId; }) : [];
+  }
+  function board(s) {
+    var b = s.board || {}, light = b.light || '#fbf3e6', dark = b.dark || '#4a3328', cols = b.cols || [], h = '<div class="full2">', n = 0;
+    for (var k = 0; k < 3; k++) {
+      var c = cols[k] || { dark: k === 1, picture: 'none', blocks: [] }, bg = c.dark ? dark : light, fg = c.dark ? light : dark;
+      var pic = c.picture === 'top' || c.picture === 'bottom' ? c.picture : null, body = '';
+      (c.blocks || []).slice(0, 2).forEach(function (bl, j) {
+        var items = blockItems(bl), photos = bl.show === 'photos';
+        if (bl.title) body += '<div class="bd-h' + (j ? ' b2' : '') + ' nb" style="' + an('rise', .7, .25 + k * .15 + j * .3) + '">' + esc(bl.title) + '</div>';
+        if (photos) {
+          items = items.slice(0, 6);
+          var per = items.length === 3 || items.length > 4 ? 3 : items.length === 1 ? 1 : 2, w = Math.floor((548 - 12 * per) / per), ih = Math.round(w * (per === 3 ? 1.25 : 0.8));
+          body += '<div class="bd-ts">';
+          items.forEach(function (it) {
+            var u = itemUrl(it);
+            body += '<div class="bd-t nb' + (it.soldOut ? ' out' : '') + '" style="width:' + w + 'px;' + an('pop', .6, .5 + k * .15 + (n++) * .06) + '"><div class="bd-ti" style="height:' + ih + 'px">' +
+              (u ? '<div class="bd-img" style="background-image:url(&quot;' + esc(u) + '&quot;)"></div>' : '<div class="nophoto" style="font-size:' + Math.round(ih * .4) + 'px;line-height:' + ih + 'px">' + esc((it.name || '?').charAt(0)) + '</div>') +
+              '</div><div class="bd-tn">' + esc(it.name) + '</div><div class="bd-tp">' + (it.soldOut ? 'Sold out' : it.price > 0 ? bdPrice(it.price) : '') + '</div></div>';
+          });
+          body += '</div>';
+        } else {
+          items.slice(0, 14).forEach(function (it) {
+            body += '<div class="bd-r nb' + (it.soldOut ? ' out' : '') + '" style="' + an('fade', .5, .5 + k * .15 + (n++) * .05) + '"><span>' + esc(it.name) + '</span><b>' +
+              (it.soldOut ? 'Sold out' : it.price > 0 ? bdPrice(it.price) : '') + '</b></div>';
+          });
+        }
+      });
+      h += '<div class="bd-col" data-pic="' + (pic || '') + '" style="left:' + (k * 640) + 'px;background:' + esc(bg) + ';color:' + esc(fg) + '">';
+      if (pic && c.mediaId) {
+        h += '<div class="bd-pic">' + (isVideo(c.mediaId) ? mediaFill(c.mediaId) : '<div class="bd-img" style="background-image:url(&quot;' + esc(mediaUrl(c.mediaId)) + '&quot;)"></div>') +
+          '<div class="bd-edge" style="' + (pic === 'top' ? 'bottom:-2px' : 'top:-2px') + ';background-image:' + tornEdge(bg, pic === 'bottom') + '"></div></div>';
+      }
+      h += '<div class="bd-body"><div class="bd-in">' + body + '</div></div></div>';
+    }
+    return h + '</div>';
+  }
+  // The picture takes what the headings and items leave (at least 28% of the column); text that still doesn't fit is made smaller.
+  function fitBoard(slot) {
+    var cols = slot.querySelectorAll('.bd-col');
+    for (var i = 0; i < cols.length; i++) {
+      var col = cols[i], body = col.querySelector('.bd-body'), inner = body.firstChild, pic = col.querySelector('.bd-pic');
+      var H = col.offsetHeight, need = inner.offsetHeight, ph = 0;
+      if (pic) {
+        ph = Math.max(Math.round(H * 0.28), H - need);
+        pic.style.height = ph + 'px';
+        if (col.getAttribute('data-pic') === 'top') { pic.style.top = '0'; body.style.top = ph + 'px'; } else { pic.style.top = (H - ph) + 'px'; }
+      }
+      var avail = H - ph, k = need > avail ? avail / need : 1;
+      body.style.height = avail + 'px';
+      if (k < 1) { var t = 'scale(' + k.toFixed(3) + ')'; inner.style.webkitTransform = t; inner.style.transform = t; }
+    }
+  }
+
+  // After a slide is drawn: counters that count up, story cards in turn, the grid spotlight, the menu board's fit.
   function runSlide(s, slot) {
+    if (s.layout === 'board') fitBoard(slot);
     var cts = slot.querySelectorAll('.t5-ct');
     if (cts.length) {
       var t = 0, counter = setInterval(function () {
@@ -681,7 +771,7 @@
     var L = s.layout;
     h += L === 'hero' ? hero(s, sp) : L === 'offer' ? offer(s, sp) : L === 'grid' ? grid(s, sp) : L === 'list' ? list(s, sp) : L === 'fresh' ? fresh(s, sp)
       : L === 'zoom' ? zoom(s) : L === 'kinetic' ? kinetic(s) : L === 'flash' ? flash(s) : L === 'top5' ? top5(s) : L === 'combo' ? combo(s)
-      : L === 'neon' ? neon(s) : L === 'polaroid' ? polaroid(s) : L === 'versus' ? versus(s) : L === 'story' ? story(s) : mediaSlide(s, sp);
+      : L === 'neon' ? neon(s) : L === 'polaroid' ? polaroid(s) : L === 'versus' ? versus(s) : L === 'story' ? story(s) : L === 'board' ? board(s) : mediaSlide(s, sp);
     return h;
   }
 

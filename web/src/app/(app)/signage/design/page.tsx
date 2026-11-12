@@ -11,8 +11,8 @@ import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
-  ANIMS, DAY_NAMES, FONTS, LAYOUTS, PALETTES, STICKER_ANIMS, TRANSITIONS, newId, newSlide, normalize, slideItems,
-  type Anim, type Ambient, type DesignContent, type FontKey, type Layout, type PaletteKey, type PlayData, type Slide, type Speed, type Sticker, type StickerAnim,
+  ANIMS, DAY_NAMES, FONTS, LAYOUTS, PALETTES, STICKER_ANIMS, TRANSITIONS, boardOf, newBlock, newId, newSlide, normalize, slideItems,
+  type Anim, type Ambient, type BoardBlock, type BoardColumn, type DesignContent, type FontKey, type Layout, type PaletteKey, type PlayData, type Slide, type Speed, type Sticker, type StickerAnim,
   type Theme, type Transition,
 } from "@/lib/signage";
 import { withBase } from "@/lib/base-path";
@@ -212,7 +212,8 @@ function IconBtn({ label, onClick, disabled, children }: { label: string; onClic
 
 function slideLabel(s: Slide, data: PlayData | null) {
   const item = s.itemId ? data?.items.find((i) => i.id === s.itemId) : null;
-  return s.title || item?.name || s.kicker || LAYOUTS[s.layout].label;
+  const board = s.layout === "board" ? s.board?.cols?.map((c) => c.blocks?.[0]?.title).filter(Boolean).join(" · ") : "";
+  return s.title || board || item?.name || s.kicker || LAYOUTS[s.layout].label;
 }
 
 const num = (v: string) => (v.trim() === "" ? null : Number(v));
@@ -243,7 +244,7 @@ function SlidePanel({ s, set, data, media, companyId, onMedia, sticker, setStick
           </Field>
         )}
         {(L === "hero" || L === "offer" || L === "fresh" || L === "zoom") && <Field label="Small heading"><Input value={s.kicker ?? ""} onChange={(e) => set({ kicker: e.target.value })} maxLength={50} /></Field>}
-        {L !== "story" && <Field label={L === "hero" || L === "zoom" || L === "kinetic" ? "Title (empty: the item's name)" : L === "media" ? "Caption" : L === "versus" ? "Question at the top" : "Title"}><Input value={s.title ?? ""} onChange={(e) => set({ title: e.target.value })} maxLength={60} /></Field>}
+        {L !== "story" && L !== "board" && <Field label={L === "hero" || L === "zoom" || L === "kinetic" ? "Title (empty: the item's name)" : L === "media" ? "Caption" : L === "versus" ? "Question at the top" : "Title"}><Input value={s.title ?? ""} onChange={(e) => set({ title: e.target.value })} maxLength={60} /></Field>}
         {CLASSIC.includes(L) && L !== "media" && <Field label="Title in Arabic"><Input dir="rtl" value={s.titleAr ?? ""} onChange={(e) => set({ titleAr: e.target.value })} maxLength={60} /></Field>}
         {(L === "offer" || L === "media" || L === "kinetic") && <Field label="Text"><Textarea value={s.text ?? ""} onChange={(e) => set({ text: e.target.value })} maxLength={160} rows={2} /></Field>}
       </Section>
@@ -358,6 +359,8 @@ function SlidePanel({ s, set, data, media, companyId, onMedia, sticker, setStick
         </Section>
       )}
 
+      {L === "board" && <BoardEdit s={s} set={set} data={data} media={media} companyId={companyId} onMedia={onMedia} />}
+
       {L === "media" && (
         <Section title="Picture or video">
           <MediaPick label="Shown full screen" value={s.mediaId ?? null} media={media} companyId={companyId} set={(mediaId) => set({ mediaId })} onMedia={onMedia} />
@@ -419,6 +422,57 @@ function SlidePanel({ s, set, data, media, companyId, onMedia, sticker, setStick
           </>
         )}
       </Section>
+    </>
+  );
+}
+
+/** Menu board: the two colours, then each column: light or dark, its picture, and one or two headings with their items. */
+function BoardEdit({ s, set, data, media, companyId, onMedia }: {
+  s: Slide; set: (p: Partial<Slide>) => void; data: PlayData | null; media: MediaRow[]; companyId: string | null; onMedia: () => void;
+}) {
+  const b = boardOf(s);
+  const setCol = (i: number, p: Partial<BoardColumn>) => set({ board: { ...b, cols: b.cols.map((c, k) => (k === i ? { ...c, ...p } : c)) } });
+  const setBlock = (i: number, j: number, p: Partial<BoardBlock>) => setCol(i, { blocks: b.cols[i].blocks.map((x, k) => (k === j ? { ...x, ...p } : x)) });
+  return (
+    <>
+      <Section title="Board colours">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1 text-xs text-muted-foreground"><span className="block">Light</span>
+            <input type="color" value={b.light} onChange={(e) => set({ board: { ...b, light: e.target.value } })} className="h-8 w-full cursor-pointer rounded border" /></label>
+          <label className="space-y-1 text-xs text-muted-foreground"><span className="block">Dark</span>
+            <input type="color" value={b.dark} onChange={(e) => set({ board: { ...b, dark: e.target.value } })} className="h-8 w-full cursor-pointer rounded border" /></label>
+        </div>
+      </Section>
+      {b.cols.map((c, i) => (
+        <Section key={i} title={`Column ${i + 1}`}>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Colour"><Segmented id={`bdc-${s.id}-${i}`} size="sm" value={c.dark ? "dark" : "light"} onChange={(v) => setCol(i, { dark: v === "dark" })} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} /></Field>
+            <Field label="Picture"><Segmented id={`bdp-${s.id}-${i}`} size="sm" value={c.picture} onChange={(picture) => setCol(i, { picture })} options={[{ value: "top", label: "Top" }, { value: "bottom", label: "Bottom" }, { value: "none", label: "None" }]} /></Field>
+          </div>
+          {c.picture !== "none" && <MediaPick label="Picture or video" value={c.mediaId} media={media} companyId={companyId} set={(mediaId) => setCol(i, { mediaId })} onMedia={onMedia} />}
+          {c.blocks.map((bl, j) => (
+            <div key={j} className="space-y-3 rounded-lg border p-3">
+              <Field label="Heading"><Input value={bl.title} onChange={(e) => setBlock(i, j, { title: e.target.value })} maxLength={40} /></Field>
+              <Segmented id={`bds-${s.id}-${i}-${j}`} size="sm" value={bl.source} onChange={(source) => setBlock(i, j, { source })} options={[{ value: "category", label: "A category" }, { value: "items", label: "Pick items" }]} />
+              {bl.source === "category" ? (
+                <select className={selectClass} value={bl.categoryId ?? ""} aria-label="Category" onChange={(e) => {
+                  const cat = data?.categories.find((x) => x.id === e.target.value);
+                  setBlock(i, j, { categoryId: e.target.value || null, ...(cat && !bl.title ? { title: cat.name } : {}) });
+                }}>
+                  <option value="">Choose…</option>
+                  {data?.categories.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              ) : (
+                <ItemsPick ids={bl.itemIds} data={data} max={bl.show === "photos" ? 6 : 14} set={(itemIds) => setBlock(i, j, { itemIds })} />
+              )}
+              <Field label="Show as"><Segmented id={`bdv-${s.id}-${i}-${j}`} size="sm" value={bl.show} onChange={(show) => setBlock(i, j, { show })} options={[{ value: "list", label: "Price list" }, { value: "photos", label: "Item photos" }]} /></Field>
+              {j > 0 && <Button variant="ghost" size="sm" onClick={() => setCol(i, { blocks: c.blocks.filter((_, k) => k !== j) })}><Trash2Icon />Remove this heading</Button>}
+            </div>
+          ))}
+          {c.blocks.length < 2 && <Button variant="outline" size="sm" className="w-full" onClick={() => setCol(i, { blocks: [...c.blocks, newBlock()] })}><PlusIcon />Add a second heading</Button>}
+        </Section>
+      ))}
+      <p className="text-xs text-muted-foreground">Prices come from the menu. Item photos show up to 6 items, a price list up to 14. The picture takes the space the items leave; text that doesn&apos;t fit is made smaller.</p>
     </>
   );
 }

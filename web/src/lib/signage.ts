@@ -4,7 +4,7 @@
  */
 
 export type Layout = "hero" | "offer" | "grid" | "list" | "fresh" | "media"
-  | "zoom" | "kinetic" | "flash" | "top5" | "combo" | "neon" | "polaroid" | "versus" | "story";
+  | "zoom" | "kinetic" | "flash" | "top5" | "combo" | "neon" | "polaroid" | "versus" | "story" | "board";
 export type Anim = "rise" | "fade" | "zoom" | "slide" | "pop" | "blur" | "none";
 export type Speed = "slow" | "normal" | "fast";
 export type Transition = "flash" | "fade" | "slide" | "zoom" | "none";
@@ -19,6 +19,12 @@ export type Schedule = { days: number[]; from: string; to: string };
 export type StickerAnim = "none" | "float" | "spin" | "pulse" | "swing";
 /** A picture placed on a slide: its centre (x, y) and width in % of the screen; r = height / width of the picture. */
 export type Sticker = { id: string; mediaId: string; x: number; y: number; w: number; r: number; rotate: number; anim: StickerAnim };
+
+/** Menu board: one heading in a column, with its items as a price list or as photo tiles. */
+export type BoardBlock = { title: string; source: "category" | "items"; categoryId: string | null; itemIds: string[]; show: "list" | "photos" };
+/** Menu board: one of the three columns: light or dark, a picture at its top or bottom (or none), one or two headings. */
+export type BoardColumn = { dark: boolean; picture: "top" | "bottom" | "none"; mediaId: string | null; blocks: BoardBlock[] };
+export type Board = { light: string; dark: string; cols: BoardColumn[] };
 
 export type Slide = {
   id: string;
@@ -61,6 +67,8 @@ export type Slide = {
   mediaId?: string | null;
   /** Pictures placed on top of the slide. */
   stickers?: Sticker[];
+  /** Menu board: its colours and three columns. */
+  board?: Board;
 };
 
 export type Theme = {
@@ -116,7 +124,22 @@ export const LAYOUTS: Record<Layout, { label: string; hint: string }> = {
   polaroid: { label: "Polaroid wall", hint: "Up to 4 items as pinned photos with price tags" },
   versus: { label: "This or that", hint: "Two items side by side with a pulsing VS" },
   story: { label: "Story cards", hint: "Up to 3 items, one after another, like social media stories" },
+  board: { label: "Menu board", hint: "Three columns, light and dark, with headings, prices, item photos and a picture in each" },
 };
+
+export const newBlock = (categoryId: string | null = null, title = "", show: BoardBlock["show"] = "list"): BoardBlock =>
+  ({ title, source: "category", categoryId, itemIds: [], show });
+
+/** A menu board with every part filled in (an older or hand-made slide may lack some). */
+export function boardOf(s: Slide): Board {
+  const b = s.board;
+  const cols = [0, 1, 2].map((i): BoardColumn => {
+    const c = b?.cols?.[i];
+    return { dark: c?.dark ?? i === 1, picture: c?.picture ?? "none", mediaId: c?.mediaId ?? null,
+      blocks: c?.blocks?.length ? c.blocks.slice(0, 2).map((x) => ({ ...newBlock(), ...x })) : [newBlock()] };
+  });
+  return { light: b?.light || "#fbf3e6", dark: b?.dark || "#4a3328", cols };
+}
 
 export const STICKER_ANIMS: Record<StickerAnim, string> = { none: "Still", float: "Float", spin: "Spin", pulse: "Pulse", swing: "Swing" };
 
@@ -173,6 +196,17 @@ export function newSlide(layout: Layout, data?: PlayData | null): Slide {
       return { ...base, title: "WHICH TEAM ARE YOU?", itemIds: top.slice(0, 2).map((i) => i.id), badge: "VS", seconds: 9 };
     case "story":
       return { ...base, itemIds: top.slice(0, 3).map((i) => i.id), seconds: 12 };
+    case "board": {
+      // Three categories; the one with the most item photos shows them as tiles.
+      const withPhotos = (id: string) => priced.filter((i) => i.categoryId === id && i.imageAt).length;
+      const three = cats.slice(0, 3);
+      const tiles = three.reduce((best, c, k) => (withPhotos(c.id) > (best < 0 ? 0 : withPhotos(three[best].id)) ? k : best), -1);
+      const cols = [0, 1, 2].map((k): BoardColumn => ({
+        dark: k === 1, picture: "none", mediaId: null,
+        blocks: [newBlock(three[k]?.id ?? null, three[k]?.name ?? "", k === tiles ? "photos" : "list")],
+      }));
+      return { ...base, animation: "none", seconds: 15, board: { light: "#fbf3e6", dark: "#4a3328", cols } };
+    }
   }
 }
 
