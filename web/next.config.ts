@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
   output: process.env.NEXT_STANDALONE === "1" ? "standalone" : undefined,
   // The web address prefix on the servers (/onepos, /onepos-test; empty locally); hand-built URLs use lib/base-path.ts.
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || undefined,
-  experimental: { turbopackFileSystemCacheForDev: false },
+  // The proxy cuts request bodies at 10 MB by default; TV videos can be up to 25 MB (the API checks the real limits).
+  experimental: { turbopackFileSystemCacheForDev: false, proxyClientMaxBodySize: "30mb" },
   async rewrites() {
     return [
       { source: "/api/:path*", destination: `${apiUrl}/api/:path*` },
