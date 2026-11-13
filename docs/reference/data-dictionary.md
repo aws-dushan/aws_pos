@@ -2055,7 +2055,7 @@ Indexes:
 
 ### signage_media
 
-RLS · 7 columns · primary key (id)
+RLS · 8 columns · primary key (id)
 
 | Column | Type | Length | Null | Default | Key | Allowed values |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -2066,11 +2066,12 @@ RLS · 7 columns · primary key (id)
 | `name` | text | no limit | yes |  |  |  |
 | `bytes` | bigint | 8 bytes | no |  |  |  |
 | `created_at` | timestamptz | 8 bytes | no | now() |  |  |
+| `branch_id` | uuid | 16 bytes | no |  | FK → branch |  |
 
 Indexes:
 
 - `(id)` primary key
-- `(company_id, created_at)`
+- `(branch_id, created_at)`
 
 ### signage_pairing
 

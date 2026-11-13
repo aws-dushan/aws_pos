@@ -118,7 +118,8 @@ public static class Signage
                     select g.id, g.branch_id, g.name, g.updated_at, (select count(*)::int from signage_screen s where s.design_id = g.id) as screens
                     from signage_design g where g.branch_id is null or g.branch_id = @b order by g.name
                     """, new { b = scope.Branch }, tx),
-                media = await c.QueryAsync<MediaRow>("select id, kind, name, bytes, created_at from signage_media order by created_at desc", transaction: tx),
+                // Pictures and videos are per branch: only this branch's uploads.
+                media = await c.QueryAsync<MediaRow>("select id, kind, name, bytes, created_at from signage_media where branch_id = @b order by created_at desc", new { b = scope.Branch }, tx),
             });
         });
 
@@ -235,11 +236,12 @@ public static class Signage
             return Results.Ok(new { id });
         });
 
-        // Pictures (JPEG, PNG, WebP up to 5 MB) and videos (MP4 or WebM up to 25 MB) for designs.
+        // Pictures (JPEG, PNG, WebP up to 5 MB) and videos (MP4 or WebM up to 25 MB) for designs; they belong to the header branch.
         api.MapPost("/signage/media", async (IFormFile file, HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
             scope.Require("branch.manage");
+            var branch = scope.Branch;
             if (file.Length == 0) throw new DomainException("The file is empty.");
             if (file.Length > MaxVideo) throw new DomainException("A video can be at most 25 MB, a picture 5 MB.");
             await using var ms = new MemoryStream();
@@ -255,9 +257,9 @@ public static class Signage
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var row = await c.QuerySingleAsync<MediaRow>("""
-                    insert into signage_media (company_id, file, kind, name, bytes) values (@co, @name, @kind, @label, @len) returning id, kind, name, bytes, created_at
-                    """, new { co = scope.CompanyId, name, kind, label = Cut(Path.GetFileNameWithoutExtension(file.FileName), 80), len = (long)bytes.Length }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.BranchId, scope.UserId, "signage_media", row.Id.ToString(), "created", kind == "video" ? "TV video added" : "TV picture added");
+                    insert into signage_media (company_id, branch_id, file, kind, name, bytes) values (@co, @b, @name, @kind, @label, @len) returning id, kind, name, bytes, created_at
+                    """, new { co = scope.CompanyId, b = branch, name, kind, label = Cut(Path.GetFileNameWithoutExtension(file.FileName), 80), len = (long)bytes.Length }, tx);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, branch, scope.UserId, "signage_media", row.Id.ToString(), "created", kind == "video" ? "TV video added" : "TV picture added");
                 return row;
             });
         }).DisableAntiforgery();
@@ -268,8 +270,8 @@ public static class Signage
             scope.Require("branch.manage");
             var file = await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var f = await c.ExecuteScalarAsync<string?>("delete from signage_media where id = @id returning file", new { id }, tx) ?? throw new NotFoundException("Picture not found.");
-                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.BranchId, scope.UserId, "signage_media", id.ToString(), "deleted", "TV picture or video removed");
+                var f = await c.ExecuteScalarAsync<string?>("delete from signage_media where id = @id and branch_id = @b returning file", new { id, b = scope.Branch }, tx) ?? throw new NotFoundException("Picture not found.");
+                await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "signage_media", id.ToString(), "deleted", "TV picture or video removed");
                 return f;
             });
             ItemImages.TryDelete(Path.Combine(root, scope.CompanyId.ToString("N"), file));

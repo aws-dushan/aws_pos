@@ -347,11 +347,11 @@
 | GET | `/api/public/device-service/latest` |  | src/OnePos.Api/Platform/DeviceReleases.cs:16 |
 | GET | `/api/public/receipts/{token}` |  | src/OnePos.Api/Pos/PublicReceipts.cs:14 |
 | GET | `/api/public/receipts/{token}/logo` |  | src/OnePos.Api/Pos/Branding.cs:163 |
-| GET | `/api/public/signage/items/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:386 |
-| GET | `/api/public/signage/logo/{branchId:guid}` |  | src/OnePos.Api/Pos/Signage.cs:393 |
-| GET | `/api/public/signage/media/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:379 |
-| POST | `/api/public/signage/pair` |  | src/OnePos.Api/Pos/Signage.cs:320 |
-| GET | `/api/public/signage/play` |  | src/OnePos.Api/Pos/Signage.cs:348 |
+| GET | `/api/public/signage/items/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:388 |
+| GET | `/api/public/signage/logo/{branchId:guid}` |  | src/OnePos.Api/Pos/Signage.cs:395 |
+| GET | `/api/public/signage/media/{id:guid}` |  | src/OnePos.Api/Pos/Signage.cs:381 |
+| POST | `/api/public/signage/pair` |  | src/OnePos.Api/Pos/Signage.cs:322 |
+| GET | `/api/public/signage/play` |  | src/OnePos.Api/Pos/Signage.cs:350 |
 
 ## recipes
 
@@ -433,17 +433,17 @@
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
 | GET | `/api/signage` | branch.manage | src/OnePos.Api/Pos/Signage.cs:104 |
-| POST | `/api/signage/designs` | branch.manage | src/OnePos.Api/Pos/Signage.cs:149 |
-| DELETE | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:187 |
-| GET | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:139 |
-| PUT | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:166 |
-| PUT | `/api/signage/enabled` | branch.manage | src/OnePos.Api/Pos/Signage.cs:125 |
-| POST | `/api/signage/media` | branch.manage | src/OnePos.Api/Pos/Signage.cs:239 |
-| DELETE | `/api/signage/media/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:265 |
-| GET | `/api/signage/preview-data` | branch.manage | src/OnePos.Api/Pos/Signage.cs:280 |
-| POST | `/api/signage/screens` | branch.manage | src/OnePos.Api/Pos/Signage.cs:288 |
-| DELETE | `/api/signage/screens/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:224 |
-| PUT | `/api/signage/screens/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:201 |
+| POST | `/api/signage/designs` | branch.manage | src/OnePos.Api/Pos/Signage.cs:150 |
+| DELETE | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:188 |
+| GET | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:140 |
+| PUT | `/api/signage/designs/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:167 |
+| PUT | `/api/signage/enabled` | branch.manage | src/OnePos.Api/Pos/Signage.cs:126 |
+| POST | `/api/signage/media` | branch.manage | src/OnePos.Api/Pos/Signage.cs:240 |
+| DELETE | `/api/signage/media/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:267 |
+| GET | `/api/signage/preview-data` | branch.manage | src/OnePos.Api/Pos/Signage.cs:282 |
+| POST | `/api/signage/screens` | branch.manage | src/OnePos.Api/Pos/Signage.cs:290 |
+| DELETE | `/api/signage/screens/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:225 |
+| PUT | `/api/signage/screens/{id:guid}` | branch.manage | src/OnePos.Api/Pos/Signage.cs:202 |
 
 ## stock
 

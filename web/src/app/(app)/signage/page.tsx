@@ -231,7 +231,7 @@ function Media({ media, companyId, reload }: { media: MediaRow[]; companyId: str
       <div className="flex items-center justify-between gap-3 border-b px-5 py-3">
         <div>
           <h2 className="font-heading text-[0.95rem] font-semibold">Pictures and videos</h2>
-          <p className="text-xs text-muted-foreground">For backgrounds, offers and full-screen slides. Pictures up to 5 MB, MP4 or WebM videos up to 25 MB.</p>
+          <p className="text-xs text-muted-foreground">This branch's own, for backgrounds, offers and full-screen slides. Pictures up to 5 MB, MP4 or WebM videos up to 25 MB.</p>
         </div>
         <UploadButton onDone={reload} />
       </div>
