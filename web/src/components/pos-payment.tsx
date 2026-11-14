@@ -334,8 +334,9 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
   const paidDoc = !!o.invoiceNo && !voided;
   // A future order still waiting: an advance receipt (the tax invoice is made when it's collected).
   const advanceDoc = o.futureStatus === "waiting" && !voided;
-  const out = receiptHead(r, voided ? "VOID · NOT A TAX INVOICE" : paidDoc ? "TAX INVOICE" : advanceDoc ? "ADVANCE RECEIPT · NOT A TAX INVOICE" : "BILL · NOT PAID YET",
+  const out = receiptHead(r, voided ? "VOID · NOT A TAX INVOICE" : paidDoc ? "TAX INVOICE" : advanceDoc ? "ADVANCE RECEIPT" : "BILL · NOT PAID YET",
     voided ? "فاتورة ملغاة" : paidDoc ? AR.taxInvoice : advanceDoc ? "إيصال دفعة مقدمة" : AR.bill);
+  if (advanceDoc) out.push({ text: "NOT A TAX INVOICE", align: "center", bold: true, size: "small" });
   if (r.receiptHeader) for (const t of r.receiptHeader.split("\n")) out.push({ text: t, align: "center", size: "small" });
   // Ref#: the invoice's serial (EBQS-00123 -> 00123, INV-EB-QS-000123 -> 000123); a future order waiting, its FO number; a bill not paid yet, the order's number.
   const serial = o.invoiceNo?.match(/-(\d+)$/)?.[1] ?? o.invoiceNo?.match(/(\d{6})$/)?.[1];

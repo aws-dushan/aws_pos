@@ -68,7 +68,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 | Wastage approved | `wastage` | **STV50** location → wastage location, FIFO batches | `usp_ONEPOS_PostWastageTransfer` (or draft `usp_ONEPOS_SaveWastageTransfer`) | Approver's FACTS user |
 | Return to store approved, check-in shortfall | `return` | **STV50** back to the origin location | `usp_ONEPOS_PostWastageTransfer` | Approver's FACTS user |
 | Marketing give-away approved | `marketing` | **MCV50** to the marketing expense account at batch cost | `usp_ONEPOS_PostConsumption` | Marketing FACTS user |
-| Future order's advance taken | `advance` | **QRV51** posted ("Others" mode): Dr the payment method's account / Cr **2802 POS CUSTOMER ADVANCES** (its sub-ledger), Ref no `ADV-<branch>-000001`. The bill on collection is a normal POS51 paid by **ADVANCE** plus the balance, sent only once its advances are posted, and linked to them both ways (POS51 `SAL_REFNO2`, QRV51 `QRP_BEFORE_DOCTYPE/DOCNO`). An advance given back on cancelling is not posted (finance books it) | `usp_ONEPOS_PostAdvance` | POSBAKERY |
+| Future order's advance taken | `advance` | **QRV51** posted: net Dr the payment method's account (card 2315, the outlet's cash) / Cr **2802 POS CUSTOMER ADVANCES**, Ref no `ADV-<branch>-000001`. The bill on collection is a normal POS51 paid by **ADVANCE** plus the balance, sent only once its advances are posted, and linked to them both ways (POS51 `SAL_REFNO2`, QRV51 `QRP_BEFORE_DOCTYPE/DOCNO`). An advance given back on cancelling is not posted (finance books it) | `usp_ONEPOS_PostAdvance` | POSBAKERY |
 | Stock request approved | `request` | **STR50** store → outlet | `usp_ONEPOS_PostTransferRequest` | Approver's FACTS user |
 | Prices posted (Prices page, not queued: posted at once, `Pos/Prices.cs`) | — | **OSMPI** outlet price import (the branch's price type, written to STOCK_PRICE by FACTS' own `usp_SIT_XLSTOCKPRICE_INSERT`) and one **CPL50** customer price list per platform at the branch's platform price location, changed items only, valid from today to 31 Dec 2030; FACTS' OSMPI check answers rows with a column twice (DFESDET_MESSAGE), so replies are read first-column-wins; once posted, the page answers at once and the prices are read back from FACTS in the background (the till and the page reload on `menu.changed`) | `usp_ONEPOS_PostPrices` | Branch's FACTS user for price posting |
 
@@ -144,8 +144,19 @@ a normal payment instead (the bill is rebuilt). The bill's XML also carries `Fut
 numbers), which `usp_ONEPOS_SaveInvoice` uses to link the POS51 and its QRV51s. Advances given back when an order is cancelled
 are not posted. A collected future order's bill returned whole: the credit note refunds only the balance, the PSR51 (a copy of
 the POS51) puts the ADVANCE part back on 2802, and the order goes back to waiting as a new order (same FO number) that takes over
-the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAsync`); its next bill is paid by ADVANCE again. What FACTS needs set up first (the ADVANCE sign, a sub-ledger on 2802) is in
+the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAsync`); its next bill is paid by ADVANCE again. What FACTS needs set up first (the ADVANCE sign, and QRV51 able to credit 2802) is in
 [FACTS changes for future-order advances](reference/facts-future-order-advances.md).
+
+![FACTS posting: future orders' advances as QRV51 (procedure usp_ONEPOS_PostAdvance)](manual/images/tech-facts-advances.jpg)
+
+![The posting log of a branch: each advance (ADV-…) queued as it was taken, and the collected bill's POS51 waiting for them](manual/images/tech-facts-advances-log.jpg)
+
+| Step | FACTS document | 2802 POS customer advances |
+| --- | --- | --- |
+| Advance 200 by Visa | QRV51: net Dr 2315 200 / Cr 2802 200 (two lines with 2802 as the party, or four through AR C0006, as the FACTS developer sets QRV51 up), Ref no ADV-…; links to its POS51 later in `QRP_BEFORE_DOCTYPE/DOCNO` | 200 held |
+| Collected, bill 500 | POS51: receipts ADVANCE 200 (Dr 2802) + Visa 300 (Dr 2315), Cr AR/C0006 500; `SAL_REFNO2` = FO-… advances QRV51 … | 0 |
+| Bill returned | PSR51 (copy of the POS51): ADVANCE 200 back (Cr 2802), Visa 300 back | 200 held again |
+| Collected again | New POS51 paid by ADVANCE again | 0 |
 
 ## Changing anything in FACTS
 

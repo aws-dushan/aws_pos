@@ -233,16 +233,45 @@ The whole bill is returned: each payment goes back the way it was paid, the item
 
 An order for a later day (a cake for Saturday): the customer pays an advance now and the rest when they collect. **Future orders** is in the main menu where the branch has it switched on (Companies & branches).
 
-1. Tap **New future order**. Enter the customer's name and phone, **Collected** or **Delivered** (with the address), the date and time, and a note (e.g. the writing on the cake). Tap **Next: items**.
-2. The register opens with the order. Add the items, then tap **Take advance**. Take any amount up to the total, by any payment method, split if needed, as on any bill. The advance receipt prints: it shows the future order number (FO-…), when it is collected, the advance and the balance. It is not a tax invoice.
-3. The order waits on **Future orders** under **Today**, **Tomorrow**, **Overdue** or **All open**. It is not among the register's open orders. Use **Items & advance** to change the items or take more, **Send** to send it to the kitchen, **Ready** when it is made, and ✎ for another date or note.
-4. When the customer comes, tap **Collect**. With a balance, the register opens to take it as on any bill. Paid in full, tap **Hand over**: the tax invoice prints at once.
+![Future orders: each order with its collection time, FO number, advance and balance](images/future-orders.jpg)
 
-The advance counts in the shift and day it was taken; the balance in the day it is collected. The tax invoice is dated the collection day and shows each advance with its date.
+1. Tap **New future order**. Enter the customer's name and phone, **Collected** or **Delivered** (with the address), the date and time, and a note (e.g. the writing on the cake). Tap **Next: items**.
+
+   ![A new future order](images/future-new.jpg)
+
+2. The register opens with the order: the band at the top shows its FO number and when it is collected. Add the items, then tap **Take advance**.
+
+   ![The register with a future order: payments here are advances](images/future-register.jpg)
+
+3. Take any amount up to the total, by any payment method, split if needed, as on any bill.
+
+   ![Taking an advance](images/future-advance.jpg)
+
+   The advance receipt prints: the future order number (FO-…), when it is collected, each advance with its number (ADV-…) and the balance due. It is not a tax invoice.
+
+   ![The advance receipt](images/future-receipt.jpg)
+
+4. The order waits on **Future orders** under **Today**, **Tomorrow**, **Overdue** or **All open**. It is not among the register's open orders. Use **Items & advance** to change the items or take more, **Send** to send it to the kitchen, **Ready** when it is made, ✎ for another date or note, and the receipt button to print the advance receipt again.
+5. When the customer comes, tap **Collect**. With a balance, the register opens to take it as on any bill. Paid in full, tap **Hand over**: the tax invoice prints at once.
+
+   ![Collecting an order paid in full](images/future-collect.jpg)
+
+The advance counts in the shift and day it was taken; the balance in the day it is collected. The tax invoice is dated the collection day and shows each advance with its date and number, then the balance as paid.
+
+![The tax invoice on collection: the advance, then the balance](images/future-invoice.jpg)
 
 **Cancel** (⊘): give a reason. Each advance goes back the way it was paid (cash from your drawer, a card back to the card, a voucher as a new voucher) and the order is voided. As with returning a bill, an advance taken on an earlier day needs a manager.
 
 **Return after collection** (Orders → **Return**, the whole bill only): the bill is returned and only what was paid at collection goes back to the customer. The advance stays: the order goes back to **Future orders** as waiting, with the same FO number, items and advance, to be collected again (change the date with ✎).
+
+**In FACTS** (where the company posts advances, see FACTS posting):
+
+| When | In FACTS |
+| --- | --- |
+| An advance is taken | A posted QRV51 for it: the cash or card account in, POS CUSTOMER ADVANCES (2802) out |
+| The order is collected | The bill (POS51) paid by **ADVANCE** (all its advances together) plus the balance as paid; the bill and its QRV51s show each other's numbers |
+| The collected bill is returned | The return (PSR51) puts the advance back on 2802; the next collection takes it off again |
+| The order is cancelled | Nothing is sent: finance books the refund in FACTS |
 
 ## Cash in and out
 
@@ -552,6 +581,8 @@ Key branch settings:
 
 ![A branch's settings](images/branch-settings.jpg)
 
+![The Future orders switch in a branch's settings](images/future-switch.jpg)
+
 Table service cannot be switched off while dine-in orders are open.
 
 ## FACTS connection
@@ -583,9 +614,14 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 | --- | --- |
 | Post to FACTS | The master switch (off by default). Off: bills wait in the queue. |
 | Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50), future orders' advances (not posted, or QRV51 to advances) |
+| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. The log lists them as **Advance ADV-…**. Needs FACTS set up first by the FACTS developer (the ADVANCE payment method, and QRV51 able to credit 2802). |
 | Branches | Queue counts per branch and the **Posts from** date. The old POS and One POS must never post the same day for a branch. |
 | Dry run | A day's bills as they would go, with any problems; nothing is sent. |
 | Posting log | **All / Failed / Waiting / Posted**; **Push now**, **Re-push failed**, per row **Re-push** or **Leave out** (finance then enters it by hand). |
+
+![FACTS posting: future orders' advances as QRV51](images/tech-facts-advances.jpg)
+
+![The posting log: the advances, then the bill (POS51) that waits for them](images/tech-facts-advances-log.jpg)
 
 ## Delivery platforms
 
