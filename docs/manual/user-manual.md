@@ -229,6 +229,21 @@ An approval covers that one action, once, within 15 minutes. You cannot approve 
 
 The whole bill is returned: each payment goes back the way it was paid, the items go back on stock, and a tax credit note is made (open it from the **Credit note** button). The same business day needs no approval; an earlier day needs a manager. A bill already partly refunded cannot be returned again.
 
+## Future orders
+
+An order for a later day (a cake for Saturday): the customer pays an advance now and the rest when they collect. **Future orders** is in the main menu where the branch has it switched on (Companies & branches).
+
+1. Tap **New future order**. Enter the customer's name and phone, **Collected** or **Delivered** (with the address), the date and time, and a note (e.g. the writing on the cake). Tap **Next: items**.
+2. The register opens with the order. Add the items, then tap **Take advance**. Take any amount up to the total, by any payment method, split if needed, as on any bill. The advance receipt prints: it shows the future order number (FO-…), when it is collected, the advance and the balance. It is not a tax invoice.
+3. The order waits on **Future orders** under **Today**, **Tomorrow**, **Overdue** or **All open**. It is not among the register's open orders. Use **Items & advance** to change the items or take more, **Send** to send it to the kitchen, **Ready** when it is made, and ✎ for another date or note.
+4. When the customer comes, tap **Collect**. With a balance, the register opens to take it as on any bill. Paid in full, tap **Hand over**: the tax invoice prints at once.
+
+The advance counts in the shift and day it was taken; the balance in the day it is collected. The tax invoice is dated the collection day and shows each advance with its date.
+
+**Cancel** (⊘): give a reason. Each advance goes back the way it was paid (cash from your drawer, a card back to the card, a voucher as a new voucher) and the order is voided. As with returning a bill, an advance taken on an earlier day needs a manager.
+
+**Return after collection** (Orders → **Return**, the whole bill only): the bill is returned and only what was paid at collection goes back to the customer. The advance stays: the order goes back to **Future orders** as waiting, with the same FO number, items and advance, to be collected again (change the date with ✎).
+
 ## Cash in and out
 
 With your shift open, tap **Cash in / out**, pick a tab, a reason, the amount, then **Record**.
@@ -530,6 +545,7 @@ Key branch settings:
 | Kitchen | Off for a café or counter: no Send, no tickets, no kitchen display |
 | Day open and close | Manual, Automatic (opens at, closes at, delays for waiting customers), Cashier-run; orders still open at day close |
 | Returns | On or off; **Returns accepted for (days)**, 0 = the same day |
+| Future orders | On or off: the **Future orders** page. It can be switched off only when no future order is waiting. |
 | Discount approval email | Where approval codes are emailed |
 | Wastage approval, Marketing, Stock requests | Approver, email and FACTS username (FACTS companies) |
 | Price posting | The FACTS user prices from the **Prices** page are posted as; it must be allowed to post OSMPI and CPL50 in FACTS (FACTS companies) |
@@ -566,7 +582,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 | Part | What it does |
 | --- | --- |
 | Post to FACTS | The master switch (off by default). Off: bills wait in the queue. |
-| Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50) |
+| Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50), future orders' advances (not posted, or QRV51 to advances) |
 | Branches | Queue counts per branch and the **Posts from** date. The old POS and One POS must never post the same day for a branch. |
 | Dry run | A day's bills as they would go, with any problems; nothing is sent. |
 | Posting log | **All / Failed / Waiting / Posted**; **Push now**, **Re-push failed**, per row **Re-push** or **Leave out** (finance then enters it by hand). |
@@ -688,6 +704,7 @@ Most messages say what to do. The ones staff ask about most:
 | That code doesn't work | The code is wrong, used, for another order or a smaller discount, or older than 24 hours. Ask for a new one. |
 | Choose the card type. | Pick VISA, MASTER etc. before paying by card. |
 | Returns are switched off for this branch | An administrator switches Returns on under Companies & branches. |
+| Future orders are switched off for this branch | An administrator switches Future orders on under Companies & branches. |
 | Only a manager returns a bill from an earlier day | Ask a manager, or use Manager approval. |
 | No receipt printer chosen on this till | Choose one under Devices → Receipt printer. |
 | The One POS Device Service isn't running on this till | Restart the PC or install it from Devices. Receipts meanwhile open in the browser's print window. |

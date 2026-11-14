@@ -47,7 +47,7 @@ public static class Dashboard
                     """, args, tx)).ToList();
                 var open = await c.QuerySingleAsync<(int Count, decimal Value)>("""
                     select count(*)::int, coalesce(sum(total), 0) from pos_order
-                    where branch_id = @branchId and status = 'open' and (@reg is null or register_id = @reg)
+                    where branch_id = @branchId and status = 'open' and future_status is distinct from 'waiting' and (@reg is null or register_id = @reg)
                     """, args, tx);
                 var voids = await c.QuerySingleAsync<(int Count, decimal Value)>("""
                     select count(*)::int, coalesce(sum(total), 0) from pos_order

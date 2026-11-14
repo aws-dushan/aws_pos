@@ -20,7 +20,7 @@ namespace OnePos.Api.Erp;
 /// </summary>
 public static partial class FactsPosting
 {
-    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null);
+    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null, string? Advances = null);
 
     /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostReturn.sql): a whole bill's return as a POSTED PSR51, a copy of its POS51.</summary>
     public const string PostReturnProc = "usp_ONEPOS_PostReturn";
@@ -38,6 +38,14 @@ public static partial class FactsPosting
     /// USER_MASTER). POSBAKERY is the user FACTS already puts on every POS bill.
     /// </summary>
     public const string WastageUser = "POSBAKERY";
+
+    /// <summary>
+    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvance.sql): a future order's advance as a posted QRV51
+    /// (Dr the payment method's account, Cr 2802 POS CUSTOMER ADVANCES). Advances given back aren't posted (finance books them).
+    /// </summary>
+    public const string PostAdvanceProc = "usp_ONEPOS_PostAdvance";
+    /// <summary>FACTS' payment method a bill uses to take its advance off 2802 (PAYMENT_METHOD ADVANCE).</summary>
+    public const string AdvanceMode = "ADVANCE";
 
     /// <summary>FACTS' own procedure for a POS bill (the outlet POS uses it): the sale, no batches.</summary>
     public const string StandardInvoiceProc = "usp_FQAPI_PWA_POS_SaveInvoice";
@@ -191,26 +199,26 @@ public static partial class FactsPosting
                     : ps.Count == 1 && p.Name == l.Name ? $"Combo {l.Name} has no chosen item to send to FACTS."
                     : $"{p.Name} in combo {l.Name} isn't a FACTS item (no item code).");
         var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @BranchId", new { o.BranchId }, tx)).ToList();
-        var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType)>(
-            "select method, amount, card_type from payment where order_id = @orderId and kind = 'payment' order by at", new { orderId }, tx)).ToList();
+        // A future order's advances that went to FACTS (QRV51) are taken off there by ADVANCE, in one receipt line; any other
+        // payment (the balance, or advances taken before advances were posted) goes as itself.
+        var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType, bool Posted, string? AdvanceNo)>("""
+            select p.method, p.amount, p.card_type,
+                   p.is_advance and exists (select 1 from erp_post e where e.payment_id = p.id and e.kind = 'advance' and e.status <> 'skipped'), p.advance_no
+            from payment p where p.order_id = @orderId and p.kind = 'payment' order by p.at
+            """, new { orderId }, tx)).ToList();
+        // A future order: its FO number and its advances (their QRV51s), so One POS' procedure links the bill and the QRV51s both ways.
+        var futureRef = await c.ExecuteScalarAsync<string?>("select future_ref from pos_order where id = @orderId", new { orderId }, tx);
 
         // Each line's discount as the bill worked it out (its promotion / item discount, or its share of the bill discount).
         var discounts = lines.Select(l => l.Discount).ToArray();
 
-        string? Mode(string method, string? cardType)
-        {
-            switch (method)
-            {
-                case "cash": return modes.FirstOrDefault(m => m.Kind == "cash").Name;
-                case "card": return cardType ?? modes.FirstOrDefault(m => m.Kind == "card").Name;
-                case "platform":
-                    var p = (o.PlatformName ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant();
-                    return p is null ? null : modes.FirstOrDefault(m => m.Kind == "platform" && m.Label.Contains(p, StringComparison.OrdinalIgnoreCase)).Name;
-                default: return null;
-            }
-        }
+        string? Mode(string method, string? cardType) => ModeOf(modes, method, cardType, o.PlatformName);
         var receipts = new List<XElement>();
-        foreach (var p in pays)
+        if (pays.Where(p => p.Posted).Sum(p => p.Amount) is var advanced and > 0)
+            receipts.Add(new XElement("ReceiptDetails",
+                new XElement("ReceiptMode", AdvanceMode), new XElement("ReceiptAmount", N(advanced)), new XElement("ReceiptVoucherNo", ""),
+                new XElement("ReceiptChequeNo", ""), new XElement("ReceiptChequeDate", "")));
+        foreach (var p in pays.Where(p => !p.Posted))
         {
             var mode = Mode(p.Method, p.CardType);
             if (mode is null) problems.Add($"No FACTS payment method for {p.Method}{(p.Method == "platform" ? $" ({o.PlatformName})" : "")} at {o.Location}.");
@@ -246,6 +254,7 @@ public static partial class FactsPosting
         var combos = lines.Where(l => l.IsCombo).GroupBy(l => l.Name)
             .Select(g => g.Sum(l => l.Qty) is var q && q != 1 ? $"{g.Key} x{q.ToString("0.###", Inv)}" : g.Key).ToList();
         var narration = o.PreapprovedLabel is { } pl ? $"{o.CustomerName} {pl}" : o.CustomerName ?? "Walk-in";
+        if (futureRef is not null) narration = $"{futureRef} {narration}";
         if (combos.Count > 0) narration += $" - Combo: {string.Join(", ", combos)}";
         if (narration.Length > 200) narration = narration[..200];
         var xml = new XElement("data", new XElement("Invoice",
@@ -271,6 +280,9 @@ public static partial class FactsPosting
             new XElement("DeliveryDetails", new XElement("EDD", o.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("DeliveryTiming", "")),
             // A delivery platform's order: its own order number, which One POS' procedure writes into SAL_REF1 (FACTS' own one ignores it).
             o.PlatformName is not null && !string.IsNullOrWhiteSpace(o.PlatformRef) ? new XElement("PlatformOrderNo", o.PlatformRef.Trim()) : null,
+            // A future order: its number and the advances posted as QRV51 (FACTS' own procedure ignores it; One POS' links them).
+            futureRef is null ? null : new XElement("FutureOrder", new XElement("FutureOrderNo", futureRef),
+                pays.Where(p => p.Posted && p.AdvanceNo is not null).Select(p => new XElement("AdvanceNo", p.AdvanceNo))),
             receipts, details));
         return (xml.ToString(SaveOptions.DisableFormatting), problems, o);
     }
@@ -305,6 +317,62 @@ public static partial class FactsPosting
                 new XElement("ReturnToStock", l.Restock ? "1" : "0"))),
             new XElement("ReceiptDetails", new XElement("ReceiptMode", n.Method == "card" ? n.CardType ?? "" : n.Method), new XElement("ReceiptAmount", N(n.Total)))));
         return (xml.ToString(SaveOptions.DisableFormatting), FactsNo(n.Number, o.DocPrefix) ?? n.Number, n.Total);
+    }
+
+    /// <summary>The FACTS payment method (PM_DESC, e.g. "ERBQS VISA CARD") a One POS payment goes as at a branch, or null.</summary>
+    private static string? ModeOf(List<(string Name, string Kind, string Label)> modes, string method, string? cardType, string? platformName)
+    {
+        switch (method)
+        {
+            case "cash": return modes.FirstOrDefault(m => m.Kind == "cash").Name;
+            case "card": return cardType ?? modes.FirstOrDefault(m => m.Kind == "card").Name;
+            case "platform":
+                var p = (platformName ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant();
+                return p is null ? null : modes.FirstOrDefault(m => m.Kind == "platform" && m.Label.Contains(p, StringComparison.OrdinalIgnoreCase)).Name;
+            default: return null;
+        }
+    }
+
+    /// <summary>
+    /// A future order's advance (or an advance given back when it's cancelled), where the company posts advances to FACTS and the
+    /// branch posts from that day: queued for the vendor's procedure (<see cref="PostAdvanceProc"/>). A refund only where the
+    /// advances it gives back went to FACTS.
+    /// </summary>
+    public static async Task EnqueueAdvanceAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid paymentId)
+    {
+        var a = await c.QuerySingleOrDefaultAsync<(Guid Company, Guid Branch, Guid OrderId, string Kind, string Method, decimal Amount, string? CardType, string? AdvanceNo, string? Original,
+            DateOnly Day, string? Location, string? FutureRef, DateTime? CollectAt, string TimeZone, string? Customer, string? Phone, string? Cashier)>("""
+            select p.company_id, p.branch_id, p.order_id, p.kind, p.method, p.amount, p.card_type, p.advance_no, p.reference, p.business_date, b.erp_location_code,
+                   o.future_ref, o.collect_at, b.time_zone, o.customer_name, o.customer_phone, u.display_name
+            from payment p join pos_order o on o.id = p.order_id join branch b on b.id = p.branch_id join company co on co.id = p.company_id
+            left join app_user u on u.id = p.taken_by
+            where p.id = @paymentId and p.is_advance and co.erp_connector = 'facts' and co.facts_advances = 'qrv51'
+              and b.erp_location_code is not null and b.facts_post_from is not null and p.business_date >= b.facts_post_from
+            """, new { paymentId }, tx);
+        // An advance given back (a cancelled order) isn't sent: finance books it in FACTS by hand.
+        if (a.Branch == Guid.Empty || a.Kind == "refund") return;
+        var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @Branch", new { a.Branch }, tx)).ToList();
+        var mode = ModeOf(modes, a.Method, a.CardType, null);
+        var problems = new List<string>();
+        if (mode is null) problems.Add($"No FACTS payment method for {a.Method} at {a.Location}.");
+        if (a.AdvanceNo is null or { Length: > FactsNoLength }) problems.Add($"Advance number {a.AdvanceNo} is missing or longer than {FactsNoLength} characters.");
+        var collect = a.CollectAt is { } at ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(at, DateTimeKind.Utc), TimeZoneInfo.FindSystemTimeZoneById(a.TimeZone)) : (DateTime?)null;
+        var narration = $"Advance {a.FutureRef} {a.Customer} collect {collect:dd/MM/yyyy}".Trim();
+        var xml = new XElement("data", new XElement("Advance",
+            new XElement("DocumentNo", a.AdvanceNo ?? ""), new XElement("Type", "Receipt"),
+            new XElement("DocDate", a.Day.ToString("yyyy-MM-dd", Inv)), new XElement("LocationCode", a.Location ?? ""),
+            new XElement("ReceiptMode", mode ?? ""), new XElement("Amount", N(a.Amount)),
+            new XElement("FutureOrderNo", a.FutureRef ?? ""), new XElement("CollectionDate", collect?.ToString("yyyy-MM-dd", Inv) ?? ""),
+            new XElement("CustomerName", a.Customer ?? ""), new XElement("MobileNo", a.Phone ?? ""),
+            new XElement("Narration", narration.Length > 200 ? narration[..200] : narration),
+            new XElement("CreatedBy", (a.Cashier ?? "One POS").Length > 20 ? a.Cashier![..20] : a.Cashier ?? "One POS")));
+        await c.ExecuteAsync("""
+            insert into erp_post (company_id, branch_id, kind, order_id, payment_id, doc_no, business_date, amount, xml, status, last_error)
+            values (@Company, @Branch, 'advance', @OrderId, @paymentId, @doc, @Day, @Amount, @xml, @status, @error)
+            on conflict (payment_id) where kind = 'advance' do update set xml = excluded.xml, status = excluded.status, last_error = excluded.last_error,
+              attempts = 0, next_try_at = now() where erp_post.status <> 'posted'
+            """, new { a.Company, a.Branch, a.OrderId, paymentId, doc = a.AdvanceNo ?? "", a.Day, a.Amount, xml = xml.ToString(SaveOptions.DisableFormatting),
+                       status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
     }
 
     private static string RepackingLabel(string mode) => mode switch { "draft" => "Draft RPO50 per day", "posted" => "Posted RPO50 per bill", _ => "Off" };
@@ -398,8 +466,8 @@ public static partial class FactsPosting
             RequireFinance(scope);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
-                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
+                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances)>(
+                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances from company where id = @id", new { id = scope.CompanyId }, tx);
                 var branches = await c.QueryAsync<(Guid Id, string Code, string Name, string? Location, DateOnly? PostFrom, int Modes, int Cards)>("""
                     select b.id, b.code, b.name, b.erp_location_code, b.facts_post_from,
                            (select count(*) from erp_payment_mode m where m.branch_id = b.id)::int, (select count(*) from erp_payment_mode m where m.branch_id = b.id and m.kind = 'card')::int
@@ -411,6 +479,7 @@ public static partial class FactsPosting
                 return new
                 {
                     connector = co.Connector, posting = co.Posting, refunds = co.Refunds, refundProc = co.Proc, invoiceProc = co.InvoiceProc ?? StandardInvoiceProc, wastage = co.Wastage, repacking = co.Repacking,
+                    advances = co.Advances,
                     modesReadAt = modesRead.At, modesReadOk = modesRead.Ok, modesReadError = modesRead.Message,
                     branches = branches.Select(b => new
                     {
@@ -431,22 +500,25 @@ public static partial class FactsPosting
             if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or One POS' (FIFO batches).");
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
+            if (body.Advances is not (null or "off" or "qrv51")) throw new DomainException("Future orders' advances are not posted, or posted as QRV51.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking)>(
-                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking from company where id = @id", new { id = scope.CompanyId }, tx);
+                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances)>(
+                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances from company where id = @id", new { id = scope.CompanyId }, tx);
                 var wastage = body.Wastage ?? old.Wastage;
                 var repacking = body.Repacking ?? old.Repacking;
+                var advances = body.Advances ?? old.Advances;
                 var invoiceProc = body.InvoiceProc is null ? old.InvoiceProc : body.InvoiceProc == StandardInvoiceProc ? null : body.InvoiceProc;
-                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking where id = @id",
-                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, id = scope.CompanyId }, tx);
+                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking, facts_advances = @advances where id = @id",
+                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, advances, id = scope.CompanyId }, tx);
                 // A procedure now there: credit notes that waited for it can go.
                 if (proc is not null) await c.ExecuteAsync("update erp_post set status = 'pending', last_error = null, next_try_at = now() where kind = 'refund' and status = 'waiting'", transaction: tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "erp", "posting", "changed", "FACTS posting settings changed",
                     [new("Posting", old.Posting, body.Posting), new("Refunds", old.Refunds, body.Refunds), new("SR50 procedure", old.Proc, proc),
                      new("Bill procedure", old.InvoiceProc ?? StandardInvoiceProc, invoiceProc ?? StandardInvoiceProc),
                      new("Wastage", old.Wastage == "draft" ? "Draft STV from One POS" : "Finance enters", wastage == "draft" ? "Draft STV from One POS" : "Finance enters"),
-                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking))]);
+                     new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
+                     new("Future order advances", old.Advances == "qrv51" ? "QRV51" : "Not posted", advances == "qrv51" ? "QRV51" : "Not posted")]);
                 return 0;
             });
             return Results.Ok(new { ok = true });
@@ -561,6 +633,12 @@ public static partial class FactsPosting
             {
                 var n = await c.ExecuteAsync("update erp_post set status = 'skipped' where id = @id and status <> 'posted'", new { id }, tx);
                 if (n == 0) throw new DomainException("Not found, or already posted.");
+                // An advance left out: its bill (if not posted yet) takes that money as a normal payment instead of ADVANCE.
+                var bill = await c.ExecuteScalarAsync<Guid?>("""
+                    select i.id from erp_post a join erp_post i on i.order_id = a.order_id and i.kind = 'invoice'
+                    where a.id = @id and a.kind = 'advance' and i.status <> 'posted'
+                    """, new { id }, tx);
+                if (bill is { } billId) await RequeueAsync(c, tx, billId);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "erp_post", id.ToString(), "skipped", "FACTS posting left out (finance enters it)");
                 return 0;
             });
@@ -579,8 +657,14 @@ public static partial class FactsPosting
     /// <summary>A queued document back to "waiting to send", now: a bill rebuilt from the order (its problems, if any, fail it again).</summary>
     private static async Task RequeueAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid id)
     {
-        var row = await c.QuerySingleAsync<(string Kind, Guid OrderId)>("select kind, order_id from erp_post where id = @id", new { id }, tx);
-        if (row.Kind == "invoice")
+        var row = await c.QuerySingleAsync<(string Kind, Guid OrderId, Guid? PaymentId)>("select kind, order_id, payment_id from erp_post where id = @id", new { id }, tx);
+        if (row.Kind == "advance" && row.PaymentId is { } paymentId)
+        {
+            // Built afresh (e.g. after the branch's FACTS payment methods were read again).
+            await c.ExecuteAsync("update erp_post set status = 'pending' where id = @id", new { id }, tx);
+            await EnqueueAdvanceAsync(c, tx, paymentId);
+        }
+        else if (row.Kind == "invoice")
         {
             var (xml, problems, o) = await InvoiceAsync(c, tx, row.OrderId);
             await c.ExecuteAsync("update erp_post set xml = @xml, doc_no = @doc, status = @status, last_error = @error, attempts = 0, next_try_at = now() where id = @id",
@@ -615,9 +699,9 @@ public static partial class FactsPosting
 
         private async Task SendAsync(Guid companyId, CancellationToken stop)
         {
-            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser, string Refunds, Guid? AfterId, bool ForWaste)>("""
+            var due = (await db.Company(companyId, (c, tx) => c.QueryAsync<(Guid Id, string Kind, string Xml, int Attempts, string? Proc, string? InvoiceProc, Guid? OrderId, string? FactsUser, string Refunds, Guid? AfterId, bool ForWaste, Guid? PaymentId)>("""
                 select p.id, p.kind, p.xml, p.attempts, co.facts_refund_proc, co.facts_invoice_proc, p.order_id, p.facts_user, co.facts_refunds, p.after_id,
-                       exists (select 1 from erp_post w where w.after_id = p.id) as for_waste from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
+                       exists (select 1 from erp_post w where w.after_id = p.id) as for_waste, p.payment_id from erp_post p join branch b on b.id = p.branch_id join company co on co.id = p.company_id
                 where p.status = 'pending' and p.next_try_at <= now() and b.facts_post_from is not null and co.facts_posting
                 order by p.created_at, p.kind <> 'repacking' limit 50
                 """, transaction: tx))).ToList();
@@ -629,8 +713,12 @@ public static partial class FactsPosting
             foreach (var p in due)
             {
                 // A bill with BOM items waits for its own repacking voucher: the sale takes the batch that voucher brings in.
-                if (p.Kind == "invoice" && p.OrderId is { } billId && await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<bool>(
-                        "select exists (select 1 from erp_post where kind = 'repacking' and order_id = @billId and status not in ('posted', 'skipped'))", new { billId }, tx)))
+                // A future order's bill waits for its advances (QRV51): its ADVANCE payment takes them off POS customer advances.
+                if (p.Kind == "invoice" && p.OrderId is { } billId && await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<bool>("""
+                        select exists (select 1 from erp_post where kind = 'repacking' and order_id = @billId and status not in ('posted', 'skipped'))
+                            or exists (select 1 from erp_post e join payment a on a.id = e.payment_id
+                                       where e.kind = 'advance' and e.order_id = @billId and a.kind = 'payment' and e.status not in ('posted', 'skipped'))
+                        """, new { billId }, tx)))
                     continue;
                 // Wastage of made-to-order items waits for the RPO50 that makes them (FACTS has none until then).
                 if (p.AfterId is { } afterId)
@@ -665,11 +753,12 @@ public static partial class FactsPosting
                         : p.Kind == "return" ? p.FactsUser is null ? throw new InvalidOperationException("A return needs the approver's FACTS username.") : PostWastageProc
                         : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
                         : p.Kind == "repacking" ? p.OrderId is null && !p.ForWaste ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
+                        : p.Kind == "advance" ? PostAdvanceProc
                         : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
                     // FACTS saves the document as created by this user, so it must be a FACTS user (a PSR51 too: POSBAKERY).
-                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
+                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
                     cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = p.Xml;
                     await using var r = await cmd.ExecuteReaderAsync(stop);
                     // FACTS answers DocumentNo / status / description, possibly more than once (its posting step answers too).

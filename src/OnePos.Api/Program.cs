@@ -115,6 +115,7 @@ StockReport.Map(api);
 GrossProfit.Map(api);
 StockActivity.Map(api);
 Reservations.Map(api);
+FutureOrders.Map(api);
 Stock.Map(api);
 WastageApproval.Map(api);
 StockReturns.Map(api);

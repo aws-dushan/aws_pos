@@ -340,7 +340,8 @@ public static class Days
             where d.business_day_id = @id order by d.at
             """, args, tx);
         var cash = await DayCashAsync(c, tx, day.Id);
-        var open = await c.QuerySingleAsync<(int Count, decimal Value)>("select count(*)::int, coalesce(sum(total), 0) from pos_order where branch_id = @b and status = 'open'", args, tx);
+        var open = await c.QuerySingleAsync<(int Count, decimal Value)>(
+            "select count(*)::int, coalesce(sum(total), 0) from pos_order where branch_id = @b and status = 'open' and future_status is distinct from 'waiting'", args, tx);
         var waste = await c.QuerySingleAsync<(int Count, decimal Value)>(
             "select count(*)::int, coalesce(sum(cost_value), 0) from wastage where branch_id = @b and business_date = @d and voided_at is null and kind = 'wastage'", args, tx);
         var given = await c.QuerySingleAsync<(int Count, decimal Value)>(
@@ -396,7 +397,7 @@ public static class Days
         // Open orders: empty ones go; "void_unsent" voids those the kitchen never got; the rest carry into the next day.
         await c.ExecuteScalarAsync<int>("""
             with gone as (
-              delete from pos_order o where o.branch_id = @b and o.status = 'open'
+              delete from pos_order o where o.branch_id = @b and o.status = 'open' and o.future_status is null
                 and not exists (select 1 from order_line l where l.order_id = o.id) and not exists (select 1 from payment p where p.order_id = o.id)
               returning o.id
             ), fix as (update reservation set status = 'booked', order_id = null where order_id in (select id from gone))
@@ -405,7 +406,7 @@ public static class Days
         if (b.OpenOrdersAtClose == "void_unsent")
         {
             var unsent = (await c.QueryAsync<Guid>("""
-                select o.id from pos_order o where o.branch_id = @b and o.status = 'open' and o.paid = 0
+                select o.id from pos_order o where o.branch_id = @b and o.status = 'open' and o.paid = 0 and o.future_status is distinct from 'waiting'
                   and not exists (select 1 from order_line l where l.order_id = o.id and l.sent_qty > 0)
                 """, new { b = b.Id }, tx)).ToArray();
             await c.ExecuteAsync("update pos_order set status = 'void', void_reason = 'Day closed', closed_at = now(), lock_session = null where id = any(@unsent)", new { unsent }, tx);

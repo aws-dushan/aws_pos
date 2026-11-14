@@ -53,7 +53,7 @@ public static class Returns
         await c.ExecuteAsync("update pos_order set invoice_no = @no where id = @id and invoice_no is null", new { no, o.Id }, tx);
     }
 
-    private static async Task<string> NextAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, string series)
+    internal static async Task<string> NextAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid companyId, Guid branchId, string series)
     {
         // The company's shared series, when switched on and its start time has come: one counter for all branches, a plain number
         // (200000, 200001 …) or its prefix and 6 digits (CN000001). The update locks the counter row, so two tills never get the same number.
@@ -141,12 +141,16 @@ public static class Returns
         api.MapPost("/orders/{id:guid}/return-bill", (Guid id, BillReturnBody body, HttpContext http, Db db, Live live) => Orders.Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
             if (o.Refunded > 0) throw new DomainException("Part of this bill was refunded already, so it can't be returned as a whole bill.");
+            // A collected future order's bill: only what was paid at collection goes back; its advances stay with the order, which
+            // goes back to waiting (FutureOrders.BackToWaitingAsync).
+            var future = o.FutureStatus == "collected";
             var pays = (await c.QueryAsync<(string Method, decimal Amount, string? CardType)>("""
-                select method, sum(amount), card_type from payment where order_id = @id and kind = 'payment' group by method, card_type order by sum(amount) desc
-                """, new { id }, tx)).ToList();
+                select method, sum(amount), card_type from payment where order_id = @id and kind = 'payment' and not (@future and is_advance)
+                group by method, card_type order by sum(amount) desc
+                """, new { id, future }, tx)).ToList();
             if (o.Paid <= 0 && o.Total > 0) throw new DomainException("Nothing was paid on this bill.");
             var method = pays.Count > 0 ? pays[0].Method : "other";
-            var (_, reason, _) = await CheckAsync(c, tx, o, scope, method, body.Reason);
+            var (_, reason, _) = await CheckAsync(c, tx, o, scope, method, body.Reason, "bill");
             // An earlier day's bill: only an administrator or a manager (day.manage) returns it, or approves it at the till.
             if (await Days.DateAsync(c, tx, o.BranchId) != o.BusinessDate && !scope.IsAdmin && !scope.Can("day.manage"))
                 await Approvals.RequireAsync(c, tx, http, scope, "refund", o.Paid, "Only a manager returns a bill from an earlier day. A manager can approve it.", late: true, orderId: o.Id);
@@ -172,8 +176,9 @@ public static class Returns
             await Recipes.RestockAsync(c, tx, o, parts.Select(p => (p.Line, p.Qty)), scope.UserId);
             await Erp.FactsPosting.EnqueueRefundAsync(c, tx, noteId, o.Id);
             await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "return-bill",
-                pays.Count == 0 ? $"Order #{o.Number}: whole 0.00 bill returned, items back on stock"
-                    : $"Order #{o.Number}: whole bill returned, {o.Paid:N2} refunded ({string.Join(", ", pays.Select(p => $"{p.CardType ?? p.Method} {p.Amount:N2}"))})", note: reason);
+                pays.Count == 0 ? $"Order #{o.Number}: whole {(future ? "" : "0.00 ")}bill returned, items back on stock{(future ? ", nothing refunded (all paid in advance)" : "")}"
+                    : $"Order #{o.Number}: whole bill returned, {pays.Sum(p => p.Amount):N2} refunded ({string.Join(", ", pays.Select(p => $"{p.CardType ?? p.Method} {p.Amount:N2}"))})", note: reason);
+            if (future) await FutureOrders.BackToWaitingAsync(c, tx, o, scope);
         }, allowClosed: true));
 
         // An amount back without items (goodwill, overcharge): still a credit note, its VAT in proportion to the bill.
@@ -191,9 +196,11 @@ public static class Returns
         }, allowClosed: true));
     }
 
-    private static async Task<(string Method, string Reason, bool Late)> CheckAsync(NpgsqlConnection c, NpgsqlTransaction tx, Orders.OrderRow o, Scope scope, string? m, string? r)
+    private static async Task<(string Method, string Reason, bool Late)> CheckAsync(NpgsqlConnection c, NpgsqlTransaction tx, Orders.OrderRow o, Scope scope, string? m, string? r, string kind = "items")
     {
         if (o.Status is not ("paid" or "refunded")) throw new DomainException("Only a paid order can be refunded. An open one is changed or voided instead.");
+        // A future order's bill comes back only whole (Return): its advance then goes back to the waiting order, not to the customer.
+        if (o.FutureStatus == "collected" && kind != "bill") throw new DomainException("A future order's bill is returned whole (Return): the advance stays with the order, which goes back to waiting.");
         if (!await c.ExecuteScalarAsync<bool>("select returns_enabled from branch where id = @b", new { b = o.BranchId }, tx))
             throw new DomainException("Returns are switched off for this branch (Companies & branches).");
         if (string.IsNullOrWhiteSpace(r)) throw new DomainException("Give a reason for the refund.");

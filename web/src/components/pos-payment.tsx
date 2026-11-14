@@ -8,7 +8,7 @@ import { api, newKey, useApi } from "@/lib/api";
 import { openDrawerForCash, printReceipt, type ReceiptLine } from "@/lib/device";
 import { cn } from "@/lib/utils";
 import { fmtIn, roundTo } from "@/lib/num";
-import { fmtQty, METHOD_LABEL, orderLabel, TYPE_LABEL, type OrderDetail, type PayMethod, orderNo, cardLabel } from "@/lib/pos";
+import { fmtQty, METHOD_LABEL, orderLabel, TYPE_LABEL, type OrderDetail, type PayMethod, orderNo, cardLabel, collectLabel } from "@/lib/pos";
 import { ErrorNote, Segmented } from "@/components/kit";
 import { Numpad } from "@/components/numpad";
 import { celebrate } from "@/components/motion";
@@ -61,6 +61,8 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const partsTotal = roundTo(parts.reduce((s, p) => s + p.amount, 0), 2);
   const left = roundTo(due - partsTotal, 2);
   // Vouchers and points only where the company uses them; points only with a customer on the order.
+  // A future order waiting for its day: what's taken now is an advance (any amount up to the total, any method, split too).
+  const advance = detail.order.futureStatus === "waiting";
   const methods = METHODS.filter((m) => (m.value !== "voucher" || company?.vouchersEnabled) && (m.value !== "points" || (company?.loyaltyEnabled && detail.order.customerId))
     && (m.value !== "platform" || detail.order.platformId));
   const [method, setMethod] = useState<PayMethod>(detail.order.platformId ? "platform" : "cash");
@@ -123,7 +125,11 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
       // Cash taken (alone, in a split or as a part payment): the drawer opens now, not only when a receipt prints.
       if (payments.some((p) => p.method === "cash")) void openDrawerForCash();
       onChanged(d);
-      if (d.order.status === "paid") {
+      if (advance) {
+        // The advance receipt prints (not a tax invoice: the bill is invoiced when it's collected).
+        const printed = await printOrderReceipt(d.order.id, false).catch((e: Error) => { toast.error(`Advance receipt not printed: ${e.message}`); return false; });
+        onPaid(d, printed, change);
+      } else if (d.order.status === "paid") {
         celebrate(payRef.current);
         // The receipt prints on this till's printer (the drawer already opened above when cash was taken: REQ HW-04).
         const printed = await printOrderReceipt(d.order.id, false).catch((e: Error) => { toast.error(`Receipt not printed: ${e.message}`); return false; });
@@ -141,7 +147,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100dvh-1rem)] sm:max-w-3xl">
-        <DialogHeader><DialogTitle>Take payment · #{detail.order.number} · {orderLabel(detail.order)}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{advance ? `Take advance · ${detail.order.futureRef ?? ""}` : `Take payment · #${detail.order.number}`} · {orderLabel(detail.order)}</DialogTitle></DialogHeader>
         <div className="grid gap-5 md:grid-cols-[1fr_300px]">
           <div className="space-y-4">
             <div className="rounded-2xl p-5 text-white shadow-lift" style={{ background: "var(--hero)" }}>
@@ -326,11 +332,15 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
   // A voided bill is never a tax invoice: its preview (and receipt link) says so, and it can't be printed (printOrderReceipt).
   const voided = o.status === "void";
   const paidDoc = !!o.invoiceNo && !voided;
-  const out = receiptHead(r, voided ? "VOID · NOT A TAX INVOICE" : paidDoc ? "TAX INVOICE" : "BILL · NOT PAID YET", voided ? "فاتورة ملغاة" : paidDoc ? AR.taxInvoice : AR.bill);
+  // A future order still waiting: an advance receipt (the tax invoice is made when it's collected).
+  const advanceDoc = o.futureStatus === "waiting" && !voided;
+  const out = receiptHead(r, voided ? "VOID · NOT A TAX INVOICE" : paidDoc ? "TAX INVOICE" : advanceDoc ? "ADVANCE RECEIPT · NOT A TAX INVOICE" : "BILL · NOT PAID YET",
+    voided ? "فاتورة ملغاة" : paidDoc ? AR.taxInvoice : advanceDoc ? "إيصال دفعة مقدمة" : AR.bill);
   if (r.receiptHeader) for (const t of r.receiptHeader.split("\n")) out.push({ text: t, align: "center", size: "small" });
-  // Ref#: the invoice's serial (EBQS-00123 -> 00123, INV-EB-QS-000123 -> 000123); a bill not paid yet, the order's number.
+  // Ref#: the invoice's serial (EBQS-00123 -> 00123, INV-EB-QS-000123 -> 000123); a future order waiting, its FO number; a bill not paid yet, the order's number.
   const serial = o.invoiceNo?.match(/-(\d+)$/)?.[1] ?? o.invoiceNo?.match(/(\d{6})$/)?.[1];
-  out.push({ text: `Ref# ${serial ?? o.number ?? "-"}`, align: "center", bold: true, size: "large" }, { rule: true });
+  out.push({ text: `Ref# ${serial ?? (advanceDoc ? o.futureRef : null) ?? o.number ?? "-"}`, align: "center", bold: true, size: "large" }, { rule: true });
+  if (o.futureRef && o.collectAt) out.push({ text: `Future order ${o.futureRef}`, align: "center", bold: true }, { text: `Collect: ${collectLabel(o.collectAt)}`, align: "center", bold: true }, { rule: true });
 
   // The details, two columns: the customer's side on the left, the invoice's on the right.
   const at = new Date(o.closedAt ?? o.openedAt);
@@ -383,7 +393,11 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
   // How it was paid: the account (card type, cash...), paid, received and change.
   for (const p of d.payments) {
     const refund = p.kind === "refund";
-    out.push({ text: `${refund ? "Refund" : "Account"}: ${cardLabel(p.cardType) ?? METHOD_LABEL[p.method]}`, ar: a(refund ? AR.refund : METHOD_AR[p.method]), size: "small" });
+    // A future order's advance: "Advance 14/11/2026 · VISA CARD" and its number.
+    const how = cardLabel(p.cardType) ?? METHOD_LABEL[p.method];
+    out.push({ text: p.isAdvance ? `${refund ? "Advance refunded" : "Advance"} ${new Date(p.at).toLocaleDateString("en-GB")}: ${how}` : `${refund ? "Refund" : "Account"}: ${how}`,
+      ar: a(refund ? AR.refund : METHOD_AR[p.method]), size: "small" });
+    if (p.isAdvance && p.advanceNo) out.push({ text: `   ${p.advanceNo}`, size: "small" });
     out.push({ text: refund ? "Refunded" : "Paid", ar: a(refund ? AR.refund : AR.paid), right: (refund ? "-" : "") + money(p.amount), size: "small" });
     if (!refund && p.method === "cash" && p.tendered != null) {
       out.push({ text: "Received", ar: a(AR.received), right: money(p.tendered), size: "small" });
@@ -391,6 +405,7 @@ export function receiptLines(r: Receipt, qr?: string | null): ReceiptLine[] {
     }
   }
   for (const n of d.creditNotes) out.push({ text: `Credit note ${n.number}`, ar: a(AR.creditNote), right: `-${money(n.total)}`, size: "small" });
+  if (advanceDoc) out.push({ text: "Balance due on collection", right: `${r.currency} ${money(o.due)}`, bold: true });
   out.push({ rule: true });
 
   if (r.receiptFooter) for (const t of r.receiptFooter.split("\n")) out.push({ text: t, align: "center", bold: true });

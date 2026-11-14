@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  ArmchairIcon, BikeIcon, CombineIcon, LockIcon, MonitorIcon, SplitIcon, ChefHatIcon, ChevronLeftIcon, EllipsisIcon, HandPlatterIcon, Loader2Icon, MinusIcon, PlusIcon, ReceiptTextIcon,
+  ArmchairIcon, BikeIcon, CalendarClockIcon, CombineIcon, LockIcon, MonitorIcon, SplitIcon, ChefHatIcon, ChevronLeftIcon, EllipsisIcon, HandPlatterIcon, Loader2Icon, MinusIcon, PlusIcon, ReceiptTextIcon,
   SearchIcon, ShoppingBagIcon, ShoppingBasketIcon, StickyNoteIcon, Trash2Icon, UsersRoundIcon, UtensilsCrossedIcon, XIcon, InboxIcon, ChevronUpIcon, PencilIcon, UserRoundIcon, PercentIcon, TagIcon, RefreshCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, newKey, useApi } from "@/lib/api";
@@ -12,7 +12,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { shortcutTitle } from "@/lib/shortcuts";
 import { DiscountDialog, PlatformOfferDialog } from "@/components/discount-dialog";
 import { fmtIn } from "@/lib/num";
-import { byWeight, fmtQty, imageUrl, orderNo, initials, itemGroups, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
+import { byWeight, collectLabel, fmtQty, imageUrl, orderNo, initials, itemGroups, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ObjectStatus, PageHeader, Segmented, TONE } from "@/components/kit";
@@ -256,6 +256,8 @@ function OrderScreen({ orderId }: { orderId: string }) {
   const o = d.order;
   // Closed, or open on another till: look but don't touch.
   const closed = o.status !== "open" || !!lockedBy;
+  // A future order waiting for its day: payments are advances; it's collected from Future orders.
+  const future = o.futureStatus === "waiting";
   const active = d.lines.filter((l) => !l.isVoid);
   const unsent = active.reduce((n, l) => n + l.qty - l.sentQty, 0);
   // Open while something needed is missing (a platform's order number; phone and address for our own delivery) or nothing is on the order yet.
@@ -311,7 +313,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
       {/* Menu */}
       <section className="flex min-h-0 flex-col gap-3" aria-label="Menu">
         <div className="flex items-center gap-2">
-          <Button variant="outline" className="size-12 shrink-0 rounded-xl" aria-label="Back to the register" onClick={() => router.push("/register")}><ChevronLeftIcon className="size-5" /></Button>
+          <Button variant="outline" className="size-12 shrink-0 rounded-xl" aria-label={future ? "Back to Future orders" : "Back to the register"} onClick={() => router.push(future ? "/future" : "/register")}><ChevronLeftIcon className="size-5" /></Button>
           <div className="relative min-w-0 flex-1">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search the menu" type="search" data-list-search=""
@@ -382,6 +384,15 @@ function OrderScreen({ orderId }: { orderId: string }) {
               </DropdownMenu>
             )}
           </div>
+          {o.futureRef && o.collectAt && o.futureStatus !== "cancelled" && (
+            <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-sm">
+              <CalendarClockIcon className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="font-medium">Future order {o.futureRef}</span> · collect {collectLabel(o.collectAt)}
+                {future && <span className="block text-xs text-muted-foreground">Payments here are advances. Collect it on Future orders on the day.</span>}
+              </span>
+            </div>
+          )}
           {branch?.kitchenEnabled && d.tickets.some((t) => !t.isCancel) && <KitchenProgress tickets={d.tickets} />}
           {lockedBy && o.status === "open" && (
             <div className="animate-rise-in flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm text-warning">
@@ -474,9 +485,15 @@ function OrderScreen({ orderId }: { orderId: string }) {
               {o.orderType === "dine_in" && <Button variant="outline" className="h-12 px-2" disabled={!active.length} data-shortcut="bill" title={shortcutTitle("bill")} onClick={() => void run(`/orders/${o.id}/bill`, "POST").then((r) => r && setReceipt(o.id))}>
                 <ReceiptTextIcon /> {o.billPrintedAt ? "Bill again" : "Bill"}
               </Button>}
-              <Button className="h-12 px-2 text-base" disabled={!active.length || pending > 0} data-shortcut="pay" title={shortcutTitle("pay")} onClick={() => setPaying(true)}>
-                Pay {cur} {money(o.due)}
-              </Button>
+              {future ? (
+                <Button className="h-12 px-2 text-base" disabled={!active.length || pending > 0 || o.due <= 0} onClick={() => setPaying(true)}>
+                  {o.due <= 0 ? "Paid in full" : "Take advance"}
+                </Button>
+              ) : (
+                <Button className="h-12 px-2 text-base" disabled={!active.length || pending > 0} data-shortcut="pay" title={shortcutTitle("pay")} onClick={() => setPaying(true)}>
+                  Pay {cur} {money(o.due)}
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -498,6 +515,12 @@ function OrderScreen({ orderId }: { orderId: string }) {
       <PaymentDialog detail={d} currency={cur} open={paying} onOpenChange={setPaying} onChanged={setDetail}
         onPaid={(next, printed, change) => {
           setPaying(false);
+          // A future order's advance: its advance receipt printed (or shown), then back to Future orders.
+          if (next.order.futureStatus === "waiting") {
+            toast.success(change > 0 ? `Advance taken. Give ${cur} ${money(change)} change.` : `Advance taken. ${cur} ${money(next.order.due)} left to pay on collection.`, { duration: change > 0 ? 10_000 : 4_000 });
+            if (!printed) setReceipt(next.order.id); else router.push("/future");
+            return;
+          }
           void printNewTickets(next);
           sendToDisplay({ kind: "paid", currency: cur, total: next.order.total, change: next.payments.reduce((t, p) => t + p.changeGiven, 0) });
           if (!printed) { setReceipt(next.order.id); return; }   // no receipt printer here: the preview, to print from the browser

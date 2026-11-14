@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     void signOut();
   });
   const screens = SCREENS.filter((s) => (!s.admin || me.user.isAdmin) && (!s.perm || s.perm.split("|").some(can)) && (!s.tableOnly || branch?.tableService) && (!s.kitchenOnly || branch?.kitchenEnabled)
-    && (!s.rewardsOnly || company?.vouchersEnabled || company?.loyaltyEnabled) && (!s.factsOnly || company?.erpConnector === "facts"));
+    && (!s.rewardsOnly || company?.vouchersEnabled || company?.loyaltyEnabled) && (!s.factsOnly || company?.erpConnector === "facts") && (!s.futureOnly || branch?.futureOrders));
   const active = screenOf(pathname);
   const full = FULL_BLEED.some((p) => pathname.startsWith(p));
 

@@ -17,7 +17,7 @@ public static class CompanyEndpoints
         string? NameAr = null, string? AddressAr = null, string? ReceiptLanguage = null, string? ShortStock = null,
         string? PickupMode = null, int? PickupMinutes = null, int? CloseDelayMinutes = null, int? CloseDelayMaxMinutes = null, string? FactsDocPrefix = null, string? ErpWasteLocation = null,
         string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null, string? FactsItemMaster = null,
-        string? FactsDivision = null, string? FactsPlatformLocation = null);
+        string? FactsDivision = null, string? FactsPlatformLocation = null, bool? FutureOrders = null);
 
     public sealed class CompanyRow
     {
@@ -60,6 +60,8 @@ public static class CompanyEndpoints
         public int ReturnDays { get; set; }
         public bool ReturnsEnabled { get; set; }
         public bool KitchenEnabled { get; set; }
+        /// <summary>The Future orders page (taken now with an advance, collected later).</summary>
+        public bool FutureOrders { get; set; }
         public TimeOnly AutoOpenTime { get; set; }
         public TimeOnly AutoCloseTime { get; set; }
         public decimal VarianceTolerance { get; set; }
@@ -219,6 +221,7 @@ public static class CompanyEndpoints
                                priceType = Opt(body.FactsPriceType), priceInclVat = body.FactsPricesIncludeVat ?? true, returnsOn = body.ReturnsEnabled ?? false, wasteLoc = Opt(body.ErpWasteLocation)?.ToUpperInvariant(), docPrefix = string.IsNullOrWhiteSpace(body.FactsDocPrefix) ? await AutoPrefixAsync(c, tx, companyId, id, b.Code) : await DocPrefixAsync(c, tx, companyId, id, body.FactsDocPrefix), delayStep = Math.Clamp(body.CloseDelayMinutes ?? 15, 5, 60), delayMax = Math.Clamp(body.CloseDelayMaxMinutes ?? 120, 0, 480), pickupMode = Pickup(body.PickupMode, "off"), pickupMinutes = Minutes(body.PickupMinutes, 10), nameAr = Opt(body.NameAr), addressAr = Opt(body.AddressAr), receiptLang = Lang(body.ReceiptLanguage, "bilingual"), shortStock = Short(body.ShortStock, "allow"), id, locCode = Opt(body.ErpLocationCode), locName = Opt(body.ErpLocationCode) is null ? null : Opt(body.ErpLocationName), days = Math.Clamp(body.ReturnDays ?? 0, 0, 365), kitchen = body.KitchenEnabled ?? true, autoOpen = Time(body.AutoOpenTime, d.AutoOpenTime),
                                autoClose = Time(body.AutoCloseTime, d.AutoCloseTime), tolerance = NonNegative(body.VarianceTolerance, d.VarianceTolerance, "variance tolerance"),
                                @float = NonNegative(body.DefaultFloat, d.DefaultFloat, "float"), atClose = AtClose(body.OpenOrdersAtClose, d.OpenOrdersAtClose) }, tx);
+                await c.ExecuteAsync("update branch set future_orders = @on where id = @id", new { id, on = body.FutureOrders ?? false }, tx);
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "created", $"Branch {b.Code} created",
                     Audit.Created(("Code", b.Code), ("Name", b.Name), ("Table service", b.TableService)));
                 return id;
@@ -390,6 +393,13 @@ public static class CompanyEndpoints
                                atClose = AtClose(body.OpenOrdersAtClose, old.OpenOrdersAtClose),
                                locCode = body.ErpLocationCode is null ? old.ErpLocationCode : Opt(body.ErpLocationCode),
                                locName = body.ErpLocationCode is null ? old.ErpLocationName : Opt(body.ErpLocationCode) is null ? null : Opt(body.ErpLocationName) }, tx);
+                // Future orders off: only once none is waiting (their advances are held).
+                if (body.FutureOrders is false && old.FutureOrders)
+                {
+                    var waiting = await c.ExecuteScalarAsync<int>("select count(*)::int from pos_order where branch_id = @id and future_status = 'waiting'", new { id }, tx);
+                    if (waiting > 0) throw new DomainException($"Collect or cancel the {waiting} waiting future order{(waiting == 1 ? "" : "s")} before turning Future orders off.");
+                }
+                await c.ExecuteAsync("update branch set future_orders = @on where id = @id", new { id, on = body.FutureOrders ?? old.FutureOrders }, tx);
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "changed", $"Branch {old.Code} changed",
                 [
                     new("Name", old.Name, b.Name), new("Address", old.Address, b.Address), new("Phone", old.Phone, b.Phone),
@@ -414,6 +424,7 @@ public static class CompanyEndpoints
                     new("FACTS prices include VAT", old.FactsPricesIncludeVat, body.FactsPricesIncludeVat ?? old.FactsPricesIncludeVat),
                     new("Platform prices from", old.FactsPlatformLocation, body.FactsPlatformLocation is null ? old.FactsPlatformLocation : Opt(body.FactsPlatformLocation)?.ToUpperInvariant()),
                     new("Returns", old.ReturnsEnabled, body.ReturnsEnabled ?? old.ReturnsEnabled),
+                    new("Future orders", old.FutureOrders, body.FutureOrders ?? old.FutureOrders),
                     new("FACTS item types", old.FactsItemTypes, body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes)),
                     new("FACTS item master", old.FactsItemMaster, body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant()),
                     new("FACTS division", old.FactsDivision, body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision)),

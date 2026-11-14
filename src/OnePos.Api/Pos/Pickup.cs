@@ -65,7 +65,7 @@ public static class Pickup
                     select o.id, o.number, o.order_type, o.customer_name, dp.name as platform_name, o.platform_ref, o.opened_at, o.ready_at
                     from pos_order o join branch br on br.id = o.branch_id left join delivery_platform dp on dp.id = o.platform_id
                     where o.branch_id = @b and o.business_date = @day and o.order_type <> 'dine_in' and o.number is not null
-                      and o.collected_at is null and o.status <> 'void'
+                      and o.collected_at is null and o.status <> 'void' and o.future_status is distinct from 'waiting'
                       and (o.ready_at > now() - make_interval(mins => br.pickup_minutes)
                            or o.ready_at is null and o.opened_at > now() - interval '3 hours'
                               and case when br.kitchen_enabled then exists (select 1 from kitchen_ticket k where k.order_id = o.id and not k.is_cancel)

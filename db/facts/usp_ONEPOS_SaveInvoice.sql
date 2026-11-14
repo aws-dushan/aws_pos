@@ -21,6 +21,8 @@ AS
      the sale takes that batch out again. Only when that batch hasn't enough left does the line go FIFO.          (20-10-2026)
   A delivery platform's bill (Talabat, Deliveroo…) gets the platform's order number in "Cust. LPO#" (SAL_REFNO) and SAL_REF1: One POS sends it
      as /data/Invoice/PlatformOrderNo, which FACTS' own procedure ignores.                                         (24-10-2026)
+  A future order's bill is linked to its advances (QRV51) both ways: the future order number and the QRV51 numbers in SAL_REFNO2, the
+     bill in each QRV51's QRP_BEFORE_DOCTYPE/DOCNO. One POS sends them as /data/Invoice/FutureOrder.              (13-11-2026)
   3. A line no batch covers keeps no batch (for finance's batch update, as today) and is named in the answer. Giving batches
      can't undo the saved sale: if that step fails, the sale stays and the answer says so.
 
@@ -49,6 +51,23 @@ BEGIN
     IF @PlatformOrderNo IS NOT NULL
         UPDATE dbo.SALES_HEADER SET SAL_REFNO = @PlatformOrderNo, SAL_REF1 = @PlatformOrderNo
         WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
+
+    -- A future order's bill (taken earlier with advances, each a QRV51 by usp_ONEPOS_PostAdvance): linked both ways. The bill gets the
+    -- future order number and its advances' QRV51 numbers in SAL_REFNO2; each QRV51 gets the bill in QRP_BEFORE_FYCODE/DOCTYPE/DOCNO.
+    -- One POS sends it as /data/Invoice/FutureOrder (FutureOrderNo, AdvanceNo …), which FACTS' own procedure ignores.  (13-11-2026)
+    DECLARE @FutureOrderNo NVARCHAR(50) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/Invoice/FutureOrder/FutureOrderNo)[1]', 'NVARCHAR(50)'))), N'');
+    IF @FutureOrderNo IS NOT NULL
+    BEGIN
+        DECLARE @Advances TABLE (Ref NVARCHAR(20) PRIMARY KEY);
+        INSERT INTO @Advances (Ref)
+        SELECT DISTINCT a.value('.', 'NVARCHAR(20)') FROM @BodyXML.nodes('/data/Invoice/FutureOrder/AdvanceNo') AS x(a) WHERE a.value('.', 'NVARCHAR(20)') <> N'';
+        UPDATE q SET QRP_BEFORE_FYCODE = @FyCode, QRP_BEFORE_DOCTYPE = N'POS51', QRP_BEFORE_DOCNO = @InvoiceNo
+        FROM dbo.QRP_HEADER q JOIN @Advances a ON a.Ref = q.QRP_REFNO WHERE q.QRP_DOCTYPE = N'QRV51';
+        UPDATE dbo.SALES_HEADER
+        SET SAL_REFNO2 = LEFT(@FutureOrderNo + ISNULL(N' advances QRV51 ' + (SELECT STRING_AGG(q.QRP_DOCNO, N', ') FROM dbo.QRP_HEADER q JOIN @Advances a ON a.Ref = q.QRP_REFNO
+                                                                         WHERE q.QRP_DOCTYPE = N'QRV51'), N''), 400)
+        WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
+    END
 
     -- 2. Batches, FIFO, line by line.
     DECLARE @Given INT = 0, @Missing NVARCHAR(1000) = N'', @Note NVARCHAR(400) = NULL;

@@ -88,6 +88,8 @@ export type Order = {
   refunded: number; vatRate: number; pricesIncludeVat: boolean; servicePct: number; openedAt: string; closedAt: string | null; voidReason: string | null;
   version: number; registerName: string | null; openedByName: string | null; items: number; due: number;
   tableIds: string[]; tableNames: string | null; lockedBy: string | null; billPrintedAt: string | null; readyAt: string | null; collectedAt: string | null; splitFrom: string | null; invoiceNo: string | null;
+  /** A future order: when it's collected; waiting (payments are advances), collected (a normal bill now) or cancelled; its FO number. */
+  collectAt?: string | null; futureStatus?: "waiting" | "collected" | "cancelled" | null; futureRef?: string | null;
 };
 export type OrderLine = {
   id: string; itemId: string | null; name: string; nameAr: string | null; unitPrice: number; qty: number; modifiers: { groupId: string; optionId: string; group: string; name: string; price: number; /** Set on a combo's chosen item. */ itemId?: string | null }[];
@@ -102,6 +104,13 @@ export type Payment = {
   reason: string | null; at: string; takenByName: string | null;
   /** The FACTS card type of a card payment (e.g. "ERBQS VISA CARD"). */
   cardType?: string | null;
+  /** A future order's advance (or one given back), with its own number (ADV-…). */
+  isAdvance?: boolean; advanceNo?: string | null;
+};
+/** "Sat 16 Nov, 16:00": a future order's collection time. */
+export const collectLabel = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
 };
 /** A FACTS card type's name without the outlet's location code: "ERBQS VISA CARD" → "VISA CARD". */
 export const cardLabel = (cardType: string | null | undefined) => (cardType ? cardType.replace(/^\S+\s+/, "") : null);

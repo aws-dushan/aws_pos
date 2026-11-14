@@ -68,6 +68,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 | Wastage approved | `wastage` | **STV50** location → wastage location, FIFO batches | `usp_ONEPOS_PostWastageTransfer` (or draft `usp_ONEPOS_SaveWastageTransfer`) | Approver's FACTS user |
 | Return to store approved, check-in shortfall | `return` | **STV50** back to the origin location | `usp_ONEPOS_PostWastageTransfer` | Approver's FACTS user |
 | Marketing give-away approved | `marketing` | **MCV50** to the marketing expense account at batch cost | `usp_ONEPOS_PostConsumption` | Marketing FACTS user |
+| Future order's advance taken | `advance` | **QRV51** posted ("Others" mode): Dr the payment method's account / Cr **2802 POS CUSTOMER ADVANCES** (its sub-ledger), Ref no `ADV-<branch>-000001`. The bill on collection is a normal POS51 paid by **ADVANCE** plus the balance, sent only once its advances are posted, and linked to them both ways (POS51 `SAL_REFNO2`, QRV51 `QRP_BEFORE_DOCTYPE/DOCNO`). An advance given back on cancelling is not posted (finance books it) | `usp_ONEPOS_PostAdvance` | POSBAKERY |
 | Stock request approved | `request` | **STR50** store → outlet | `usp_ONEPOS_PostTransferRequest` | Approver's FACTS user |
 | Prices posted (Prices page, not queued: posted at once, `Pos/Prices.cs`) | — | **OSMPI** outlet price import (the branch's price type, written to STOCK_PRICE by FACTS' own `usp_SIT_XLSTOCKPRICE_INSERT`) and one **CPL50** customer price list per platform at the branch's platform price location, changed items only, valid from today to 31 Dec 2030; FACTS' OSMPI check answers rows with a column twice (DFESDET_MESSAGE), so replies are read first-column-wins; once posted, the page answers at once and the prices are read back from FACTS in the background (the till and the page reload on `menu.changed`) | `usp_ONEPOS_PostPrices` | Branch's FACTS user for price posting |
 
@@ -129,6 +130,22 @@ the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the c
 | Wastage | Finance enters in FACTS, or draft transfer from One POS; with a branch approver it is posted on approval |
 | BOM items (repacking) | Off, draft per day, posted per bill |
 | Refunds | Not posted (finance enters them), returned bills as PSR51, or SR50 via a named procedure |
+| Future orders' advances | Not posted (the bill on collection carries every payment, advances included, as normal payments), or QRV51 to advances (each advance posted when taken; the bill paid by ADVANCE) |
+
+### Future orders' advances
+
+A future order (`Pos/FutureOrders.cs`) is an order with a collection time (`pos_order.collect_at`, `future_status` waiting →
+collected / cancelled, `future_ref` FO-…). While it waits, every payment on it is an advance (`payment.is_advance`, its own
+number `advance_no`), counted in the shift and day it was taken; the order stays open even when paid in full. Collecting moves
+the order to that business day, so its tax invoice and POS51 are dated the collection day; the balance is paid as on any bill.
+With the QRV51 option, each advance is queued as `advance` (`payment_id`); the bill's XML takes the posted advances as one
+`ADVANCE` receipt line, and the sender holds the bill until they are posted. An advance left out of FACTS is sent on the bill as
+a normal payment instead (the bill is rebuilt). The bill's XML also carries `FutureOrder` (FO number and its posted advance
+numbers), which `usp_ONEPOS_SaveInvoice` uses to link the POS51 and its QRV51s. Advances given back when an order is cancelled
+are not posted. A collected future order's bill returned whole: the credit note refunds only the balance, the PSR51 (a copy of
+the POS51) puts the ADVANCE part back on 2802, and the order goes back to waiting as a new order (same FO number) that takes over
+the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAsync`); its next bill is paid by ADVANCE again. What FACTS needs set up first (the ADVANCE sign, a sub-ledger on 2802) is in
+[FACTS changes for future-order advances](reference/facts-future-order-advances.md).
 
 ## Changing anything in FACTS
 

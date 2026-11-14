@@ -28,6 +28,8 @@ export type Screen = {
   rewardsOnly?: boolean;
   /** Shown only where the company is connected to FACTS. */
   factsOnly?: boolean;
+  /** Shown only where the branch takes future orders (Companies & branches). */
+  futureOnly?: boolean;
 };
 
 /** The screens built so far, in menu order. Service screens (register, floor, kitchen…) join in phases 1–2. */
@@ -36,6 +38,7 @@ export const SCREENS: Screen[] = [
   { href: "/floor", label: "Floor", icon: ArmchairIcon, module: "sales", hint: "Tables and who's seated", group: "Service", perm: "pos.sell", tableOnly: true },
   { href: "/reservations", label: "Reservations", icon: CalendarDaysIcon, module: "appr", hint: "Table bookings by day", group: "Service", perm: "pos.sell", tableOnly: true },
   { href: "/register", label: "Register", icon: ShoppingBasketIcon, module: "fin", hint: "Take orders and payments", group: "Service", perm: "pos.sell" },
+  { href: "/future", label: "Future orders", icon: CalendarClockIcon, module: "sales", hint: "Orders with an advance, collected later", group: "Service", perm: "pos.sell", futureOnly: true },
   { href: "/kitchen", label: "Kitchen", icon: ChefHatIcon, module: "purch", hint: "Kitchen display", group: "Service", perm: "kitchen.view", kitchenOnly: true },
   { href: "/day", label: "Day & shifts", icon: CalendarClockIcon, module: "appr", hint: "Open and close the day, shifts, cash counts", group: "Service", perm: "day.shift|day.manage" },
   { href: "/approvals", label: "Approvals", icon: ShieldCheckIcon, module: "appr", hint: "Requests from the tills", group: "Service", perm: "day.manage|pos.refund" },

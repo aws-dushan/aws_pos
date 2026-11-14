@@ -90,6 +90,10 @@ public static class Orders
         /// <summary>Another device has it open (REQ TBL-08): "Till 2 · Omar".</summary>
         public string? LockedBy { get; set; }
         public int Items { get; set; }
+        /// <summary>A future order: when it's collected; waiting (advances only), collected (now a normal bill), cancelled; its FO number.</summary>
+        public DateTime? CollectAt { get; set; }
+        public string? FutureStatus { get; set; }
+        public string? FutureRef { get; set; }
         public decimal Due => Math.Max(0, Total - Paid);
     }
 
@@ -135,6 +139,9 @@ public static class Orders
         public Guid? CreditNoteId { get; set; }
         /// <summary>The FACTS card type of a card payment (e.g. "ERBQS VISA CARD").</summary>
         public string? CardType { get; set; }
+        /// <summary>Taken (or given back) as a future order's advance, with its own number (ADV-…).</summary>
+        public bool IsAdvance { get; set; }
+        public string? AdvanceNo { get; set; }
     }
 
     /// <summary>
@@ -243,7 +250,7 @@ public static class Orders
                 // A seated booking whose guests left before ordering goes back to "booked".
                 return await c.ExecuteScalarAsync<int>("""
                     with gone as (
-                      delete from pos_order o where o.id = @id and o.status = 'open'
+                      delete from pos_order o where o.id = @id and o.status = 'open' and o.future_status is null
                         and not exists (select 1 from order_line l where l.order_id = o.id) and not exists (select 1 from payment p where p.order_id = o.id)
                       returning o.id
                     ), fix as (update reservation set status = 'booked', order_id = null where order_id in (select id from gone))
@@ -268,6 +275,8 @@ public static class Orders
                     {ListSql}
                     where o.branch_id = @branchId and (o.business_date = @day or (@status = 'open' and o.status = 'open'))
                       and (@status is null or @status = 'all' or o.status = @status)
+                      -- A future order waiting for its day is on Future orders, not among the register's open orders.
+                      and (@status is distinct from 'open' or o.future_status is distinct from 'waiting')
                       and (@term is null or o.number::text like @term or o.customer_name ilike @term or o.table_label ilike @term or o.customer_phone ilike @term)
                     order by o.opened_at desc limit 500
                     """, new { branchId, day, status, term }, tx)).ToList();
@@ -503,6 +512,10 @@ public static class Orders
             var shift = await Days.ShiftOfAsync(c, tx, scope.RegisterId, scope.UserId);
             if (list.Length > 0 && scope.RegisterId is null) throw new DomainException("Pick the register you're at first (on the Dashboard), then open your shift.");
             if (list.Length > 0 && shift is null) throw new DomainException("Open your shift first: count the float in the drawer (on the Dashboard).");
+            // A future order waiting for its day: every payment is an advance (any method, split too), and the order stays open even when
+            // paid in full. It is invoiced when it's collected (Future orders → Collect).
+            var advance = o.FutureStatus == "waiting";
+            decimal taken = 0;
             // Non-cash first; cash last, so any change comes out of cash.
             foreach (var p in list.OrderBy(p => p.Method == "cash" ? 1 : 0))
             {
@@ -541,30 +554,25 @@ public static class Orders
                 // A voucher pays from its balance; points from the attached customer's points (REQ CUS-02, CUS-03).
                 Guid? voucherId = method == "voucher" ? await Rewards.RedeemAsync(c, tx, scope, reference, amount, o) : null;
                 int? points = method == "points" ? await Rewards.RedeemPointsAsync(c, tx, scope, amount, o) : null;
-                await c.ExecuteAsync("""
-                    insert into payment (company_id, branch_id, register_id, order_id, business_date, method, amount, tendered, change_given, reference, taken_by, shift_id, voucher_id, points, card_type)
-                    values (@co, @b, @reg, @id, @date, @method, @amount, @tendered, @change, @reference, @userId, @shift, @voucherId, @points, @cardType)
+                var advanceNo = advance ? await Returns.NextAsync(c, tx, o.CompanyId, o.BranchId, "ADV") : null;
+                var paymentId = await c.ExecuteScalarAsync<Guid>("""
+                    insert into payment (company_id, branch_id, register_id, order_id, business_date, method, amount, tendered, change_given, reference, taken_by, shift_id, voucher_id, points, card_type,
+                                         is_advance, advance_no)
+                    values (@co, @b, @reg, @id, @date, @method, @amount, @tendered, @change, @reference, @userId, @shift, @voucherId, @points, @cardType, @advance, @advanceNo)
+                    returning id
                     """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId ?? o.RegisterId, id, date = day.Date, method, amount, tendered, change,
-                               reference = voucherId is null ? reference : reference!.Trim().ToUpperInvariant(), userId = scope.UserId, shift, voucherId, points, cardType }, tx);
+                               reference = voucherId is null ? reference : reference!.Trim().ToUpperInvariant(), userId = scope.UserId, shift, voucherId, points, cardType, advance, advanceNo }, tx);
+                if (advance) await Erp.FactsPosting.EnqueueAdvanceAsync(c, tx, paymentId);
                 due -= amount;
+                taken += amount;
             }
             await c.ExecuteAsync("""
                 update pos_order set paid = (select coalesce(sum(amount), 0) from payment where order_id = @id and kind = 'payment') where id = @id
                 """, new { id }, tx);
-            if (due <= 0)
-            {
-                await c.ExecuteAsync("update pos_order set status = 'paid', closed_at = now(), lock_session = null where id = @id", new { id }, tx);
-                await Returns.AssignInvoiceAsync(c, tx, o);
-                await Customers.LinkAsync(c, tx, id, scope.UserId);
-                await Rewards.EarnAsync(c, tx, id, scope.UserId);
-                await Recipes.ConsumeAsync(c, tx, id, scope.UserId);
-                await Pickup.OnPaidAsync(c, tx, id);
-                await Boms.EnqueueBillRepackingAsync(c, tx, id);
-                await Erp.FactsPosting.EnqueueInvoiceAsync(c, tx, id);
-                await OrderTables.ReleaseAsync(c, tx, id);
-                // Paying sends whatever wasn't sent yet (a counter order goes to the kitchen when it's paid).
-                await Kitchen.SendAsync(c, tx, o, scope.UserId);
-            }
+            if (advance && list.Length > 0)
+                await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "advance",
+                    $"Future order {o.FutureRef}: advance {taken:N2} taken");
+            if (due <= 0 && !advance) await FinishAsync(c, tx, o, scope);
         }, allowClosed: false));
 
         api.MapPost("/orders/{id:guid}/void", (Guid id, ReasonBody body, HttpContext http, Db db, Live live) => Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
@@ -579,6 +587,26 @@ public static class Orders
             await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "void", $"Order #{o.Number} voided ({o.Total:N2})", note: body.Reason.Trim());
         }));
 
+    }
+
+    /// <summary>
+    /// The bill is paid in full: closed, invoiced, the customer linked, points earned, ingredients used, the pickup screen told,
+    /// repacking and the bill queued for FACTS, the table freed, and anything not sent yet goes to the kitchen.
+    /// </summary>
+    internal static async Task FinishAsync(NpgsqlConnection c, NpgsqlTransaction tx, OrderRow o, Scope scope)
+    {
+        var id = o.Id;
+        await c.ExecuteAsync("update pos_order set status = 'paid', closed_at = now(), lock_session = null where id = @id", new { id }, tx);
+        await Returns.AssignInvoiceAsync(c, tx, o);
+        await Customers.LinkAsync(c, tx, id, scope.UserId);
+        await Rewards.EarnAsync(c, tx, id, scope.UserId);
+        await Recipes.ConsumeAsync(c, tx, id, scope.UserId);
+        await Pickup.OnPaidAsync(c, tx, id);
+        await Boms.EnqueueBillRepackingAsync(c, tx, id);
+        await Erp.FactsPosting.EnqueueInvoiceAsync(c, tx, id);
+        await OrderTables.ReleaseAsync(c, tx, id);
+        // Paying sends whatever wasn't sent yet (a counter order goes to the kitchen when it's paid).
+        await Kitchen.SendAsync(c, tx, o, scope.UserId);
     }
 
     /// <summary>
@@ -819,7 +847,8 @@ public sealed class EmptyOrderSweep(IConfiguration config, ILogger<EmptyOrderSwe
                 await c.OpenAsync(stop);
                 var n = await c.ExecuteScalarAsync<int>("""
                     with gone as (
-                      delete from pos_order o where o.status = 'open' and o.opened_at < now() - interval '30 minutes'
+                      -- A future order stays (it holds the customer's booking) until it's collected or cancelled.
+                      delete from pos_order o where o.status = 'open' and o.opened_at < now() - interval '30 minutes' and o.future_status is null
                         and not exists (select 1 from order_line l where l.order_id = o.id) and not exists (select 1 from payment p where p.order_id = o.id)
                       returning o.id
                     ), fix as (update reservation set status = 'booked', order_id = null where order_id in (select id from gone))

@@ -24,7 +24,7 @@ type Branch = {
   id: string; companyId: string; code: string; name: string; address: string | null; phone: string | null; timeZone: string; tableService: boolean; askGuests: boolean;
   serviceChargePct: number; receiptHeader: string | null; receiptFooter: string | null; dayControl: DayControl; isActive: boolean; returnDays: number;
   kitchenEnabled: boolean; autoOpenTime: string; autoCloseTime: string; varianceTolerance: number; defaultFloat: number; openOrdersAtClose: "carry" | "void_unsent";
-  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; factsPlatformLocation: string | null; returnsEnabled: boolean; factsItemTypes: string | null; factsItemMaster: string | null; factsDivision: string | null;
+  erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; factsPlatformLocation: string | null; returnsEnabled: boolean; futureOrders: boolean; factsItemTypes: string | null; factsItemMaster: string | null; factsDivision: string | null;
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
@@ -286,7 +286,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
 }) {
   const isNew = !!value && !value.branch;
   const blank = { code: "", name: "", address: "", phone: "", timeZone: "Asia/Dubai", tableService: true, askGuests: true, serviceChargePct: "0", receiptHeader: "", receiptFooter: "", dayControl: "manual" as DayControl, isActive: true, returnDays: "0",
-    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, factsPlatformLocation: "", returnsEnabled: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
+    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, factsPlatformLocation: "", returnsEnabled: false, futureOrders: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -296,7 +296,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
     setF(b ? { code: b.code, name: b.name, address: b.address ?? "", phone: b.phone ?? "", timeZone: b.timeZone, tableService: b.tableService, askGuests: b.askGuests,
       serviceChargePct: String(b.serviceChargePct), receiptHeader: b.receiptHeader ?? "", receiptFooter: b.receiptFooter ?? "", dayControl: b.dayControl, isActive: b.isActive, returnDays: String(b.returnDays),
       kitchenEnabled: b.kitchenEnabled, autoOpenTime: b.autoOpenTime.slice(0, 5), autoCloseTime: b.autoCloseTime.slice(0, 5), varianceTolerance: String(b.varianceTolerance),
-      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, factsPlatformLocation: b.factsPlatformLocation ?? "", returnsEnabled: b.returnsEnabled, factsItemTypes: (b.factsItemTypes ?? "FG").replace(/,/g, ", "), factsItemMaster: b.factsItemMaster ?? "", factsDivision: b.factsDivision ?? "",
+      defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, factsPlatformLocation: b.factsPlatformLocation ?? "", returnsEnabled: b.returnsEnabled, futureOrders: b.futureOrders, factsItemTypes: (b.factsItemTypes ?? "FG").replace(/,/g, ", "), factsItemMaster: b.factsItemMaster ?? "", factsDivision: b.factsDivision ?? "",
       nameAr: b.nameAr ?? "", addressAr: b.addressAr ?? "", receiptLanguage: b.receiptLanguage, shortStock: b.shortStock, pickupMode: b.pickupMode, pickupMinutes: String(b.pickupMinutes),
       closeDelayMinutes: String(b.closeDelayMinutes ?? 15), closeDelayMaxMinutes: String(b.closeDelayMaxMinutes ?? 120) } : blank);
   }
@@ -491,6 +491,9 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                 <Input value={f.returnDays} onChange={(e) => set("returnDays", e.target.value.replace(/\D/g, ""))} inputMode="numeric" />
               </Field>
             )}
+            <Field label="Future orders" hint="Orders for a later day with an advance (a cake for Saturday). Off once none is waiting.">
+              <Switch on={f.futureOrders} onChange={(v) => set("futureOrders", v)} label="Future orders" />
+            </Field>
             <Field label="Receipt header"><Textarea rows={2} value={f.receiptHeader} onChange={(e) => set("receiptHeader", e.target.value)} placeholder="Shown under the branch name" /></Field>
             <Field label="Receipt footer"><Textarea rows={2} value={f.receiptFooter} onChange={(e) => set("receiptFooter", e.target.value)} placeholder="e.g. Thank you for dining with us" /></Field>
           </div>
