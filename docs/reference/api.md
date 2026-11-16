@@ -61,7 +61,7 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/cash-bank` | reports.view, day.manage | src/OnePos.Api/Pos/CashToBank.cs:26 |
+| GET | `/api/cash-bank` | reports.view, day.manage | src/OnePos.Api/Pos/CashToBank.cs:27 |
 
 ## companies
 
@@ -111,12 +111,12 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/day` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:441 |
-| POST | `/api/day/{id:guid}/reopen` | day.reopen | src/OnePos.Api/Pos/Days.cs:568 |
-| POST | `/api/day/close` |  | src/OnePos.Api/Pos/Days.cs:504 |
-| POST | `/api/day/close-now` | day.shift | src/OnePos.Api/Pos/Days.cs:549 |
-| POST | `/api/day/delay-close` | day.shift | src/OnePos.Api/Pos/Days.cs:522 |
-| POST | `/api/day/open` |  | src/OnePos.Api/Pos/Days.cs:489 |
+| GET | `/api/day` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:442 |
+| POST | `/api/day/{id:guid}/reopen` | day.reopen | src/OnePos.Api/Pos/Days.cs:569 |
+| POST | `/api/day/close` |  | src/OnePos.Api/Pos/Days.cs:505 |
+| POST | `/api/day/close-now` | day.shift | src/OnePos.Api/Pos/Days.cs:550 |
+| POST | `/api/day/delay-close` | day.shift | src/OnePos.Api/Pos/Days.cs:523 |
+| POST | `/api/day/open` |  | src/OnePos.Api/Pos/Days.cs:490 |
 
 ## devices
 
@@ -156,15 +156,15 @@
 | --- | --- | --- | --- |
 | POST | `/api/erp/enable-sold` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:653 |
 | GET | `/api/erp/payment-modes` | pos.sell | src/OnePos.Api/Erp/FactsSync.cs:595 |
-| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:463 |
-| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:588 |
-| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:628 |
-| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:579 |
-| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:527 |
-| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:493 |
-| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:568 |
-| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:545 |
-| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:607 |
+| GET | `/api/erp/posting` |  | src/OnePos.Api/Erp/FactsPosting.cs:505 |
+| POST | `/api/erp/posting/{id:guid}/retry` |  | src/OnePos.Api/Erp/FactsPosting.cs:633 |
+| POST | `/api/erp/posting/{id:guid}/skip` | facts.post, branch.manage | src/OnePos.Api/Erp/FactsPosting.cs:673 |
+| GET | `/api/erp/posting/{id:guid}/xml` |  | src/OnePos.Api/Erp/FactsPosting.cs:624 |
+| PUT | `/api/erp/posting/branch/{id:guid}` |  | src/OnePos.Api/Erp/FactsPosting.cs:572 |
+| PUT | `/api/erp/posting/company` |  | src/OnePos.Api/Erp/FactsPosting.cs:535 |
+| GET | `/api/erp/posting/log` |  | src/OnePos.Api/Erp/FactsPosting.cs:613 |
+| GET | `/api/erp/posting/preview` |  | src/OnePos.Api/Erp/FactsPosting.cs:590 |
+| POST | `/api/erp/posting/push` |  | src/OnePos.Api/Erp/FactsPosting.cs:652 |
 | PUT | `/api/erp/settings` |  | src/OnePos.Api/Erp/FactsSync.cs:551 |
 | GET | `/api/erp/status` | menu.manage | src/OnePos.Api/Erp/FactsSync.cs:517 |
 | GET | `/api/erp/stock-items` |  | src/OnePos.Api/Pos/Boms.cs:186 |
@@ -432,12 +432,12 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:725 |
-| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:659 |
-| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:706 |
-| POST | `/api/shifts/{id:guid}/deposit` | day.manage, day.deposit, day.shift | src/OnePos.Api/Pos/Days.cs:632 |
-| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:694 |
-| POST | `/api/shifts/open` | day.shift | src/OnePos.Api/Pos/Days.cs:587 |
+| POST | `/api/shifts/{id:guid}/approve` | day.manage | src/OnePos.Api/Pos/Days.cs:729 |
+| POST | `/api/shifts/{id:guid}/cash` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:663 |
+| POST | `/api/shifts/{id:guid}/close` | day.shift, day.manage | src/OnePos.Api/Pos/Days.cs:710 |
+| POST | `/api/shifts/{id:guid}/deposit` | day.manage, day.deposit, day.shift | src/OnePos.Api/Pos/Days.cs:633 |
+| GET | `/api/shifts/{id:guid}/report` | day.shift, day.manage, reports.view | src/OnePos.Api/Pos/Days.cs:698 |
+| POST | `/api/shifts/open` | day.shift | src/OnePos.Api/Pos/Days.cs:588 |
 
 ## signage
 
