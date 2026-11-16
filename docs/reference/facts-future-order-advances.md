@@ -36,17 +36,9 @@ One POS writes and sends:
 
 | Setting | State |
 |---|---|
-| PAYMENT_METHOD ADVANCE, POS51 | Sign **+1**: a bill paid by ADVANCE debits 2802 (checked on POS51 0002) |
+| PAYMENT_METHOD ADVANCE | Sign **+1** on POS51 (a bill paid by ADVANCE debits 2802, checked on POS51 0002) and **−1** on PSR51 (a return puts it back), as every other payment method |
 | QRV51 posting (`usp_QRV_APPR_AccountsUpdation`) | For QRV51 it adds Dr party / Cr the QRV51 default account (DOCUMENT_MASTER QRV51 → **2802**); the 2802 line is made from the **Others** amount, so an advance is saved in Others mode (checked on QRV51 1001) |
 | DOCUMENT_PROCEDURES, QRV51 posting step | DMP_POSTING_ENTRY = 1, as QRV50 |
-
-## Still needed
-
-**PAYMENT_METHOD ADVANCE, PSR51: sign −1.** It is +1, where all 89 other payment methods are −1 on PSR51. With +1, returning a bill paid by ADVANCE takes the advance off 2802 a second time instead of putting it back.
-
-```sql
-UPDATE dbo.PAYMENT_METHOD SET PM_SIGN = -1 WHERE PM_DOCNO = N'ADVANCE' AND PM_DOC_DOCTYPE = N'PSR51';
-```
 
 ## For finance to confirm
 
