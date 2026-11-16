@@ -582,9 +582,14 @@ public static class Orders
             if (await c.ExecuteScalarAsync<bool>("select exists (select 1 from order_line where order_id = @id and sent_qty > 0 and not is_void)", new { id }, tx))
                 scope.Require("pos.void");
             await Kitchen.CancelOrderAsync(c, tx, o, scope.UserId);
-            await c.ExecuteAsync("update pos_order set status = 'void', void_reason = @r, closed_at = now(), lock_session = null where id = @id", new { id, r = body.Reason.Trim() }, tx);
+            // A future order voided at the till (no advance taken: an order with payments isn't voided) is cancelled on Future orders too.
+            var future = await c.ExecuteScalarAsync<string?>("""
+                update pos_order set status = 'void', future_status = case when future_status = 'waiting' then 'cancelled' else future_status end,
+                  void_reason = @r, closed_at = now(), lock_session = null where id = @id returning future_ref
+                """, new { id, r = body.Reason.Trim() }, tx);
             await OrderTables.ReleaseAsync(c, tx, id);
-            await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "void", $"Order #{o.Number} voided ({o.Total:N2})", note: body.Reason.Trim());
+            await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "void",
+                future is null ? $"Order #{o.Number} voided ({o.Total:N2})" : $"Future order {future} cancelled ({o.Total:N2})", note: body.Reason.Trim());
         }));
 
     }

@@ -188,7 +188,7 @@ The tax invoice number (e.g. INV-EBL-01-000123) is given at the moment the bill 
 | Split bill | Move chosen items to a separate bill or another table (before any payment). |
 | Move or join tables / Merge another table's order | Dine-in table changes. |
 | No sale (open drawer) | Open the drawer without a sale; pick a reason. Shown on the Z report. |
-| Void order | Cancel an unpaid order. Needs a supervisor once items were sent. |
+| Void order | Cancel an unpaid order. Needs a supervisor once items were sent. A future order with no advance voided here is cancelled on **Future orders** too. |
 
 Only one till edits an order at a time. Another till sees **Open on …** and can tap **Take over**.
 
