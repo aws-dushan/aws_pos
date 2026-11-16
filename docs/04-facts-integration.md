@@ -155,7 +155,7 @@ the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAs
 
 | Step | FACTS document | 2802 POS customer advances |
 | --- | --- | --- |
-| Advance 200 by Visa | QRV51: net Dr 2315 200 / Cr 2802 200 (two lines with 2802 as the party, or four through AR C0006, as the FACTS developer sets QRV51 up), Ref no ADV-…; links to its POS51 later in `QRP_BEFORE_DOCTYPE/DOCNO` | 200 held |
+| Advance 200 by Visa | QRV51: net Dr 2315 200 / Cr 2802 200 (saved in Others mode with party AR / C0006 and Others account 2315; FACTS' QRV51 posting makes Dr 2315 / Cr C0006 and Dr C0006 / Cr 2802, its default account), Ref no ADV-…; links to its POS51 later in `QRP_BEFORE_DOCTYPE/DOCNO` | 200 held |
 | Collected, bill 500 | POS51: receipts ADVANCE 200 (Dr 2802) + Visa 300 (Dr 2315), Cr AR/C0006 500; `SAL_REFNO2` = FO-… advances QRV51 … | 0 |
 | Bill returned | PSR51 (copy of the POS51): ADVANCE 200 back (Cr 2802), Visa 300 back | 200 held again |
 | Collected again | New POS51 paid by ADVANCE again | 0 |

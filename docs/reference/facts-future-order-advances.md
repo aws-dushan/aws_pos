@@ -8,8 +8,8 @@ A customer orders now for a later day (for example, a cake for Saturday) and pay
 
 | When | FACTS document | Entry (net) |
 |---|---|---|
-| Order day: advance 50 by card | **QRV51**, posted | Dr **2315** POS credit card 50 / Cr **2802** POS customer advances 50 |
-| Order day: advance in cash | **QRV51**, posted | Dr the outlet's cash account (e.g. **2205**) / Cr **2802** |
+| Order day: advance 50 by card | **QRV51**, posted, party AR / C0006, Others account 2315 | Dr **2315** POS credit card 50 / Cr C0006 50, then Dr C0006 50 / Cr **2802** POS customer advances 50. Net: Dr 2315 / Cr 2802 |
+| Order day: advance in cash | **QRV51**, posted, Others account = the outlet's cash account (e.g. **2205**) | Net: Dr 2205 / Cr **2802** |
 | Collection day: bill 100 | **POS51**, as today, paid by **ADVANCE 50** + **card 50** | ADVANCE line: Dr **2802** 50 / Cr AR C0006 50. Card line: Dr 2315 50 / Cr AR C0006 50. Sale: Dr AR C0006 100 / Cr sales 95.24 + VAT 4.76 |
 | Bill returned | **PSR51** (copy of the POS51) | The advance back on 2802, the balance back to the card or cash |
 
@@ -24,7 +24,7 @@ Result over the whole order:
 
 - 2802 always shows the advances held for orders not yet collected.
 - An advance given back on a cancelled order is not posted by One POS: finance books it.
-- QRV51 **1001** (14 Nov, Dr 2802 / Cr AR C0006) is entered the other way round. Please reverse or delete it, together with test bills POS51 0001 and 0002 (30–31 Oct).
+- Test bill POS51 **0001** (30 Oct) was posted with the old ADVANCE sign: it leaves 5.00 credit on 2802 and 10.00 debit on AR C0006. Please reverse it.
 
 One POS writes and sends:
 - `usp_ONEPOS_PostAdvance`: one QRV51 per advance.
@@ -32,34 +32,21 @@ One POS writes and sends:
   - On the POS51, `SAL_REFNO2` = "FO-… advances QRV51 …".
   - On each QRV51, `QRP_BEFORE_DOCTYPE` / `QRP_BEFORE_DOCNO` = the POS51.
 
-## 1. Fix the sign of payment method ADVANCE
+## What FACTS has now
 
-`usp_SAL_APPR_ReceiptAccountsUpdation` books each receipt line as `RD_AMOUNT * PM_SIGN`. ADVANCE is the only payment method whose sign is the opposite of all the others:
+| Setting | State |
+|---|---|
+| PAYMENT_METHOD ADVANCE, POS51 | Sign **+1**: a bill paid by ADVANCE debits 2802 (checked on POS51 0002) |
+| QRV51 posting (`usp_QRV_APPR_AccountsUpdation`) | For QRV51 it adds Dr party / Cr the QRV51 default account (DOCUMENT_MASTER QRV51 → **2802**); the 2802 line is made from the **Others** amount, so an advance is saved in Others mode (checked on QRV51 1001) |
+| DOCUMENT_PROCEDURES, QRV51 posting step | DMP_POSTING_ENTRY = 1, as QRV50 |
 
-| PAYMENT_METHOD | PM_DOC_DOCTYPE | Now | Should be (as all 89 others) |
-|---|---|---|---|
-| ADVANCE (account 2802) | POS51 | −1 | **+1** |
-| ADVANCE (account 2802) | PSR51 | +1 | **−1** |
+## Still needed
 
-With −1 a bill paid by ADVANCE **credits** 2802 and **debits** C0006: it books a new advance instead of using one. With +1 it debits 2802, as in the table above.
+**PAYMENT_METHOD ADVANCE, PSR51: sign −1.** It is +1, where all 89 other payment methods are −1 on PSR51. With +1, returning a bill paid by ADVANCE takes the advance off 2802 a second time instead of putting it back.
 
 ```sql
-UPDATE dbo.PAYMENT_METHOD SET PM_SIGN =  1 WHERE PM_DOCNO = N'ADVANCE' AND PM_DOC_DOCTYPE = N'POS51';
 UPDATE dbo.PAYMENT_METHOD SET PM_SIGN = -1 WHERE PM_DOCNO = N'ADVANCE' AND PM_DOC_DOCTYPE = N'PSR51';
 ```
-
-## 2. Let QRV51 credit 2802 (one of these)
-
-FACTS' QRV posting makes two lines: the receiving account debited and the party credited. The advance needs the card or cash account debited and 2802 credited.
-
-| | How | What the QRV51 shows |
-|---|---|---|
-| **a** | Change the QRV51 posting: party stays AR / C0006, and the posting adds Dr C0006 / Cr 2802 | Four lines: Dr 2315, Cr C0006, Dr C0006, Cr 2802 |
-| **b** | Add a sub-ledger under 2802 (e.g. C0006); the QRV51 is saved with party 2802 / sub-ledger and the card or cash account as the "Others" account | Two lines: Dr 2315, Cr 2802 |
-
-Both give the same balances. Please tell us which one, so One POS saves the QRV51 to match.
-
-Please also check QRV51's posting step. Its "Transaction Posting" row in DOCUMENT_PROCEDURES has DMP_POSTING_ENTRY = 0, where QRV50's has 1.
 
 ## For finance to confirm
 

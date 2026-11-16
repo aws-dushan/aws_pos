@@ -8,16 +8,19 @@ AS
   A customer orders now for a later day and pays an advance. The advance waits on 2802 POS CUSTOMER ADVANCES until the order is
   collected; the bill (POS51, sent by usp_ONEPOS_SaveInvoice on the collection day) is then paid by ADVANCE, which takes it off 2802.
 
-  One QRV51 (Quick Receipt Voucher-POS) per advance, dated the day it was taken, saved the way FACTS' screen saves a QRV in
-  "Others" mode: the party (credited) is 2802 with its sub-ledger; the Others account (debited) is the account of the payment
-  method the advance was paid by (PAYMENT_METHOD.PM_AC_DOCNO of the POS51 row, e.g. 2315 for cards, 2205 for ERBQS CASH); the
-  default cash account (2202) is not touched. Department = the outlet (ERBQS…), division 50. Ref no = One POS' advance number.
+  One QRV51 (Quick Receipt Voucher-POS) per advance, dated the day it was taken, saved the way FACTS' screen saves a QRV51 in
+  "Others" mode: the party is AR / C0006 (cash customer POS); the Others account (debited) is the account of the payment method
+  the advance was paid by (PAYMENT_METHOD.PM_AC_DOCNO of the POS51 row, e.g. 2315 for cards, 2205 for ERBQS CASH), with the whole
+  amount as the Others amount. FACTS' QRV51 posting then makes four lines: Dr the payment account / Cr AR C0006, and for QRV51
+  only Dr AR C0006 / Cr QRV51's default account 2802, so the net is Dr the payment account / Cr 2802 POS CUSTOMER ADVANCES.
+  Department = the outlet (ERBQS…), division 50. Ref no = One POS' advance number.
   Posted the way FACTS' Approve button posts it: usp_ApproveDocuments, step usp_QRV_APPR_AccountsUpdation (no user limit),
   which writes ACTION_STATUS and its log.
   An advance given back (a cancelled order) is not sent: finance books it by hand.
 
   Needs in FACTS first (set up by the FACTS developer):
-    - a sub-ledger under account 2802 (C0006 is taken if there, else the first one), so the QRV51 party is complete;
+    - usp_QRV_APPR_AccountsUpdation with its QRV51 lines (Dr party / Cr the QRV51 default account), and DOCUMENT_MASTER QRV51's
+      default account = 2802;
     - the payment method ADVANCE with sign +1 on POS51 (-1 on PSR51), so a bill paid by ADVANCE debits 2802.
 
   The same DocumentNo again (a retry) finds the QRV51 already posted and answers it. If FACTS refuses, nothing stays: the
@@ -36,7 +39,7 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @FyCode NVARCHAR(6) = N'CFY', @DocType NVARCHAR(6) = N'QRV51', @Key NVARCHAR(50) = N'usp_QRV_APPR_AccountsUpdation', @AdvanceAc NVARCHAR(20) = N'2802',
+    DECLARE @FyCode NVARCHAR(6) = N'CFY', @DocType NVARCHAR(6) = N'QRV51', @Key NVARCHAR(50) = N'usp_QRV_APPR_AccountsUpdation', @AdvanceAc NVARCHAR(20) = N'2802', @Party NVARCHAR(20) = N'AR', @Sub NVARCHAR(20) = N'C0006',
             @Ref NVARCHAR(20)       = @BodyXML.value('(/data/Advance/DocumentNo)[1]', 'NVARCHAR(20)'),
             @Type NVARCHAR(10)      = ISNULL(@BodyXML.value('(/data/Advance/Type)[1]', 'NVARCHAR(10)'), N'Receipt'),
             @DocDate DATETIME       = @BodyXML.value('(/data/Advance/DocDate)[1]', 'DATETIME'),
@@ -44,7 +47,7 @@ BEGIN
             @Mode NVARCHAR(100)     = @BodyXML.value('(/data/Advance/ReceiptMode)[1]', 'NVARCHAR(100)'),
             @Amount NUMERIC(18, 3)  = @BodyXML.value('(/data/Advance/Amount)[1]', 'NUMERIC(18,3)'),
             @Narr NVARCHAR(2000)    = @BodyXML.value('(/data/Advance/Narration)[1]', 'NVARCHAR(2000)'),
-            @DocNo NVARCHAR(20), @PayAc NVARCHAR(20), @Sub NVARCHAR(20), @Dept NVARCHAR(20), @Divn NVARCHAR(20) = N'50';
+            @DocNo NVARCHAR(20), @PayAc NVARCHAR(20), @Dept NVARCHAR(20), @Divn NVARCHAR(20) = N'50';
 
     IF @Type <> N'Receipt'
     BEGIN
@@ -67,10 +70,14 @@ BEGIN
         SELECT NULL AS DocumentNo, 'FAILED' AS status, LEFT(N'"' + @Mode + N'" is not a FACTS POS payment method with an account.', 400) AS description;
         RETURN;
     END
-    SELECT TOP 1 @Sub = SUBLMST_DOCNO FROM dbo.SUBLEDGER_MASTER WHERE SUBLMST_DOCTYPE = @AdvanceAc ORDER BY CASE WHEN SUBLMST_DOCNO = N'C0006' THEN 0 ELSE 1 END, SUBLMST_DOCNO;
-    IF @Sub IS NULL
+    IF NOT EXISTS (SELECT 1 FROM dbo.SUBLEDGER_MASTER WHERE SUBLMST_DOCTYPE = @Party AND SUBLMST_DOCNO = @Sub)
     BEGIN
-        SELECT NULL AS DocumentNo, 'FAILED' AS status, N'Account 2802 POS CUSTOMER ADVANCES has no sub-ledger in FACTS yet, so a QRV51 can''t post to it. The FACTS developer adds one (e.g. C0006).' AS description;
+        SELECT NULL AS DocumentNo, 'FAILED' AS status, N'The cash customer POS (AR / C0006) is not in FACTS.' AS description;
+        RETURN;
+    END
+    IF ISNULL((SELECT TOP 1 DM_DEFAULT_AC_DOCNO_DETAILS FROM dbo.DOCUMENT_MASTER WHERE DM_DOCNO = @DocType), N'') <> @AdvanceAc
+    BEGIN
+        SELECT NULL AS DocumentNo, 'FAILED' AS status, N'QRV51''s default account in FACTS is not 2802 POS CUSTOMER ADVANCES, so the advance would not reach it.' AS description;
         RETURN;
     END
     SELECT @Dept = DEPT_DOCNO FROM dbo.DEPARTMENT_MASTER WHERE DEPT_DOCNO = @Loc;
@@ -104,14 +111,15 @@ BEGIN
                 SET @DocNo = dbo.fn_GetNewDocNo(@DocType, @DocNo);
         END
 
-        -- "Others" mode: the party (2802 / sub-ledger) is credited, the Others account (the payment method's) debited.
+        -- "Others" mode, as FACTS' screen saves a QRV51: party AR / C0006, the Others account (the payment method's) debited by the
+        -- whole amount; FACTS' QRV51 posting moves it on from C0006 to 2802.
         INSERT INTO dbo.QRP_HEADER (QRP_FYCODE, QRP_DOCTYPE, QRP_DOCNO, QRP_DOCDATE, QRP_NARRATION, QRP_DR_AC_DOCNO, QRP_DR_SUBLEDGER_DOCNO, QRP_CR_AC_DOCNO, QRP_CR_SUBLEDGER_DOCNO,
             QRP_DR_CURR_DOCNO, QRP_DR_CURR_RATE, QRP_CR_CURR_DOCNO, QRP_CR_CURR_RATE, QRP_AMOUNT, QRP_MODE_DOCNO, QRP_DR_DIVN_DOCNO, QRP_DR_DEPT_DOCNO, QRP_CR_DIVN_DOCNO, QRP_CR_DEPT_DOCNO,
             QRP_CREATED_BY, QRP_CREATED_TS, QRP_PREV_BAL_AMOUNT, QRP_RECEIVED_AMOUNT, QRP_CHANGE_AMOUNT, QRP_AC_DOCNO, QRP_SUBLEDGER_DOCNO, QRP_REFNO, QRP_REFDATE,
             QRP_CASH_AMOUNT, QRP_CHEQUE_AMOUNT, QRP_CARD_AMOUNT, QRP_OTH_AMOUNT, QRP_OTHAC_DOCNO, QRP_SAL_AMOUNT, QRP_DISC_AMOUNT, QRP_TEND_AMOUNT, QRP_BAL_AMOUNT)
-        VALUES (@FyCode, @DocType, @DocNo, @DocDate, @Narr, N'2202', NULL, @AdvanceAc, @Sub,
+        VALUES (@FyCode, @DocType, @DocNo, @DocDate, @Narr, @Party, @Sub, @AdvanceAc, NULL,
             N'AED', 1, N'AED', 1, @Amount, N'OTHERS', @Divn, @Dept, @Divn, @Dept,
-            @ClientID, GETDATE(), 0, @Amount, 0, @AdvanceAc, @Sub, @Ref, @DocDate,
+            @ClientID, GETDATE(), 0, @Amount, 0, @Party, @Sub, @Ref, @DocDate,
             0, 0, 0, @Amount, @PayAc, 0, 0, 0, 0);
 
         INSERT INTO dbo.ADD_EDIT_DELETE_LOG (AED_UNIQUE_ID, AED_TS, AED_MACHINE_ID, AED_USER_CODE, AED_DOCNO, AED_DOCTYPE, AED_FYCODE, AED_STATUS)
