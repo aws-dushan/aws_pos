@@ -146,8 +146,8 @@ a normal payment instead (the bill is rebuilt). The bill's XML also carries `Fut
 numbers), which `usp_ONEPOS_SaveInvoice` uses to link the POS51 and its QRV51s. Advances given back when an order is cancelled
 are not posted. A collected future order's bill returned whole: the credit note refunds only the balance, the PSR51 (a copy of
 the POS51) puts the ADVANCE part back on 2802, and the order goes back to waiting as a new order (same FO number) that takes over
-the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAsync`); its next bill is paid by ADVANCE again. What FACTS needs set up first (the ADVANCE sign, and QRV51 able to credit 2802) is in
-[FACTS changes for future-order advances](reference/facts-future-order-advances.md).
+the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAsync`); its next bill is paid by ADVANCE again. FACTS' side (the ADVANCE sign, and QRV51's posting that moves the advance on to 2802) is described in
+[FACTS changes for future-order advances](reference/facts-future-order-advances.md); `usp_ONEPOS_PostAdvance` is created in FACTS before the option is switched on.
 
 ![FACTS posting: future orders' advances as QRV51 (procedure usp_ONEPOS_PostAdvance)](manual/images/tech-facts-advances.jpg)
 

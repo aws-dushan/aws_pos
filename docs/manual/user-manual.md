@@ -614,7 +614,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 | --- | --- |
 | Post to FACTS | The master switch (off by default). Off: bills wait in the queue. |
 | Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50), future orders' advances (not posted, or QRV51 to advances), bank deposits (not posted, or posted QRV50) |
-| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. The log lists them as **Advance ADV-…**. Needs FACTS set up first by the FACTS developer (the ADVANCE payment method, and QRV51 able to credit 2802). |
+| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. The log lists them as **Advance ADV-…**. Needs One POS' advance procedure (usp_ONEPOS_PostAdvance) created in FACTS first. |
 | Bank deposits | **Not posted**: accounts enter deposits in FACTS. **Posted QRV50**: each bank deposit recorded on a till goes to FACTS at once as a posted QRV50: the bank (2322) in, the branch's cash account out, the bag or slip number as its reference. The log lists them as **Bank deposit &lt;slip&gt;**, and **Cash to bank** shows each deposit's QRV50 number. Accounts don't make an RV50 for these deposits. |
 | Branches | Queue counts per branch and the **Posts from** date. The old POS and One POS must never post the same day for a branch. |
 | Dry run | A day's bills as they would go, with any problems; nothing is sent. |
