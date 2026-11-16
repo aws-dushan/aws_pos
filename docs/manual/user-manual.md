@@ -243,7 +243,7 @@ An order for a later day (a cake for Saturday): the customer pays an advance now
 
    ![The register with a future order: payments here are advances](images/future-register.jpg)
 
-3. Take any amount up to the total, by any payment method, split if needed, as on any bill.
+3. Type the amount the customer pays now (it starts at 0, up to the total), by any payment method. To split it, tap **Split payment**, **Add** each part, then **Take AED …** takes the parts as they are; the rest is paid on collection.
 
    ![Taking an advance](images/future-advance.jpg)
 

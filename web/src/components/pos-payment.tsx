@@ -79,10 +79,11 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const opened = open ? detail.order.id : null;
   let start = method;
   if (opened !== openFor) { setOpenFor(opened); if (opened) { start = detail.order.platformId ? "platform" : "cash"; setMethod(start); } }
-  if (key !== seen) { setSeen(key); setAmount(start === "cash" ? "" : due ? due.toFixed(2) : ""); setReference(""); setPristine(true); setParts([]); setSplitting(false); }
+  if (key !== seen) { setSeen(key); setAmount(start === "cash" || advance ? "" : due ? due.toFixed(2) : ""); setReference(""); setPristine(true); setParts([]); setSplitting(false); }
 
   // Cash: nothing typed is the exact amount (of what's left after the split's parts); otherwise what the customer handed over.
-  const value = method === "cash" && amount === "" ? left : Number(amount || 0);
+  // An advance starts at nothing: it's whatever the customer pays now, never the rest of the order by default.
+  const value = method === "cash" && amount === "" ? (advance ? 0 : left) : Number(amount || 0);
   const applied = method === "cash" ? Math.min(value, left) : value;
   const change = method === "cash" ? Math.max(0, roundTo(value - left, 2)) : 0;
   const part = applied < left - 0.004;
@@ -103,6 +104,8 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const entryOk = !!value && !over && !(needsRef && !reference.trim()) && !(needsCard && !cardType);
   // Nothing to pay (e.g. a 100% discount): the bill is completed without a payment, and its receipt prints as usual.
   const free = due <= 0.004 && parts.length === 0;
+  // An advance split into parts, nothing more typed: the parts are taken as they are.
+  const takeParts = advance && parts.length > 0 && !value;
   const current = (): Part => ({ method, amount: roundTo(applied, 2), tendered: method === "cash" ? value : null, reference: reference || null, cardType: needsCard ? cardType : null });
 
   /** The amount on screen becomes one part of the split; the screen is ready for the next part (what's left). */
@@ -111,7 +114,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
     const p = { ...current(), tendered: method === "cash" ? roundTo(applied, 2) : null };
     setParts((ps) => [...ps, p]);
     const rest = roundTo(left - p.amount, 2);
-    setAmount(method === "cash" ? "" : rest.toFixed(2)); setReference(""); setCardType(null); setPristine(true);
+    setAmount(method === "cash" || advance ? "" : rest.toFixed(2)); setReference(""); setCardType(null); setPristine(true);
   }
 
   async function pay() {
@@ -162,7 +165,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
               <div className="overflow-hidden rounded-xl border">
                 <div className="flex items-center justify-between bg-muted/50 px-3.5 py-2 text-xs font-medium text-muted-foreground">
                   <span className="flex items-center gap-1.5"><SplitIcon className="size-3.5" /> Split payment</span>
-                  <span>{parts.length === 0 ? "Choose how the first part is paid, type its amount, then Add." : "Next part below; Pay takes all parts together."}</span>
+                  <span>{parts.length === 0 ? "Choose how the first part is paid, type its amount, then Add." : advance ? "Add another part below, or take these now." : "Next part below; Pay takes all parts together."}</span>
                 </div>
                 {parts.map((p, i) => (
                   <div key={i} className="flex items-center gap-3 border-t px-3.5 py-2 text-sm">
@@ -170,12 +173,12 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
                     {p.reference && <span className="truncate text-xs text-muted-foreground">{p.reference}</span>}
                     <span className="ml-auto font-heading font-semibold tabular-nums">{money(p.amount)}</span>
                     <button type="button" aria-label={`Remove part ${i + 1}`} className="-mr-1 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() => { setParts((ps) => ps.filter((_, j) => j !== i)); setAmount(method === "cash" ? "" : roundTo(left + p.amount, 2).toFixed(2)); setPristine(true); }}><XIcon className="size-4" /></button>
+                      onClick={() => { setParts((ps) => ps.filter((_, j) => j !== i)); setAmount(method === "cash" || advance ? "" : roundTo(left + p.amount, 2).toFixed(2)); setPristine(true); }}><XIcon className="size-4" /></button>
                   </div>
                 ))}
               </div>
             )}
-            <Segmented id="pay-method" value={method} onChange={(m) => { setMethod(m); setAmount(m === "cash" ? "" : left.toFixed(2)); setPristine(true); }} className="w-full" size="md"
+            <Segmented id="pay-method" value={method} onChange={(m) => { setMethod(m); setAmount(m === "cash" || advance ? "" : left.toFixed(2)); setPristine(true); }} className="w-full" size="md"
               options={methods.map((m) => ({ value: m.value, label: m.label, icon: m.icon }))} />
             {needsCard && (
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Card type">
@@ -229,10 +232,10 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
           <div className="space-y-3">
             <div className="flex h-14 items-center justify-end rounded-xl border bg-muted/40 px-4 font-heading text-3xl font-semibold tabular-nums">
               <span className="mr-auto text-sm font-medium text-muted-foreground">{method === "cash" ? "Received" : "Amount"}</span>
-              {method === "cash" && amount === "" ? <span className="text-muted-foreground/60">{money(left)}</span> : amount || "0"}
+              {method === "cash" && amount === "" ? <span className="text-muted-foreground/60">{money(advance ? 0 : left)}</span> : amount || "0"}
             </div>
             <Numpad value={amount} onChange={setAmount} pristine={pristine} onTouch={() => setPristine(false)}
-              onEnter={() => { if (busy) return; if (part && (splitting || parts.length > 0)) addPart(); else void pay(); }} />
+              onEnter={() => { if (busy) return; if (!takeParts && part && (splitting || parts.length > 0)) addPart(); else void pay(); }} />
           </div>
         </div>
         <DialogFooter>
@@ -240,14 +243,14 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
           {!free && !splitting && parts.length === 0 && method !== "platform" && (
             <Button variant="outline" className="h-12 px-5" onClick={() => { setSplitting(true); setAmount(""); setPristine(true); }}><SplitIcon /> Split payment</Button>
           )}
-          {(splitting || parts.length > 0) && part && (
+          {(splitting || parts.length > 0) && part && !takeParts && (
             <Button variant="outline" className="h-12 px-5" disabled={busy || !entryOk} onClick={() => void pay()}>Take {money(partsTotal + applied)} now</Button>
           )}
-          {(splitting || parts.length > 0) && part ? (
+          {(splitting || parts.length > 0) && part && !takeParts ? (
             <Button className="h-12 min-w-48 text-base" disabled={busy || !entryOk} onClick={addPart}><PlusIcon /> Add {currency} {money(applied)}</Button>
           ) : (
-            <Button ref={payRef} className="h-12 min-w-48 text-base" disabled={busy || (!free && !entryOk && !(parts.length > 0 && left <= 0.004))} onClick={pay}>
-              {busy ? <><Loader2Icon className="animate-spin" /> {free ? "Completing…" : "Taking payment…"}</> : free ? "Complete · nothing to pay" : part ? `Take ${currency} ${money(applied)}` : `Pay ${currency} ${money(due)}`}
+            <Button ref={payRef} className="h-12 min-w-48 text-base" disabled={busy || (!free && !entryOk && !takeParts && !(parts.length > 0 && left <= 0.004))} onClick={pay}>
+              {busy ? <><Loader2Icon className="animate-spin" /> {free ? "Completing…" : "Taking payment…"}</> : free ? "Complete · nothing to pay" : advance ? `Take ${currency} ${money(partsTotal + (entryOk ? applied : 0))}` : part ? `Take ${currency} ${money(applied)}` : `Pay ${currency} ${money(due)}`}
             </Button>
           )}
         </DialogFooter>
