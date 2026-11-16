@@ -335,8 +335,9 @@ public static class Days
             """, args, tx);
         var shifts = (await c.QueryAsync<ShiftRow>($"{ShiftSql} where s.business_day_id = @id order by s.opened_at", args, tx)).ToList();
         // Bank deposits: from a drawer (its register) or from the safe (recorded on Day & shifts).
-        var deposits = await c.QueryAsync<(decimal Amount, string? BagNo, string TakenBy, DateTime At, string? Register)>("""
-            select d.amount, d.bag_no, d.taken_by, d.at, r.name from bank_deposit d left join shift s on s.id = d.shift_id left join register r on r.id = s.register_id
+        var deposits = await c.QueryAsync<(decimal Amount, string? BagNo, string TakenBy, DateTime At, string? Register, string? FactsStatus, string? FactsDoc)>("""
+            select d.amount, d.bag_no, d.taken_by, d.at, r.name, e.status, e.facts_doc from bank_deposit d left join shift s on s.id = d.shift_id left join register r on r.id = s.register_id
+            left join erp_post e on e.deposit_id = d.id and e.kind = 'deposit'
             where d.business_day_id = @id order by d.at
             """, args, tx);
         var cash = await DayCashAsync(c, tx, day.Id);
@@ -357,7 +358,7 @@ public static class Days
             voids = new { voids.Count, voids.Value },
             shifts = shifts.Select(s => new { s.Id, s.RegisterName, s.UserName, s.Status, s.OpeningFloat, s.ExpectedCash, s.CountedCash, s.Variance }),
             variance = shifts.Sum(s => s.Variance ?? 0),
-            deposits = deposits.Select(x => new { x.Amount, x.BagNo, x.TakenBy, x.At, fromRegister = x.Register }),
+            deposits = deposits.Select(x => new { x.Amount, x.BagNo, x.TakenBy, x.At, fromRegister = x.Register, factsStatus = x.FactsStatus, factsDoc = x.FactsDoc }),
             depositTotal = deposits.Sum(x => x.Amount),
             cash,
             openOrders = new { open.Count, open.Value },
@@ -647,11 +648,14 @@ public static class Days
                 var who = body.TakenBy.Trim();
                 await c.ExecuteAsync("insert into cash_movement (company_id, shift_id, kind, amount, reason, by_user) values (@co, @id, 'deposit', @amount, @reason, @u)",
                     new { co = scope.CompanyId, id, amount, reason = $"{(bag is null ? "" : $"bag {bag} · ")}{who}", u = scope.UserId }, tx);
-                await c.ExecuteAsync("insert into bank_deposit (company_id, branch_id, business_day_id, amount, bag_no, taken_by, recorded_by, shift_id) values (@co, @b, @d, @amount, @bag, @who, @u, @id)",
+                var depositId = await c.ExecuteScalarAsync<Guid>("insert into bank_deposit (company_id, branch_id, business_day_id, amount, bag_no, taken_by, recorded_by, shift_id) values (@co, @b, @d, @amount, @bag, @who, @u, @id) returning id",
                     new { co = scope.CompanyId, b = scope.Branch, d = s.BusinessDayId, amount, bag, who, u = scope.UserId, id }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "shift", id.ToString(), "deposit", $"Bank deposit {amount:N2} from the drawer, taken by {who}", note: bag);
+                // FACTS: a posted QRV50 (bank in, outlet cash out), where the company posts deposits.
+                await Erp.FactsPosting.EnqueueDepositAsync(c, tx, depositId);
                 return 0;
             });
+            Erp.FactsPosting.Sender.Wake();
             await live.ToBranch(scope.Branch, "day.changed");
             return Results.Ok(new { id });
         });

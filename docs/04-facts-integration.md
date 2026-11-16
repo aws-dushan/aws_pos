@@ -70,6 +70,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 | Marketing give-away approved | `marketing` | **MCV50** to the marketing expense account at batch cost | `usp_ONEPOS_PostConsumption` | Marketing FACTS user |
 | Future order's advance taken | `advance` | **QRV51** posted: net Dr the payment method's account (card 2315, the outlet's cash) / Cr **2802 POS CUSTOMER ADVANCES**, Ref no `ADV-<branch>-000001`. The bill on collection is a normal POS51 paid by **ADVANCE** plus the balance, sent only once its advances are posted, and linked to them both ways (POS51 `SAL_REFNO2`, QRV51 `QRP_BEFORE_DOCTYPE/DOCNO`). An advance given back on cancelling is not posted (finance books it) | `usp_ONEPOS_PostAdvance` | POSBAKERY |
 | Stock request approved | `request` | **STR50** store → outlet | `usp_ONEPOS_PostTransferRequest` | Approver's FACTS user |
+| Bank deposit recorded on a till | `deposit` | **QRV50** posted: Dr **2322** EIB collection / Cr the outlet's cash account (its cash payment method's account, e.g. ERBQS CASH → 2205), no sub-ledger, Ref no = bag or slip number, narration "Deposit &lt;slip&gt; &lt;branch&gt; &lt;dd/MM/yyyy&gt; taken by &lt;name&gt;" | `usp_ONEPOS_PostDeposit` | POSBAKERY |
 | Prices posted (Prices page, not queued: posted at once, `Pos/Prices.cs`) | — | **OSMPI** outlet price import (the branch's price type, written to STOCK_PRICE by FACTS' own `usp_SIT_XLSTOCKPRICE_INSERT`) and one **CPL50** customer price list per platform at the branch's platform price location, changed items only, valid from today to 31 Dec 2030; FACTS' OSMPI check answers rows with a column twice (DFESDET_MESSAGE), so replies are read first-column-wins; once posted, the page answers at once and the prices are read back from FACTS in the background (the till and the page reload on `menu.changed`) | `usp_ONEPOS_PostPrices` | Branch's FACTS user for price posting |
 
 ```mermaid
@@ -131,6 +132,7 @@ the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the c
 | BOM items (repacking) | Off, draft per day, posted per bill |
 | Refunds | Not posted (finance enters them), returned bills as PSR51, or SR50 via a named procedure |
 | Future orders' advances | Not posted (the bill on collection carries every payment, advances included, as normal payments), or QRV51 to advances (each advance posted when taken; the bill paid by ADVANCE) |
+| Bank deposits | Not posted (accounts enter them), or posted QRV50 (each deposit as soon as it is recorded on a till) |
 
 ### Future orders' advances
 
@@ -157,6 +159,27 @@ the advance payment rows and their QRV51 postings (`FutureOrders.BackToWaitingAs
 | Collected, bill 500 | POS51: receipts ADVANCE 200 (Dr 2802) + Visa 300 (Dr 2315), Cr AR/C0006 500; `SAL_REFNO2` = FO-… advances QRV51 … | 0 |
 | Bill returned | PSR51 (copy of the POS51): ADVANCE 200 back (Cr 2802), Visa 300 back | 200 held again |
 | Collected again | New POS51 paid by ADVANCE again | 0 |
+
+### Bank deposits
+
+A bank deposit is recorded on a till (amount, bag or slip number, who takes it; `Days.cs` POST `/shifts/{id}/deposit`). With
+the **Posted QRV50** option (`company.facts_deposits = 'qrv50'`), it is queued at once as `deposit` (`erp_post.deposit_id`) for
+branches with a FACTS location and a **Posts from** date on or before the deposit's day. Deposits recorded before the option
+was on are not sent.
+
+`usp_ONEPOS_PostDeposit` saves one QRV50 in "Others" mode, dated the deposit's business day: party (credited) = the outlet's
+cash account with no sub-ledger, Others account (debited) = 2322, default cash account 2202 untouched, division 50, no
+department or salesman. FACTS' QRV posting (`usp_QRV_APPR_AccountsUpdation`) asks for a party sub-ledger only when the party
+account has `ACMST_SUBLEDGER_EXISTS = 1`; the outlet cash accounts have 0. It then posts it through `usp_ApproveDocuments`,
+as FACTS' Approve button does. One POS' deposit id is kept in `QRP_UD_LABEL5` ("ONEPOS &lt;id&gt;"), so a retry finds the
+posted QRV50 and answers "Already posted". FACTS' ledger keeps only the first 50 characters of the narration and leaves the
+ledger reference empty, so the slip number starts the narration.
+
+| Step | FACTS ledger |
+| --- | --- |
+| Deposit 120.00 at Al Qusais, slip E40118… | QRV50: Dr 2322 120.00 / Cr 2205 120.00 |
+
+Cash to bank shows each deposit's QRV50 number (or Sending / Failed). Accounts don't make an RV50 for these deposits.
 
 ## Changing anything in FACTS
 

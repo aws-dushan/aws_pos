@@ -57,7 +57,7 @@ export type DayReport = {
   voids: { count: number; value: number };
   shifts: { id: string; registerName: string; userName: string; status: ShiftStatus; openingFloat: number; expectedCash: number | null; countedCash: number | null; variance: number | null }[];
   /** `fromRegister`: taken straight from that drawer during a shift; none: from the safe. */
-  deposits: { amount: number; bagNo: string | null; takenBy: string; at: string; fromRegister?: string | null }[];
+  deposits: { amount: number; bagNo: string | null; takenBy: string; at: string; fromRegister?: string | null; factsStatus?: string | null; factsDoc?: string | null }[];
   /** The day's cash over all its shifts (older stored Z reports don't have it). */
   cash?: {
     openingFloat: number; cashSales: number; cashRefunds: number; cashIn: number; cashOut: number; drops: number; deposits?: number; expected: number; counted: number; uncounted: number;

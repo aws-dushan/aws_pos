@@ -20,7 +20,7 @@ namespace OnePos.Api.Erp;
 /// </summary>
 public static partial class FactsPosting
 {
-    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null, string? Advances = null);
+    public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null, string? Advances = null, string? Deposits = null);
 
     /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostReturn.sql): a whole bill's return as a POSTED PSR51, a copy of its POS51.</summary>
     public const string PostReturnProc = "usp_ONEPOS_PostReturn";
@@ -46,6 +46,14 @@ public static partial class FactsPosting
     public const string PostAdvanceProc = "usp_ONEPOS_PostAdvance";
     /// <summary>FACTS' payment method a bill uses to take its advance off 2802 (PAYMENT_METHOD ADVANCE).</summary>
     public const string AdvanceMode = "ADVANCE";
+
+    /// <summary>
+    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostDeposit.sql): a till's bank deposit as a posted QRV50
+    /// (Dr the bank collection account, Cr the outlet's cash account), the slip as its reference.
+    /// </summary>
+    public const string PostDepositProc = "usp_ONEPOS_PostDeposit";
+    /// <summary>The bank account deposits are paid into (EIB - COLLECTION), the QRV50's Others account.</summary>
+    public const string DepositBankAccount = "2322";
 
     /// <summary>FACTS' own procedure for a POS bill (the outlet POS uses it): the sale, no batches.</summary>
     public const string StandardInvoiceProc = "usp_FQAPI_PWA_POS_SaveInvoice";
@@ -375,6 +383,40 @@ public static partial class FactsPosting
                        status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
     }
 
+    /// <summary>
+    /// A bank deposit recorded on a till, where the company posts deposits to FACTS and the branch posts from that day: queued for
+    /// One POS' procedure (<see cref="PostDepositProc"/>) as a posted QRV50 from the outlet's cash account to the bank.
+    /// </summary>
+    public static async Task EnqueueDepositAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid depositId)
+    {
+        var d = await c.QuerySingleOrDefaultAsync<(Guid Company, Guid Branch, DateOnly Day, decimal Amount, string? BagNo, string TakenBy, string BranchName, string? Location)>("""
+            select d.company_id, d.branch_id, bd.business_date, d.amount, d.bag_no, d.taken_by, b.name, b.erp_location_code
+            from bank_deposit d join business_day bd on bd.id = d.business_day_id join branch b on b.id = d.branch_id join company co on co.id = d.company_id
+            where d.id = @depositId and co.erp_connector = 'facts' and co.facts_deposits = 'qrv50'
+              and b.erp_location_code is not null and b.facts_post_from is not null and bd.business_date >= b.facts_post_from
+            """, new { depositId }, tx);
+        if (d.Branch == Guid.Empty) return;
+        var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @Branch", new { d.Branch }, tx)).ToList();
+        var mode = ModeOf(modes, "cash", null, null);
+        var problems = new List<string>();
+        if (mode is null) problems.Add($"No FACTS cash payment method at {d.Location} (its cash account is the one the deposit leaves).");
+        if (string.IsNullOrWhiteSpace(d.BagNo)) problems.Add("The deposit has no bag or bank slip number.");
+        // The slip first: FACTS' ledger keeps only the narration's first 50 characters.
+        var narration = $"Deposit {d.BagNo} {d.BranchName} {d.Day:dd/MM/yyyy} taken by {d.TakenBy}";
+        var xml = new XElement("data", new XElement("Deposit",
+            new XElement("DepositId", depositId), new XElement("DocDate", d.Day.ToString("yyyy-MM-dd", Inv)), new XElement("LocationCode", d.Location ?? ""),
+            new XElement("CashMode", mode ?? ""), new XElement("BankAccount", DepositBankAccount), new XElement("Amount", N(d.Amount)),
+            new XElement("SlipNo", d.BagNo ?? ""), new XElement("TakenBy", d.TakenBy),
+            new XElement("Narration", narration.Length > 200 ? narration[..200] : narration)));
+        await c.ExecuteAsync("""
+            insert into erp_post (company_id, branch_id, kind, deposit_id, doc_no, business_date, amount, xml, status, last_error)
+            values (@Company, @Branch, 'deposit', @depositId, @doc, @Day, @Amount, @xml, @status, @error)
+            on conflict (deposit_id) where kind = 'deposit' do update set xml = excluded.xml, status = excluded.status, last_error = excluded.last_error,
+              attempts = 0, next_try_at = now() where erp_post.status <> 'posted'
+            """, new { d.Company, d.Branch, depositId, doc = d.BagNo ?? "", d.Day, d.Amount, xml = xml.ToString(SaveOptions.DisableFormatting),
+                       status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
+    }
+
     private static string RepackingLabel(string mode) => mode switch { "draft" => "Draft RPO50 per day", "posted" => "Posted RPO50 per bill", _ => "Off" };
 
     /// <summary>A bill was paid: into the queue where its branch posts from that business day on.</summary>
@@ -466,8 +508,8 @@ public static partial class FactsPosting
             RequireFinance(scope);
             return await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances)>(
-                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances from company where id = @id", new { id = scope.CompanyId }, tx);
+                var co = await c.QuerySingleAsync<(string Connector, bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances, string Deposits)>(
+                    "select erp_connector, facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances, facts_deposits from company where id = @id", new { id = scope.CompanyId }, tx);
                 var branches = await c.QueryAsync<(Guid Id, string Code, string Name, string? Location, DateOnly? PostFrom, int Modes, int Cards)>("""
                     select b.id, b.code, b.name, b.erp_location_code, b.facts_post_from,
                            (select count(*) from erp_payment_mode m where m.branch_id = b.id)::int, (select count(*) from erp_payment_mode m where m.branch_id = b.id and m.kind = 'card')::int
@@ -479,7 +521,7 @@ public static partial class FactsPosting
                 return new
                 {
                     connector = co.Connector, posting = co.Posting, refunds = co.Refunds, refundProc = co.Proc, invoiceProc = co.InvoiceProc ?? StandardInvoiceProc, wastage = co.Wastage, repacking = co.Repacking,
-                    advances = co.Advances,
+                    advances = co.Advances, deposits = co.Deposits,
                     modesReadAt = modesRead.At, modesReadOk = modesRead.Ok, modesReadError = modesRead.Message,
                     branches = branches.Select(b => new
                     {
@@ -501,16 +543,18 @@ public static partial class FactsPosting
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
             if (body.Advances is not (null or "off" or "qrv51")) throw new DomainException("Future orders' advances are not posted, or posted as QRV51.");
+            if (body.Deposits is not (null or "off" or "qrv50")) throw new DomainException("Bank deposits are not posted, or posted as QRV50.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances)>(
-                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances from company where id = @id", new { id = scope.CompanyId }, tx);
+                var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances, string Deposits)>(
+                    "select facts_posting, facts_refunds, facts_refund_proc, facts_invoice_proc, facts_wastage, facts_repacking, facts_advances, facts_deposits from company where id = @id", new { id = scope.CompanyId }, tx);
                 var wastage = body.Wastage ?? old.Wastage;
                 var repacking = body.Repacking ?? old.Repacking;
                 var advances = body.Advances ?? old.Advances;
+                var deposits = body.Deposits ?? old.Deposits;
                 var invoiceProc = body.InvoiceProc is null ? old.InvoiceProc : body.InvoiceProc == StandardInvoiceProc ? null : body.InvoiceProc;
-                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking, facts_advances = @advances where id = @id",
-                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, advances, id = scope.CompanyId }, tx);
+                await c.ExecuteAsync("update company set facts_posting = @Posting, facts_refunds = @Refunds, facts_refund_proc = @proc, facts_invoice_proc = @invoiceProc, facts_wastage = @wastage, facts_repacking = @repacking, facts_advances = @advances, facts_deposits = @deposits where id = @id",
+                    new { body.Posting, body.Refunds, proc, invoiceProc, wastage, repacking, advances, deposits, id = scope.CompanyId }, tx);
                 // A procedure now there: credit notes that waited for it can go.
                 if (proc is not null) await c.ExecuteAsync("update erp_post set status = 'pending', last_error = null, next_try_at = now() where kind = 'refund' and status = 'waiting'", transaction: tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "erp", "posting", "changed", "FACTS posting settings changed",
@@ -518,7 +562,8 @@ public static partial class FactsPosting
                      new("Bill procedure", old.InvoiceProc ?? StandardInvoiceProc, invoiceProc ?? StandardInvoiceProc),
                      new("Wastage", old.Wastage == "draft" ? "Draft STV from One POS" : "Finance enters", wastage == "draft" ? "Draft STV from One POS" : "Finance enters"),
                      new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
-                     new("Future order advances", old.Advances == "qrv51" ? "QRV51" : "Not posted", advances == "qrv51" ? "QRV51" : "Not posted")]);
+                     new("Future order advances", old.Advances == "qrv51" ? "QRV51" : "Not posted", advances == "qrv51" ? "QRV51" : "Not posted"),
+                     new("Bank deposits", old.Deposits == "qrv50" ? "Posted QRV50" : "Not posted", deposits == "qrv50" ? "Posted QRV50" : "Not posted")]);
                 return 0;
             });
             return Results.Ok(new { ok = true });
@@ -657,16 +702,22 @@ public static partial class FactsPosting
     /// <summary>A queued document back to "waiting to send", now: a bill rebuilt from the order (its problems, if any, fail it again).</summary>
     private static async Task RequeueAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid id)
     {
-        var row = await c.QuerySingleAsync<(string Kind, Guid OrderId, Guid? PaymentId)>("select kind, order_id, payment_id from erp_post where id = @id", new { id }, tx);
+        var row = await c.QuerySingleAsync<(string Kind, Guid? OrderId, Guid? PaymentId, Guid? DepositId)>("select kind, order_id, payment_id, deposit_id from erp_post where id = @id", new { id }, tx);
         if (row.Kind == "advance" && row.PaymentId is { } paymentId)
         {
             // Built afresh (e.g. after the branch's FACTS payment methods were read again).
             await c.ExecuteAsync("update erp_post set status = 'pending' where id = @id", new { id }, tx);
             await EnqueueAdvanceAsync(c, tx, paymentId);
         }
-        else if (row.Kind == "invoice")
+        else if (row.Kind == "deposit" && row.DepositId is { } depositId)
         {
-            var (xml, problems, o) = await InvoiceAsync(c, tx, row.OrderId);
+            // Built afresh (e.g. after the branch's FACTS payment methods were read again).
+            await c.ExecuteAsync("update erp_post set status = 'pending' where id = @id", new { id }, tx);
+            await EnqueueDepositAsync(c, tx, depositId);
+        }
+        else if (row.Kind == "invoice" && row.OrderId is { } orderId)
+        {
+            var (xml, problems, o) = await InvoiceAsync(c, tx, orderId);
             await c.ExecuteAsync("update erp_post set xml = @xml, doc_no = @doc, status = @status, last_error = @error, attempts = 0, next_try_at = now() where id = @id",
                 new { id, xml, doc = o.FactsNo ?? o.InvoiceNo ?? "", status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
         }
@@ -754,11 +805,12 @@ public static partial class FactsPosting
                         : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
                         : p.Kind == "repacking" ? p.OrderId is null && !p.ForWaste ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
                         : p.Kind == "advance" ? PostAdvanceProc
+                        : p.Kind == "deposit" ? PostDepositProc
                         : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
                     // FACTS saves the document as created by this user, so it must be a FACTS user (a PSR51 too: POSBAKERY).
-                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
+                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" or "deposit" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
                     cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = p.Xml;
                     await using var r = await cmd.ExecuteReaderAsync(stop);
                     // FACTS answers DocumentNo / status / description, possibly more than once (its posting step answers too).

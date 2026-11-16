@@ -18,7 +18,8 @@ public static class CashToBank
         /// <summary>What this day adds to the amount owed: its cash (sales less refunds) and anything added by hand.</summary>
         public decimal Owed => CashSales - Refunds + Added;
     }
-    public sealed record DepositRow(DateOnly Date, decimal Amount, string? BagNo, string TakenBy, string? Register, DateTime At);
+    /// <summary>A deposit; FactsStatus/FactsDoc: its QRV50 in FACTS (pending, posted with its number, failed, skipped), null if not sent.</summary>
+    public sealed record DepositRow(DateOnly Date, decimal Amount, string? BagNo, string TakenBy, string? Register, DateTime At, string? FactsStatus, string? FactsDoc);
 
     public static void Map(RouteGroupBuilder api)
     {
@@ -43,9 +44,10 @@ public static class CashToBank
                 }
                 rows.Reverse();
                 var deposits = (await c.QueryAsync<DepositRow>("""
-                    select bd.date, d.amount, d.bag_no, d.taken_by, r.name as register, d.at
+                    select bd.date, d.amount, d.bag_no, d.taken_by, r.name as register, d.at, e.status as facts_status, e.facts_doc
                     from bank_deposit d join business_day bd on bd.id = d.business_day_id
                     left join shift s on s.id = d.shift_id left join register r on r.id = s.register_id
+                    left join erp_post e on e.deposit_id = d.id and e.kind = 'deposit'
                     where d.branch_id = @branch and bd.date >= @start order by d.at desc
                     """, new { branch, start }, tx)).ToList();
                 var month = DateOnly.FromDateTime(DateTime.UtcNow);

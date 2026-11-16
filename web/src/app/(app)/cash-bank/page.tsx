@@ -10,7 +10,11 @@ import { EmptyState, ErrorNote, LoadingRows, PageHeader, StatTile, TablePanel } 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Day = { date: string; broughtForward: number; cashSales: number; refunds: number; added: number; remarks: string | null; deposited: number; carriedForward: number };
-type Deposit = { date: string; amount: number; bagNo: string | null; takenBy: string; register: string | null; at: string };
+type Deposit = { date: string; amount: number; bagNo: string | null; takenBy: string; register: string | null; at: string; factsStatus: string | null; factsDoc: string | null };
+
+/** A deposit's QRV50 in FACTS: its number once posted, else where it is. */
+const factsLabel = (status: string | null, doc: string | null) =>
+  status === "posted" ? `QRV50 ${doc ?? ""}`.trim() : status === "pending" ? "Sending…" : status === "failed" ? "Failed (see FACTS posting)" : status === "skipped" ? "Left out" : "—";
 type BranchOwed = { id: string; code: string; name: string; owed: number; oldest: string | null };
 type CashBank = { from: string; owed: number; oldest: string | null; depositedThisMonth: number; days: Day[]; deposits: Deposit[]; branches: BranchOwed[] };
 
@@ -100,7 +104,7 @@ export default function CashBankPage() {
               <TablePanel>
                 <Table>
                   <TableHeader><TableRow>
-                    <TableHead className="pl-5">Day</TableHead><TableHead>Bag or slip</TableHead><TableHead>Taken by</TableHead><TableHead>From</TableHead><TableHead className="pr-5 text-right">Amount</TableHead>
+                    <TableHead className="pl-5">Day</TableHead><TableHead>Bag or slip</TableHead><TableHead>Taken by</TableHead><TableHead>From</TableHead><TableHead>FACTS</TableHead><TableHead className="pr-5 text-right">Amount</TableHead>
                   </TableRow></TableHeader>
                   <TableBody>
                     {d.deposits.map((x, i) => (
@@ -109,6 +113,7 @@ export default function CashBankPage() {
                         <TableCell className="font-mono text-xs">{x.bagNo ?? "—"}</TableCell>
                         <TableCell>{x.takenBy}</TableCell>
                         <TableCell className="text-muted-foreground">{x.register ? `Drawer · ${x.register}` : "Safe"}</TableCell>
+                        <TableCell className={x.factsStatus === "failed" ? "text-destructive" : "text-muted-foreground"}>{factsLabel(x.factsStatus, x.factsDoc)}</TableCell>
                         <TableCell className="pr-5 text-right font-medium tabular-nums">{money(x.amount)}</TableCell>
                       </TableRow>
                     ))}
