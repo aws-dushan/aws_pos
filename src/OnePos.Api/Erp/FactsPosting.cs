@@ -390,10 +390,10 @@ public static partial class FactsPosting
     public static async Task EnqueueDepositAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid depositId)
     {
         var d = await c.QuerySingleOrDefaultAsync<(Guid Company, Guid Branch, DateOnly Day, decimal Amount, string? BagNo, string TakenBy, string BranchName, string? Location)>("""
-            select d.company_id, d.branch_id, bd.business_date, d.amount, d.bag_no, d.taken_by, b.name, b.erp_location_code
+            select d.company_id, d.branch_id, bd.date, d.amount, d.bag_no, d.taken_by, b.name, b.erp_location_code
             from bank_deposit d join business_day bd on bd.id = d.business_day_id join branch b on b.id = d.branch_id join company co on co.id = d.company_id
             where d.id = @depositId and co.erp_connector = 'facts' and co.facts_deposits = 'qrv50'
-              and b.erp_location_code is not null and b.facts_post_from is not null and bd.business_date >= b.facts_post_from
+              and b.erp_location_code is not null and b.facts_post_from is not null and bd.date >= b.facts_post_from
             """, new { depositId }, tx);
         if (d.Branch == Guid.Empty) return;
         var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @Branch", new { d.Branch }, tx)).ToList();
