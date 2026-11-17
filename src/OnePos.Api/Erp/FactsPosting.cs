@@ -41,9 +41,14 @@ public static partial class FactsPosting
 
     /// <summary>
     /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvance.sql): a future order's advance as a posted QRV51
-    /// (Dr the payment method's account, Cr 2802 POS CUSTOMER ADVANCES). Advances given back aren't posted (finance books them).
+    /// (Dr the payment method's account, Cr 2802 POS CUSTOMER ADVANCES).
     /// </summary>
     public const string PostAdvanceProc = "usp_ONEPOS_PostAdvance";
+    /// <summary>
+    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvanceReturn.sql): a cancelled future order's advances given back as
+    /// ONE posted PV51 (Cr each advance's account, as its QRV51 debited it; Dr 2802), each line linked to its QRV51.
+    /// </summary>
+    public const string PostAdvanceReturnProc = "usp_ONEPOS_PostAdvanceReturn";
     /// <summary>FACTS' payment method a bill uses to take its advance off 2802 (PAYMENT_METHOD ADVANCE).</summary>
     public const string AdvanceMode = "ADVANCE";
 
@@ -342,9 +347,8 @@ public static partial class FactsPosting
     }
 
     /// <summary>
-    /// A future order's advance (or an advance given back when it's cancelled), where the company posts advances to FACTS and the
-    /// branch posts from that day: queued for the vendor's procedure (<see cref="PostAdvanceProc"/>). A refund only where the
-    /// advances it gives back went to FACTS.
+    /// A future order's advance, where the company posts advances to FACTS and the branch posts from that day: queued for One POS'
+    /// procedure (<see cref="PostAdvanceProc"/>). Advances given back go together, per order (<see cref="EnqueueAdvanceReturnAsync"/>).
     /// </summary>
     public static async Task EnqueueAdvanceAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid paymentId)
     {
@@ -357,7 +361,7 @@ public static partial class FactsPosting
             where p.id = @paymentId and p.is_advance and co.erp_connector = 'facts' and co.facts_advances = 'qrv51'
               and b.erp_location_code is not null and b.facts_post_from is not null and p.business_date >= b.facts_post_from
             """, new { paymentId }, tx);
-        // An advance given back (a cancelled order) isn't sent: finance books it in FACTS by hand.
+        // An advance given back (a cancelled order) goes in the order's PV51 instead.
         if (a.Branch == Guid.Empty || a.Kind == "refund") return;
         var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @Branch", new { a.Branch }, tx)).ToList();
         var mode = ModeOf(modes, a.Method, a.CardType, null);
@@ -380,6 +384,53 @@ public static partial class FactsPosting
             on conflict (payment_id) where kind = 'advance' do update set xml = excluded.xml, status = excluded.status, last_error = excluded.last_error,
               attempts = 0, next_try_at = now() where erp_post.status <> 'posted'
             """, new { a.Company, a.Branch, a.OrderId, paymentId, doc = a.AdvanceNo ?? "", a.Day, a.Amount, xml = xml.ToString(SaveOptions.DisableFormatting),
+                       status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
+    }
+
+    /// <summary>
+    /// A future order was cancelled and its advances given back: ONE PV51 for the order (<see cref="PostAdvanceReturnProc"/>), a
+    /// line per advance that went to FACTS as a QRV51 (the advance's number and amount; FACTS' side takes the account from that
+    /// QRV51). Advances left out of FACTS (skipped) are left out here too; none left: nothing to send. Sent once the QRV51s are
+    /// posted (the sender waits for them).
+    /// </summary>
+    public static async Task EnqueueAdvanceReturnAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid orderId)
+    {
+        var lines = (await c.QueryAsync<(Guid Company, Guid Branch, DateOnly Day, string? ReturnNo, string AdvanceNo, decimal Amount, string? Location,
+            string? FutureRef, string? Customer, string? Cashier)>("""
+            select r.company_id, r.branch_id, r.business_date, r.advance_no, a.advance_no, r.amount, b.erp_location_code, o.future_ref, o.customer_name, u.display_name
+            from payment r
+            join payment a on a.order_id = r.order_id and a.kind = 'payment' and a.is_advance and a.advance_no = r.reference
+            join erp_post e on e.payment_id = a.id and e.kind = 'advance' and e.status <> 'skipped'
+            join pos_order o on o.id = r.order_id join branch b on b.id = r.branch_id join company co on co.id = r.company_id
+            left join app_user u on u.id = r.taken_by
+            where r.order_id = @orderId and r.kind = 'refund' and r.is_advance and co.erp_connector = 'facts' and co.facts_advances = 'qrv51'
+              and b.erp_location_code is not null and b.facts_post_from is not null
+            order by r.at, r.advance_no
+            """, new { orderId }, tx)).ToList();
+        if (lines.Count == 0)
+        {
+            await c.ExecuteAsync("""
+                update erp_post set status = 'skipped', last_error = 'None of its advances went to FACTS: nothing to give back there.'
+                where order_id = @orderId and kind = 'advance_return' and status <> 'posted'
+                """, new { orderId }, tx);
+            return;
+        }
+        var f = lines[0];
+        var problems = new List<string>();
+        if (f.ReturnNo is null or { Length: > FactsNoLength }) problems.Add($"Return number {f.ReturnNo} is missing or longer than {FactsNoLength} characters.");
+        var narration = $"Advance return {f.FutureRef} {f.Customer} cancelled {f.Day:dd/MM/yyyy}".Trim();
+        var xml = new XElement("data", new XElement("AdvanceReturn",
+            new XElement("DocumentNo", f.ReturnNo ?? ""), new XElement("DocDate", f.Day.ToString("yyyy-MM-dd", Inv)), new XElement("LocationCode", f.Location ?? ""),
+            new XElement("FutureOrderNo", f.FutureRef ?? ""), new XElement("CustomerName", f.Customer ?? ""),
+            new XElement("Narration", narration.Length > 200 ? narration[..200] : narration),
+            new XElement("CreatedBy", (f.Cashier ?? "One POS").Length > 20 ? f.Cashier![..20] : f.Cashier ?? "One POS"),
+            lines.Select(l => new XElement("Line", new XElement("AdvanceNo", l.AdvanceNo), new XElement("Amount", N(l.Amount))))));
+        await c.ExecuteAsync("""
+            insert into erp_post (company_id, branch_id, kind, order_id, doc_no, business_date, amount, xml, status, last_error)
+            values (@Company, @Branch, 'advance_return', @orderId, @doc, @Day, @amount, @xml, @status, @error)
+            on conflict (order_id) where kind = 'advance_return' do update set xml = excluded.xml, doc_no = excluded.doc_no, amount = excluded.amount,
+              status = excluded.status, last_error = excluded.last_error, attempts = 0, next_try_at = now() where erp_post.status <> 'posted'
+            """, new { f.Company, f.Branch, orderId, doc = f.ReturnNo ?? "", f.Day, amount = lines.Sum(l => l.Amount), xml = xml.ToString(SaveOptions.DisableFormatting),
                        status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
     }
 
@@ -684,6 +735,12 @@ public static partial class FactsPosting
                     where a.id = @id and a.kind = 'advance' and i.status <> 'posted'
                     """, new { id }, tx);
                 if (bill is { } billId) await RequeueAsync(c, tx, billId);
+                // ... and a cancelled order's PV51 (if not posted yet) leaves it out.
+                var giveBack = await c.ExecuteScalarAsync<Guid?>("""
+                    select r.id from erp_post a join erp_post r on r.order_id = a.order_id and r.kind = 'advance_return'
+                    where a.id = @id and a.kind = 'advance' and r.status <> 'posted'
+                    """, new { id }, tx);
+                if (giveBack is { } giveBackId) await RequeueAsync(c, tx, giveBackId);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "erp_post", id.ToString(), "skipped", "FACTS posting left out (finance enters it)");
                 return 0;
             });
@@ -708,6 +765,12 @@ public static partial class FactsPosting
             // Built afresh (e.g. after the branch's FACTS payment methods were read again).
             await c.ExecuteAsync("update erp_post set status = 'pending' where id = @id", new { id }, tx);
             await EnqueueAdvanceAsync(c, tx, paymentId);
+        }
+        else if (row.Kind == "advance_return" && row.OrderId is { } cancelledId)
+        {
+            // Built afresh: advances left out of FACTS since then drop out of it.
+            await c.ExecuteAsync("update erp_post set status = 'pending' where id = @id", new { id }, tx);
+            await EnqueueAdvanceReturnAsync(c, tx, cancelledId);
         }
         else if (row.Kind == "deposit" && row.DepositId is { } depositId)
         {
@@ -771,6 +834,21 @@ public static partial class FactsPosting
                                        where e.kind = 'advance' and e.order_id = @billId and a.kind = 'payment' and e.status not in ('posted', 'skipped'))
                         """, new { billId }, tx)))
                     continue;
+                // A cancelled future order's PV51 waits for the QRV51s it gives back.
+                if (p.Kind == "advance_return" && p.OrderId is { } cancelledId)
+                {
+                    var waiting = await db.Company(companyId, (c, tx) => c.QuerySingleAsync<(int Open, int Failed)>("""
+                        select count(*) filter (where e.status not in ('posted', 'skipped'))::int, count(*) filter (where e.status = 'failed')::int
+                        from erp_post e join payment a on a.id = e.payment_id where e.kind = 'advance' and e.order_id = @cancelledId and a.kind = 'payment'
+                        """, new { cancelledId }, tx));
+                    if (waiting.Open > 0)
+                    {
+                        if (waiting.Failed > 0)
+                            await db.Company(companyId, (c, tx) => c.ExecuteAsync("update erp_post set last_error = @e where id = @Id",
+                                new { e = "Waits for its advances' QRV51, which FACTS refused (see the advance in this log).", p.Id }, tx));
+                        continue;
+                    }
+                }
                 // Wastage of made-to-order items waits for the RPO50 that makes them (FACTS has none until then).
                 if (p.AfterId is { } afterId)
                 {
@@ -805,12 +883,13 @@ public static partial class FactsPosting
                         : p.Kind == "request" ? p.FactsUser is null ? throw new InvalidOperationException("A stock request needs the approver's FACTS username.") : PostTransferRequestProc
                         : p.Kind == "repacking" ? p.OrderId is null && !p.ForWaste ? Pos.Boms.RepackingProc : Pos.Boms.PostRepackingProc
                         : p.Kind == "advance" ? PostAdvanceProc
+                        : p.Kind == "advance_return" ? PostAdvanceReturnProc
                         : p.Kind == "deposit" ? PostDepositProc
                         : p.Refunds == "psr51" ? PostReturnProc
                         : p.Proc is { } rp && ProcName().IsMatch(rp) ? rp : throw new InvalidOperationException("No SR50 procedure set.");
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
                     // FACTS saves the document as created by this user, so it must be a FACTS user (a PSR51 too: POSBAKERY).
-                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" or "deposit" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
+                    cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" or "advance_return" or "deposit" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
                     cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = p.Xml;
                     await using var r = await cmd.ExecuteReaderAsync(stop);
                     // FACTS answers DocumentNo / status / description, possibly more than once (its posting step answers too).

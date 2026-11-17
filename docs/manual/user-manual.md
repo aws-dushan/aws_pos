@@ -271,7 +271,7 @@ The advance counts in the shift and day it was taken; the balance in the day it 
 | An advance is taken | A posted QRV51 for it: the cash or card account in, POS CUSTOMER ADVANCES (2802) out |
 | The order is collected | The bill (POS51) paid by **ADVANCE** (all its advances together) plus the balance as paid; the bill and its QRV51s show each other's numbers |
 | The collected bill is returned | The return (PSR51) puts the advance back on 2802; the next collection takes it off again |
-| The order is cancelled | Nothing is sent: finance books the refund in FACTS |
+| The order is cancelled | One posted PV51 for the order: POS CUSTOMER ADVANCES (2802) in, each advance's cash or card account out; each line shows its QRV51 |
 
 ## Cash in and out
 
@@ -614,7 +614,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 | --- | --- |
 | Post to FACTS | The master switch (off by default). Off: bills wait in the queue. |
 | Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50), future orders' advances (not posted, or QRV51 to advances), bank deposits (not posted, or posted QRV50) |
-| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. The log lists them as **Advance ADV-…**. Needs One POS' advance procedure (usp_ONEPOS_PostAdvance) created in FACTS first. |
+| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. A cancelled order's advances go back as one posted PV51. The log lists them as **Advance ADV-…** and **Advance return ADV-…**. Needs One POS' advance procedures (usp_ONEPOS_PostAdvance, usp_ONEPOS_PostAdvanceReturn) created in FACTS first. |
 | Bank deposits | **Not posted**: accounts enter deposits in FACTS. **Posted QRV50**: each bank deposit recorded on a till goes to FACTS at once as a posted QRV50: the bank (2322) in, the branch's cash account out, the bag or slip number as its reference. The log lists them as **Bank deposit &lt;slip&gt;**, and **Cash to bank** shows each deposit's QRV50 number. Accounts don't make an RV50 for these deposits. |
 | Branches | Queue counts per branch and the **Posts from** date. The old POS and One POS must never post the same day for a branch. |
 | Dry run | A day's bills as they would go, with any problems; nothing is sent. |

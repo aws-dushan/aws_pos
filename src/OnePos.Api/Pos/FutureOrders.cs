@@ -14,7 +14,8 @@ namespace OnePos.Api.Pos;
 ///  - Collect: the order moves to today's business day; with nothing left to pay it's finished at once (invoice, stock, FACTS),
 ///    otherwise the balance is paid on the register as on any bill.
 ///  - Cancel (a manager): the advances go back the way they were paid, and the order is voided.
-/// FACTS (company setting): each advance as a QRV51 to POS customer advances; the bill later paid by ADVANCE (FactsPosting).
+/// FACTS (company setting): each advance as a QRV51 to POS customer advances; the bill later paid by ADVANCE, or a cancelled
+/// order's advances given back in one PV51 (FactsPosting).
 /// </summary>
 public static class FutureOrders
 {
@@ -194,9 +195,10 @@ public static class FutureOrders
                         values (@co, @b, @reg, @id, @day, 'refund', @Method, @Amount, @reason, @AdvanceNo, @user, @shift, @CardType, true, @advanceNo2, @voucherId)
                         """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId, id, day, a.Method, a.Amount, reason, a.AdvanceNo, user = scope.UserId, shift, a.CardType, advanceNo2 = advanceNo, voucherId }, tx);
                     if (a.Method == "points") await Rewards.RefundAsync(c, tx, o, scope.UserId, "points", a.Amount);
-                    // Not sent to FACTS: finance books an advance given back by hand.
                 }
                 await c.ExecuteAsync("update pos_order set refunded = @paid where id = @id", new { id, paid = advances.Sum(a => a.Amount) }, tx);
+                // FACTS: one PV51 for the order gives back the advances that went there (QRV51s).
+                await Erp.FactsPosting.EnqueueAdvanceReturnAsync(c, tx, id);
             }
             await Kitchen.CancelOrderAsync(c, tx, o, scope.UserId);
             await c.ExecuteAsync("update pos_order set status = 'void', future_status = 'cancelled', void_reason = @reason, closed_at = now(), lock_session = null where id = @id",
