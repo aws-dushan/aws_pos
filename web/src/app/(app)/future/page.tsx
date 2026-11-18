@@ -68,7 +68,7 @@ export default function FutureOrdersPage() {
   async function cancel(r: Row) {
     const reason = await promptReason({
       title: `Cancel ${r.futureRef}?`, tone: "danger", confirmLabel: "Cancel order",
-      message: r.paid > 0 ? `The advance of ${cur} ${money(r.paid)} goes back the way it was paid (cash from this drawer, a card back to the card). An advance from an earlier day needs a manager.` : "Nothing was paid on it.",
+      message: r.paid > 0 ? `The advance of ${cur} ${money(r.paid)} goes back in cash from this drawer, a card part too (never back to the card). An advance from an earlier day needs a manager.` : "Nothing was paid on it.",
       reason: { label: "Reason", placeholder: "e.g. customer cancelled" },
     });
     if (!reason) return;
@@ -123,10 +123,10 @@ export default function FutureOrdersPage() {
                     <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-muted-foreground">
                       {r.customerPhone && <span className="inline-flex items-center gap-1"><PhoneIcon className="size-3.5" /> {r.customerPhone}</span>}
                       <span>{r.items} item{r.items === 1 ? "" : "s"} · {cur} {money(r.total)}</span>
-                      <span className={r.paid > 0 ? "text-success" : undefined}>Advance {money(r.paid)}</span>
+                      <span className={r.paid > 0 ? "text-success" : undefined}>{waiting ? "Advance" : "Paid"} {money(r.paid)}</span>
                       {waiting && <span className={cn(r.due > 0 && "font-medium text-foreground")}>{r.due > 0 ? `Balance ${money(r.due)}` : "Paid in full"}</span>}
                       {r.note && <span className="inline-flex items-center gap-1 text-foreground"><StickyNoteIcon className="size-3.5" /> {r.note}</span>}
-                      {r.lockedBy && <span className="text-warning">Open on {r.lockedBy}</span>}
+                      {waiting && r.lockedBy && <span className="text-warning">Open on {r.lockedBy}</span>}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">

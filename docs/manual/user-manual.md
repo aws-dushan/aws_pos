@@ -260,7 +260,7 @@ The advance counts in the shift and day it was taken; the balance in the day it 
 
 ![The tax invoice on collection: the advance, then the balance](images/future-invoice.jpg)
 
-**Cancel** (⊘): give a reason. Each advance goes back the way it was paid (cash from your drawer, a card back to the card, a voucher as a new voucher) and the order is voided. As with returning a bill, an advance taken on an earlier day needs a manager.
+**Cancel** (⊘): give a reason. The advance goes back in cash from your drawer, the card part too (never back to the card); a voucher advance comes back as a new voucher. The order is voided. As with returning a bill, an advance taken on an earlier day needs a manager.
 
 **Return after collection** (Orders → **Return**, the whole bill only): the bill is returned and only what was paid at collection goes back to the customer. The advance stays: the order goes back to **Future orders** as waiting, with the same FO number, items and advance, to be collected again (change the date with ✎).
 
@@ -271,7 +271,7 @@ The advance counts in the shift and day it was taken; the balance in the day it 
 | An advance is taken | A posted QRV51 for it: the cash or card account in, POS CUSTOMER ADVANCES (2802) out |
 | The order is collected | The bill (POS51) paid by **ADVANCE** (all its advances together) plus the balance as paid; the bill and its QRV51s show each other's numbers |
 | The collected bill is returned | The return (PSR51) puts the advance back on 2802; the next collection takes it off again |
-| The order is cancelled | One posted PV51 for the order: POS CUSTOMER ADVANCES (2802) in, each advance's cash or card account out; each line shows its QRV51 |
+| The order is cancelled | One posted PV51 for the order: POS CUSTOMER ADVANCES (2802) in, the outlet's cash account out for every advance (card ones too); each line shows its QRV51 |
 
 ## Cash in and out
 

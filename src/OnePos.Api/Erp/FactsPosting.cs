@@ -389,9 +389,10 @@ public static partial class FactsPosting
 
     /// <summary>
     /// A future order was cancelled and its advances given back: ONE PV51 for the order (<see cref="PostAdvanceReturnProc"/>), a
-    /// line per advance that went to FACTS as a QRV51 (the advance's number and amount; FACTS' side takes the account from that
-    /// QRV51). Advances left out of FACTS (skipped) are left out here too; none left: nothing to send. Sent once the QRV51s are
-    /// posted (the sender waits for them).
+    /// line per advance that went to FACTS as a QRV51 (the advance's number and amount, linked to that QRV51). The money went back
+    /// in cash (a card advance too), so every line comes out of the outlet's cash account: the outlet's FACTS cash payment method
+    /// is sent (CashMode), never a card's (2315). Advances left out of FACTS (skipped) are left out here too; none left: nothing
+    /// to send. Sent once the QRV51s are posted (the sender waits for them).
     /// </summary>
     public static async Task EnqueueAdvanceReturnAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid orderId)
     {
@@ -418,9 +419,13 @@ public static partial class FactsPosting
         var f = lines[0];
         var problems = new List<string>();
         if (f.ReturnNo is null or { Length: > FactsNoLength }) problems.Add($"Return number {f.ReturnNo} is missing or longer than {FactsNoLength} characters.");
+        var modes = (await c.QueryAsync<(string Name, string Kind, string Label)>("select name, kind, label from erp_payment_mode where branch_id = @Branch", new { f.Branch }, tx)).ToList();
+        var cashMode = ModeOf(modes, "cash", null, null);
+        if (cashMode is null) problems.Add($"No FACTS cash payment method at {f.Location}.");
         var narration = $"Advance return {f.FutureRef} {f.Customer} cancelled {f.Day:dd/MM/yyyy}".Trim();
         var xml = new XElement("data", new XElement("AdvanceReturn",
             new XElement("DocumentNo", f.ReturnNo ?? ""), new XElement("DocDate", f.Day.ToString("yyyy-MM-dd", Inv)), new XElement("LocationCode", f.Location ?? ""),
+            new XElement("CashMode", cashMode ?? ""),
             new XElement("FutureOrderNo", f.FutureRef ?? ""), new XElement("CustomerName", f.Customer ?? ""),
             new XElement("Narration", narration.Length > 200 ? narration[..200] : narration),
             new XElement("CreatedBy", (f.Cashier ?? "One POS").Length > 20 ? f.Cashier![..20] : f.Cashier ?? "One POS"),

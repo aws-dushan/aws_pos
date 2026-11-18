@@ -132,9 +132,14 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
   const [seen, setSeen] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if ((order?.id ?? null) !== seen) { setSeen(order?.id ?? null); setReason(""); }
-  const pays = (d?.payments ?? []).filter((p) => p.kind === "payment");
+  // A collected future order's bill: only what was paid at collection goes back; its advances stay with the order, which goes
+  // back to waiting (as the server does).
+  const future = d?.order.futureStatus === "collected";
+  const all = (d?.payments ?? []).filter((p) => p.kind === "payment");
+  const pays = future ? all.filter((p) => !p.isAdvance) : all;
+  const advance = future ? all.filter((p) => p.isAdvance).reduce((s, p) => s + p.amount, 0) : 0;
   const lines = (d?.lines ?? []).filter((l) => !l.isVoid && l.qty - l.returnedQty > 0);
-  const amount = order?.paid ?? 0;
+  const amount = d ? pays.reduce((s, p) => s + p.amount, 0) : (order?.paid ?? 0);
 
   async function go() {
     if (!order) return;
@@ -144,7 +149,9 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
       const note = r.creditNotes.at(-1)!;
       // Cash back to the customer: the drawer opens now.
       if (pays.some((p) => p.method === "cash")) void openDrawerForCash();
-      onDone(order.id, note.id, note.total > 0 ? `Credit note ${note.number}: ${currency} ${money(note.total)} back the way it was paid.` : "Bill returned: items back on stock.", note.total <= 0);
+      onDone(order.id, note.id, note.total > 0
+        ? `Credit note ${note.number}: ${currency} ${money(amount)} back the way it was paid.${advance > 0 ? ` The advance ${currency} ${money(advance)} stays: the order is waiting again on Future orders.` : ""}`
+        : "Bill returned: items back on stock.", note.total <= 0);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -176,6 +183,12 @@ function ReturnDialog({ order, currency, onClose, onDone }: { order: Order | nul
                   <span className="font-medium tabular-nums">{currency} {money(p.amount)}</span>
                 </div>
               ))}
+              {advance > 0 && (
+                <div className="flex items-center justify-between gap-3 px-3 py-2 text-muted-foreground">
+                  <span>Advance stays with the order (waiting again on Future orders)</span>
+                  <span className="font-medium tabular-nums">{currency} {money(advance)}</span>
+                </div>
+              )}
             </>
           )}
         </div>

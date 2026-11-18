@@ -12,7 +12,7 @@ A customer orders now for a later day (for example, a cake for Saturday) and pay
 | Order day: advance in cash | **QRV51**, posted, Others account = the outlet's cash account (e.g. **2205**) | Net: Dr 2205 / Cr **2802** |
 | Collection day: bill 100 | **POS51**, as today, paid by **ADVANCE 50** + **card 50** | ADVANCE line: Dr **2802** 50 / Cr AR C0006 50. Card line: Dr 2315 50 / Cr AR C0006 50. Sale: Dr AR C0006 100 / Cr sales 95.24 + VAT 4.76 |
 | Bill returned | **PSR51** (copy of the POS51) | The advance back on 2802, the balance back to the card or cash |
-| Order cancelled instead: advances given back | **PV51**, posted, one per order, department 102 | A line per advance: Cr the account its QRV51 debited (2315, or the outlet's cash), linked to that QRV51; one line Dr **2802** for the total. Net: the QRV51s reversed |
+| Order cancelled instead: advances given back | **PV51**, posted, one per order, department 102 | Given back in cash (a card advance too). A line per advance: Cr the outlet's **cash** account (never 2315), linked to that QRV51; one line Dr **2802** for the total. Net: 2802 back to 0; a card advance stays in 2315 and comes out of the outlet's cash |
 
 Result over the whole order:
 
@@ -24,7 +24,7 @@ Result over the whole order:
 | Sales + VAT | Cr 100 |
 
 - 2802 always shows the advances held for orders not yet collected.
-- Advances given back on a cancelled order: one posted PV51 for the order (`usp_ONEPOS_PostAdvanceReturn`), saved as finance's PV51 1001 and posted through FACTS' own step (`usp_PAY_REC_APPR_Posting`). It refuses an advance with no posted QRV51, or one already given back.
+- Advances given back on a cancelled order: one posted PV51 for the order (`usp_ONEPOS_PostAdvanceReturn`), saved as finance's PV51 1001 and posted through FACTS' own step (`usp_PAY_REC_APPR_Posting`). It refuses an advance with no posted QRV51, one already given back, or a cash method that isn't a FACTS cash payment method (a card's 2315 can't be used).
 - Test bill POS51 **0001** (30 Oct) was posted with the old ADVANCE sign: it leaves 5.00 credit on 2802 and 10.00 debit on AR C0006. Please reverse it.
 
 One POS writes and sends:

@@ -13,7 +13,7 @@ namespace OnePos.Api.Pos;
 ///    taken; the order stays open even when paid in full, and isn't among the register's open orders.
 ///  - Collect: the order moves to today's business day; with nothing left to pay it's finished at once (invoice, stock, FACTS),
 ///    otherwise the balance is paid on the register as on any bill.
-///  - Cancel (a manager): the advances go back the way they were paid, and the order is voided.
+///  - Cancel (a manager): the advances go back in cash from the drawer (a card advance too), and the order is voided.
 /// FACTS (company setting): each advance as a QRV51 to POS customer advances; the bill later paid by ADVANCE, or a cancelled
 /// order's advances given back in one PV51 (FactsPosting).
 /// </summary>
@@ -164,9 +164,9 @@ public static class FutureOrders
         }));
 
         // Cancelled, as a bill is returned: anyone at the till when every advance was taken today; an advance from an earlier day
-        // needs a manager (day.manage) or a manager's approval. Every advance goes back the way it was paid (cash from this drawer,
-        // a card back to the card, a voucher as a new voucher, points back to the customer), the kitchen's tickets are cancelled,
-        // and the order is voided.
+        // needs a manager (day.manage) or a manager's approval. Money advances go back in cash from this drawer, a card advance too
+        // (never back to the card); a voucher comes back as a new voucher, points back to the customer. The kitchen's tickets are
+        // cancelled, and the order is voided.
         api.MapPost("/future-orders/{id:guid}/cancel", (Guid id, CancelBody body, HttpContext http, Db db, Live live) => Orders.Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
             Waiting(o);
@@ -180,20 +180,23 @@ public static class FutureOrders
                     await Approvals.RequireAsync(c, tx, http, scope, "refund", advances.Sum(a => a.Amount),
                         "The advance was taken on an earlier day: only a manager cancels it. A manager can approve it.", late: true, orderId: o.Id);
                 var shift = await Days.ShiftOfAsync(c, tx, scope.RegisterId, scope.UserId);
-                if (advances.Any(a => a.Method == "cash") && scope.RegisterId is null) throw new DomainException("A cash advance goes back out of a drawer: pick the register you're at first (on the Dashboard).");
+                if (advances.Any(a => a.Method is "cash" or "card") && scope.RegisterId is null) throw new DomainException("The advance goes back in cash out of a drawer: pick the register you're at first (on the Dashboard).");
                 if (scope.RegisterId is not null && shift is null) throw new DomainException("Open your shift first: count the float in the drawer (on the Dashboard).");
                 foreach (var a in advances)
                 {
                     // Its own number; the advance it gives back is its reference (FACTS reverses that one).
                     var advanceNo = await Returns.NextAsync(c, tx, o.CompanyId, o.BranchId, "ADV");
-                    // A voucher advance comes back as a new voucher for the amount (its code is on the order's receipt); points go back.
+                    // A card advance goes back in cash too. A voucher advance comes back as a new voucher for the amount (its code is on
+                    // the order's receipt); points go back.
+                    var back = a.Method == "card" ? "cash" : a.Method;
                     Guid? voucherId = a.Method == "voucher"
                         ? (await Rewards.IssueAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, a.Amount, "refund", null, o.CustomerId, $"Cancelled {o.FutureRef}", o.Id)).Id
                         : null;
                     await c.ExecuteAsync("""
                         insert into payment (company_id, branch_id, register_id, order_id, business_date, kind, method, amount, reason, reference, taken_by, shift_id, card_type, is_advance, advance_no, voucher_id)
-                        values (@co, @b, @reg, @id, @day, 'refund', @Method, @Amount, @reason, @AdvanceNo, @user, @shift, @CardType, true, @advanceNo2, @voucherId)
-                        """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId, id, day, a.Method, a.Amount, reason, a.AdvanceNo, user = scope.UserId, shift, a.CardType, advanceNo2 = advanceNo, voucherId }, tx);
+                        values (@co, @b, @reg, @id, @day, 'refund', @back, @Amount, @reason, @AdvanceNo, @user, @shift, @cardType, true, @advanceNo2, @voucherId)
+                        """, new { co = o.CompanyId, b = o.BranchId, reg = scope.RegisterId, id, day, back, a.Amount, reason, a.AdvanceNo, user = scope.UserId, shift,
+                                   cardType = back == "card" ? a.CardType : null, advanceNo2 = advanceNo, voucherId }, tx);
                     if (a.Method == "points") await Rewards.RefundAsync(c, tx, o, scope.UserId, "points", a.Amount);
                 }
                 await c.ExecuteAsync("update pos_order set refunded = @paid where id = @id", new { id, paid = advances.Sum(a => a.Amount) }, tx);
@@ -204,7 +207,7 @@ public static class FutureOrders
             await c.ExecuteAsync("update pos_order set status = 'void', future_status = 'cancelled', void_reason = @reason, closed_at = now(), lock_session = null where id = @id",
                 new { id, reason }, tx);
             await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "void",
-                $"Future order {o.FutureRef} cancelled{(advances.Count > 0 ? $", advance {advances.Sum(a => a.Amount):N2} refunded ({string.Join(", ", advances.Select(a => $"{a.CardType ?? a.Method} {a.Amount:N2}"))})" : "")}",
+                $"Future order {o.FutureRef} cancelled{(advances.Count > 0 ? $", advance {advances.Sum(a => a.Amount):N2} refunded ({string.Join(", ", advances.Select(a => $"{(a.Method == "card" ? $"{a.CardType ?? "card"} paid back in cash" : a.Method)} {a.Amount:N2}"))})" : "")}",
                 note: reason);
         }));
     }
