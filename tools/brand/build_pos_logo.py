@@ -1,26 +1,26 @@
-"""Builds the One POS logo (symbol + "One POS", no signature line) from the One logo system.
+"""Builds the One POS logo (symbol + "ONE POS", no signature line) from the One logo system.
 
 Run from the project root:  python tools/brand/build_pos_logo.py public/brand
 
 Same symbol, lettering, colours and lockups as One (build_logo.py, copied unchanged from
-AWS One/tools/brand); only the wordmark changes: "One" in indigo + "POS" in AWS orange.
+AWS One/tools/brand); only the wordmark changes: "ONE" in indigo + "POS" in AWS orange.
 """
 import os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_logo as bl
 
-WORD_GAP = 0.26  # space between "One" and "POS", in ems
+WORD_GAP = 0.26  # space between "ONE" and "POS", in ems
 
 
 def text_block(tone, style, tag_size=None):
-    """'One POS' alone (no signature line): "One" in indigo/white + "POS" in AWS orange, baseline y=0."""
+    """'ONE POS' alone (no signature line): "ONE" in indigo/white + "POS" in AWS orange, baseline y=0."""
     mono = style == "mono"
     ink = bl.INDIGO if tone == "light" else bl.WHITE
     pos_ink = ink if mono else bl.ORANGE
     size = bl.ONE_SIZE
-    one_l = bl.ink_bounds("One", 800, size)[0]
-    d_one, adv = bl.text("One", 800, size, -one_l)
+    one_l = bl.ink_bounds("ONE", 800, size)[0]
+    d_one, adv = bl.text("ONE", 800, size, -one_l)
     pos_x = adv + WORD_GAP * size
     pos_l = bl.ink_bounds("POS", 800, size)[0]
     d_pos, _ = bl.text("POS", 800, size, pos_x - pos_l)

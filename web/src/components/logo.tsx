@@ -7,10 +7,10 @@ export const PRODUCT = "One POS";
 export const MAKER = "AWS Distribution";
 export const BRAND = PRODUCT;
 
-/** Logo files built by tools/brand/build_pos_logo.py (the One logo symbol + "One POS", "POS" in AWS orange). */
+/** Logo files built by tools/brand/build_pos_logo.py (the One logo symbol + "ONE POS", "POS" in AWS orange). */
 const ART = {
-  header: { file: "one-pos-header", w: 5679, h: 1327 },
-  full: { file: "one-pos-horizontal", w: 5679, h: 1327 },
+  header: { file: "one-pos-header", w: 5917, h: 1327 },
+  full: { file: "one-pos-horizontal", w: 5917, h: 1327 },
 } as const;
 
 /** The One POS logo; follows the light/dark theme unless `tone` pins it. Size it with a height class. */
