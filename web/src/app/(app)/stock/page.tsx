@@ -22,7 +22,7 @@ type Waste = {
   erpStatus: "none" | "pending" | "draft" | "posted" | "failed"; erpDoc: string | null; recordedByName: string; recordedAt: string; voidedAt: string | null; remindedAt?: string | null;
   approval: "none" | "waiting" | "approved" | "rejected"; requestedQty: number | null; decisionNote: string | null; decidedByName: string | null;
 };
-/** Transfers to the branch's wastage location in FACTS (read-only): finance's, or One POS' drafts once posted. */
+/** Transfers to the branch's wastage location in FACTS (read-only): finance's, or ONE POS' drafts once posted. */
 type Moves = {
   linked: boolean; location: string | null; wasteLocation: string | null; matched: number;
   moves: { docType: string; docNo: string; date: string; posted: boolean; lines: { line: number; code: string; name: string; qty: number; unit: string | null; batch: string | null; matched: string | null }[] }[];
@@ -397,7 +397,7 @@ function CheckDialog({ delivery: x, approver, onClose, onDone }: { delivery: Del
       onDone();
     } catch (e) { toast.error((e as Error).message, { duration: 10000 }); }
   }
-  // Checked in by mistake: a manager undoes it (One POS's record only; FACTS is untouched) and it can be checked in again.
+  // Checked in by mistake: a manager undoes it (ONE POS's record only; FACTS is untouched) and it can be checked in again.
   async function undo() {
     const reason = await promptReason({ title: `Undo the check-in of ${x!.docType} ${x!.docNo}?`, confirmLabel: "Undo check-in", tone: "danger",
       reason: { label: "Why", placeholder: "e.g. checked in by mistake" } });

@@ -9,7 +9,7 @@ import type {
 } from "@/prototype/types";
 
 /*
- * One POS state: kept in this browser (localStorage) and synced live between tabs of the same browser,
+ * ONE POS state: kept in this browser (localStorage) and synced live between tabs of the same browser,
  * so a kitchen screen opened in a second window follows the register. Every change goes through an
  * action below, which is where an API call to the AWS One server will go when the POS is connected.
  */

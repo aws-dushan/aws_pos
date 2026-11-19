@@ -285,7 +285,7 @@ public static class Notices
                        ?? throw new DomainException("Set up the email server first.");
             try
             {
-                await Mailer.SendAsync(smtp, dp, [to.Address], "One POS test email", "<p>Email from One POS works. Daily summaries and alerts will arrive like this.</p>");
+                await Mailer.SendAsync(smtp, dp, [to.Address], "ONE POS test email", "<p>Email from ONE POS works. Daily summaries and alerts will arrive like this.</p>");
             }
             catch (Exception e) when (e is SmtpException or InvalidOperationException or System.Security.Cryptography.CryptographicException)
             {
@@ -309,8 +309,8 @@ public static class Notices
             var pw = j.TryGetProperty("password", out var p) ? p.GetString() : null;
             if (user is not null)
                 client.Credentials = new NetworkCredential(user, pw is null ? "" : dp.CreateProtector("OnePos.Smtp.Password.v1").Unprotect(pw));
-            // The sender's name as people see it (e.g. "European Bakery POS"); "One POS" when none is set.
-            var name = j.TryGetProperty("fromName", out var fn) && fn.GetString() is { Length: > 0 } n ? n : "One POS";
+            // The sender's name as people see it (e.g. "European Bakery POS"); "ONE POS" when none is set.
+            var name = j.TryGetProperty("fromName", out var fn) && fn.GetString() is { Length: > 0 } n ? n : "ONE POS";
             using var msg = new MailMessage { From = new MailAddress(j.GetProperty("from").GetString()!, name), Subject = subject, Body = html, IsBodyHtml = true };
             foreach (var t in to) msg.To.Add(t);
             await client.SendMailAsync(msg);
@@ -319,7 +319,7 @@ public static class Notices
 
     /// <summary>
     /// The bell, live: listens for the database's signal on every new notice (0089) and tells that company's open screens to re-read
-    /// it ("notices.changed"), whichever part of One POS made the notice. A lost connection is opened again after a few seconds.
+    /// it ("notices.changed"), whichever part of ONE POS made the notice. A lost connection is opened again after a few seconds.
     /// </summary>
     public sealed class Listener(IConfiguration config, Live live, ILogger<Listener> logger) : BackgroundService
     {
@@ -388,8 +388,8 @@ public static class Notices
                             html.Append($"<tr><td style=\"padding:4px 12px 4px 0;color:#555\">{WebUtility.HtmlEncode(l.Label)}</td><td style=\"padding:4px 0;{(l.Warn ? "color:#c0262d;font-weight:600" : "")}\">{WebUtility.HtmlEncode(l.Value)}</td></tr>");
                         html.Append("</table>");
                         if (n.Link is not null && !string.IsNullOrEmpty(web))
-                            html.Append($"<p style=\"margin:20px 0\"><a href=\"{WebUtility.HtmlEncode(web + n.Link)}\" style=\"font-family:sans-serif;background:#3b3fd8;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none\">Open in One POS</a></p>");
-                        const string footer = "<p style=\"font-family:sans-serif;color:#888;font-size:12px\">One POS</p>";
+                            html.Append($"<p style=\"margin:20px 0\"><a href=\"{WebUtility.HtmlEncode(web + n.Link)}\" style=\"font-family:sans-serif;background:#3b3fd8;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none\">Open in ONE POS</a></p>");
+                        const string footer = "<p style=\"font-family:sans-serif;color:#888;font-size:12px\">ONE POS</p>";
                         if (n.ApprovalId is { } approvalId)
                         {
                             // A discount request: one email per address, each with its own code (then only the code's hash is kept).

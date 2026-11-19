@@ -232,7 +232,7 @@ public static class Platforms
             });
         });
 
-        // The setting: payouts tracked in One POS, or managed elsewhere (off).
+        // The setting: payouts tracked in ONE POS, or managed elsewhere (off).
         api.MapGet("/platforms/settings", async (HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
@@ -249,7 +249,7 @@ public static class Platforms
                 var old = await PayoutsOnAsync(c, tx, scope.CompanyId);
                 await c.ExecuteAsync("update company set platform_payouts = @PayoutsEnabled where id = @id", new { body.PayoutsEnabled, id = scope.CompanyId }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "company", scope.CompanyId.ToString(), "platform-payouts",
-                    "Delivery platform payouts setting changed", [new("Track payouts in One POS", old, body.PayoutsEnabled)]);
+                    "Delivery platform payouts setting changed", [new("Track payouts in ONE POS", old, body.PayoutsEnabled)]);
                 return 0;
             });
             await live.ToCompany(scope.CompanyId, "platforms.changed");
@@ -300,7 +300,7 @@ public static class Platforms
             if (body.PeriodFrom is { } pf && body.PeriodTo is { } pt && pf > pt) throw new DomainException("The period ends before it starts.");
             var row = await db.Company(scope.CompanyId, async (c, tx) =>
             {
-                if (!await PayoutsOnAsync(c, tx, scope.CompanyId)) throw new DomainException("Platform payouts aren't tracked in One POS for this company (Administration → Delivery platforms).");
+                if (!await PayoutsOnAsync(c, tx, scope.CompanyId)) throw new DomainException("Platform payouts aren't tracked in ONE POS for this company (Administration → Delivery platforms).");
                 var name = await c.ExecuteScalarAsync<string?>("select name from delivery_platform where id = @PlatformId", new { body.PlatformId }, tx) ?? throw new DomainException("Choose the platform.");
                 var id = await c.ExecuteScalarAsync<Guid>("""
                     insert into platform_payout (company_id, branch_id, platform_id, received_on, period_from, period_to, amount, commission, bank_fee, reference, note, recorded_by)

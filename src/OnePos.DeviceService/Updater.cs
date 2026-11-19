@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 namespace OnePos.DeviceService;
 
 /// <summary>
-/// Self-update (REQ HW-01). The One POS web app tells the service its server's address; every 6 hours (and when asked from the
+/// Self-update (REQ HW-01). The ONE POS web app tells the service its server's address; every 6 hours (and when asked from the
 /// Devices screen) the service asks that server for the latest Device Service. A newer one is downloaded, its SHA-256 checked
 /// against the server's, and installed quietly with msiexec (the installer stops this service, replaces it and starts it again).
 /// Off per PC from the Devices screen; nothing is downloaded from anywhere but the server the web app came from.
@@ -43,7 +43,7 @@ public sealed class Updater(SettingsStore store, ILogger<Updater> logger) : Back
         {
             var api = store.Get().ServerApi;
             LastCheck = DateTime.UtcNow;
-            if (api is null) return LastResult = "Not paired with a One POS server yet (open One POS on this PC).";
+            if (api is null) return LastResult = "Not paired with a ONE POS server yet (open ONE POS on this PC).";
             var latest = await Http.GetFromJsonAsync<Latest>($"{api.TrimEnd('/')}/public/device-service/latest", stop);
             if (latest is null || string.IsNullOrWhiteSpace(latest.Version)) return LastResult = "The server has no Device Service release.";
             LatestVersion = latest.Version;

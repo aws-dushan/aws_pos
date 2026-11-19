@@ -24,7 +24,7 @@ export default function ScreenPage() {
   const pct = Math.round(s.dpr * 100);
   return (
     <div className="mx-auto max-w-[760px] pb-6">
-      <PageHeader title="Screen check" icon={MonitorIcon} description="The size this browser gives One POS on this screen." />
+      <PageHeader title="Screen check" icon={MonitorIcon} description="The size this browser gives ONE POS on this screen." />
       <div className={cn("rounded-2xl border p-6 text-center", till ? "border-success/40 bg-success/10" : "border-danger/40 bg-danger/10")}>
         <div className="font-heading text-5xl font-semibold tabular-nums">{s.w} × {s.h}</div>
         <div className={cn("mt-2 text-lg font-medium", till ? "text-success" : "text-danger")}>

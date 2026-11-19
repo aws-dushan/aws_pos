@@ -77,7 +77,7 @@ export default function PaperPage() {
   return (
     <div className="mx-auto max-w-[1180px] pb-8">
       <PageHeader title="Paper sales" icon={NotebookPenIcon} module="bank"
-        description={`If ${branch?.name ?? "the branch"} can't reach One POS, orders are written on numbered pads. Key each slip in here once it's back.`} />
+        description={`If ${branch?.name ?? "the branch"} can't reach ONE POS, orders are written on numbered pads. Key each slip in here once it's back.`} />
       <ErrorNote message={menu.error} />
 
       <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_340px]">

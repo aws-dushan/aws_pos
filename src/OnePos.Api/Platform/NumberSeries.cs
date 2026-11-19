@@ -30,7 +30,7 @@ public static class NumberSeries
         public DateTime? FirstAt { get; set; }
     }
 
-    // The highest number already used with a prefix ('' = plain numbers): the digits after it, in One POS and in FACTS. A prefix
+    // The highest number already used with a prefix ('' = plain numbers): the digits after it, in ONE POS and in FACTS. A prefix
     // is letters, digits and dashes only, so it is safe inside the pattern; branch numbers (CN-EBL-01-000001) never match "CN-" + digits.
     private static readonly Dictionary<string, (string Label, string FactsType, string Sql)> Kinds = new()
     {
@@ -104,10 +104,10 @@ public static class NumberSeries
                     throw new DomainException($"{kind.Label} already run from {Format(old.Prefix, old.StartNo ?? 0)} (the next is {Format(old.Prefix, old.NextNo ?? 0)}), so the prefix and starting number can't change any more.");
                 if (!started)
                 {
-                    // Every plain number already used must stay below the start: in One POS (each number once per company) and in FACTS,
+                    // Every plain number already used must stay below the start: in ONE POS (each number once per company) and in FACTS,
                     // where the same number again would replace that document (e.g. one of Polaris' bills).
                     var here = await db.Company(companyId, (c, tx) => c.ExecuteScalarAsync<long?>(kind.Sql, new { p = prefix ?? "" }, tx));
-                    if (here >= start) throw new DomainException($"One POS already has {kind.Label.ToLowerInvariant()} up to {Format(prefix, here.Value)}. Start above it.");
+                    if (here >= start) throw new DomainException($"ONE POS already has {kind.Label.ToLowerInvariant()} up to {Format(prefix, here.Value)}. Start above it.");
                     if (erp == "facts")
                     {
                         long? inFacts;

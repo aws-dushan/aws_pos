@@ -23,7 +23,7 @@ const outletHead = (priceType: string | null) => (priceType ? `${OUTLET} (${pric
 export async function downloadTemplate(branch: { code: string; name: string; priceType: string | null }, platforms: XPlatform[], items: XItem[]) {
   const { Workbook } = await import("exceljs");
   const wb = new Workbook();
-  wb.creator = "One POS";
+  wb.creator = "ONE POS";
   const ws = wb.addWorksheet("Prices");
   ws.addRow([`Prices · ${branch.name}`]).font = { bold: true, size: 14 };
   const b = ws.addRow(["Branch", branch.code]);

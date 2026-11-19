@@ -21,7 +21,7 @@ export function ExportMenu({ name, table, tables, heading, disabled }: {
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuItem className="h-10" onClick={() => t && void downloadXlsx(name, t).catch(() => toast.error("Couldn't make the Excel file."))}><FileSpreadsheetIcon className="size-4" /> Excel (.xlsx)</DropdownMenuItem>
         <DropdownMenuItem className="h-10" onClick={() => t && downloadCsv(name, t)}><FileTextIcon className="size-4" /> CSV</DropdownMenuItem>
-        <DropdownMenuItem className="h-10" onClick={() => { if (t && !printPdf(t, heading)) toast.error("Allow pop-ups for One POS to print or save as PDF."); }}><PrinterIcon className="size-4" /> PDF / print</DropdownMenuItem>
+        <DropdownMenuItem className="h-10" onClick={() => { if (t && !printPdf(t, heading)) toast.error("Allow pop-ups for ONE POS to print or save as PDF."); }}><PrinterIcon className="size-4" /> PDF / print</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

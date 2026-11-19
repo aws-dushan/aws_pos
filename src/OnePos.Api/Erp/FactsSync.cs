@@ -10,7 +10,7 @@ namespace OnePos.Api.Erp;
 /// <summary>
 /// The FACTS item and stock sync (REQ ERP-02 … ERP-05). It only reads FACTS (ApplicationIntent=ReadOnly, SELECTs only).
 /// Items: STOCK_MASTER of the company's item type, item master (e.g. SMBK) and/or division, sub-category (STK_GRP2) as the menu category. A new item arrives
-/// switched off at every branch and without a price; a renamed item keeps its One POS name;
+/// switched off at every branch and without a price; a renamed item keeps its ONE POS name;
 /// an item gone from FACTS (inactive or sale-blocked) is switched off. Stock: each branch's FACTS location (STOCK_LOCATION_MASTER).
 /// "Switch on what sells here": the items the branch's location sold in FACTS's POS documents over the last days.
 /// Prices: each branch's own FACTS price type (Price Type Master), see <see cref="SyncPricesAsync"/>.
@@ -158,7 +158,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
                     """, new { companyId, codes = fresh.Select(x => x.Code).ToArray() }, tx);
             }
 
-            // Known items: FACTS name, stock unit and sub-category follow FACTS unless changed in One POS; back in FACTS = back on.
+            // Known items: FACTS name, stock unit and sub-category follow FACTS unless changed in ONE POS; back in FACTS = back on.
             // The unit it's sold in (erp_unit) and its decimals follow from its FACTS units below (Pos.SoldAs).
             var known = facts.Where(x => existing.ContainsKey(x.Code)).ToList();
             var renamed = 0;
@@ -259,7 +259,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         if (branches.Count == 0) return new { branches = 0, items = 0 };
         var items = await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, Guid Id, decimal Per)>("select erp_item_code, id, unit_per from menu_item where erp_item_code is not null", transaction: tx));
         var byCode = items.ToDictionary(x => x.Code, x => x.Id);
-        // FACTS counts stock in its stock unit; One POS in the unit the item is sold in (Pos.SoldAs): 7.92 LTR of Sprite is 24 PCS.
+        // FACTS counts stock in its stock unit; ONE POS in the unit the item is sold in (Pos.SoldAs): 7.92 LTR of Sprite is 24 PCS.
         var per = items.ToDictionary(x => x.Code, x => x.Per);
         var unitPer = (await db.Company(companyId, (c, tx) => c.QueryAsync<(string Code, string Unit, decimal Per)>(
             "select i.erp_item_code, upper(u.unit), u.per_unit from item_unit u join menu_item i on i.id = u.item_id", transaction: tx)))
@@ -309,7 +309,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
     /// that type, VAT added where the branch's FACTS prices are before VAT. FACTS decides: an item without a price there (or 0)
     /// has none here and can't be sold. Every change is kept in item_price_history; bills already rung up keep their prices.
     /// </summary>
-    /// <summary>BOMs: the outlet bills of materials (BOMO50) into One POS' BOMs (see <see cref="Pos.Boms.SyncFromFactsAsync"/>).</summary>
+    /// <summary>BOMs: the outlet bills of materials (BOMO50) into ONE POS' BOMs (see <see cref="Pos.Boms.SyncFromFactsAsync"/>).</summary>
     public Task<object> SyncBomsAsync(Guid companyId, Guid? userId) => RunAsync(companyId, null, "boms", userId, async () =>
     {
         await using var f = await OpenAsync(companyId);
@@ -338,7 +338,7 @@ public sealed class FactsSync(ErpConnections erp, Db db, Live live)
         foreach (var b in branches)
         {
             if (!known.Contains(b.PriceType)) { missingTypes.Add(b.PriceType); continue; }
-            // One price per item (the latest, should FACTS hold more than one); the item type must match where One POS knows it.
+            // One price per item (the latest, should FACTS hold more than one); the item type must match where ONE POS knows it.
             var rows = (await f.QueryAsync<(string Code, string DocType, decimal Price)>("""
                 select Code, DocType, Price from (
                   select ltrim(rtrim(STKPRICE_STOCK_DOCNO)) as Code, ltrim(rtrim(STKPRICE_DOCTYPE)) as DocType, isnull(STKPRICE_PRICE, 0) as Price,

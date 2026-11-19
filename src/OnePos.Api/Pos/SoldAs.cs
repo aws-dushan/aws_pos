@@ -6,7 +6,7 @@ namespace OnePos.Api.Pos;
 /// <summary>
 /// "Sold as" (migration 0093): the FACTS unit an item is sold in. FACTS keeps Sprite in LTR and the till sells it by the can
 /// (PCS, 1 = 0.33 LTR): bills, returns and wastage go to FACTS in PCS and FACTS converts to LTR by its own STOCK_UNIT. The item's
-/// erp_unit is that unit, unit_per how much of the stock unit one of it is, and FACTS stock read into One POS is counted in it.
+/// erp_unit is that unit, unit_per how much of the stock unit one of it is, and FACTS stock read into ONE POS is counted in it.
 /// </summary>
 public static class SoldAs
 {

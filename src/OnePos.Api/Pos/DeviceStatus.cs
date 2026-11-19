@@ -5,7 +5,7 @@ using OnePos.Api.Platform;
 namespace OnePos.Api.Pos;
 
 /// <summary>
-/// Device status per branch (REQ HW-08). Every PC running One POS reports each minute what its Device Service says (version,
+/// Device status per branch (REQ HW-08). Every PC running ONE POS reports each minute what its Device Service says (version,
 /// receipt printer and its state, last print, last error); the Devices screen lists the branch's PCs with online / offline.
 /// </summary>
 public static class DeviceStatus

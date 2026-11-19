@@ -83,7 +83,7 @@ public static class CompanyEndpoints
         public string? FactsPlatformLocation { get; set; }
         public bool FactsPricesIncludeVat { get; set; } = true;
         public int CloseDelayMaxMinutes { get; set; } = 120;
-        /// <summary>Wastage approval: the One POS user who approves, where requests are emailed, the FACTS username it is posted as.</summary>
+        /// <summary>Wastage approval: the ONE POS user who approves, where requests are emailed, the FACTS username it is posted as.</summary>
         public Guid? WastageApproverId { get; set; }
         public string? WastageApprovalEmail { get; set; }
         public string? WastageFactsUser { get; set; }

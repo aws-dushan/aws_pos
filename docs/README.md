@@ -1,8 +1,8 @@
-# One POS — technical documentation
+# ONE POS — technical documentation
 
 By Dushan Fernando
 
-For developers and IT staff who build, run or support One POS. The user manual (all roles, by task) is a separate
+For developers and IT staff who build, run or support ONE POS. The user manual (all roles, by task) is a separate
 document: [docs/manual/user-manual.md](manual/user-manual.md), printed as its own PDF.
 
 | # | Document | What it covers |

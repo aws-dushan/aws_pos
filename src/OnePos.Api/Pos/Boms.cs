@@ -456,7 +456,7 @@ public static class Boms
 
     /// <summary>
     /// BOMs from FACTS: each finished item's newest outlet bill of materials (BOMO50), as quantities for ONE unit (a raw material listed
-    /// twice is added up). A BOM is made for an item new to One POS; when FACTS' recipe differs from One POS' latest version, a new
+    /// twice is added up). A BOM is made for an item new to ONE POS; when FACTS' recipe differs from ONE POS' latest version, a new
     /// version starts today (tomorrow if today's sales already went to FACTS), or today's not-yet-sent version is corrected.
     /// Only active FACTS BOMs count (BOM_ACTIVE_STATUS 0, as FACTS marks active rows). A BOM from FACTS that FACTS no longer has
     /// active ends from the same day a new version would start: from then its item sells from its own stock. Active again un-ends it.

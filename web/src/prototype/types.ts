@@ -1,5 +1,5 @@
 /*
- * One POS data model. Kept deliberately close to how AWS One stores documents, so an order can later
+ * ONE POS data model. Kept deliberately close to how AWS One stores documents, so an order can later
  * post to AWS One as a sales invoice (lines, VAT, payments) without reshaping.
  */
 

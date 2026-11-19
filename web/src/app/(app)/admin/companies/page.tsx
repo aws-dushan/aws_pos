@@ -227,7 +227,7 @@ function CompanyDialog({ value, onClose, onSaved }: { value: Company | "new" | n
             <Segmented id="erp" value={f.erpConnector} onChange={(v) => set("erpConnector", v)} className="w-full"
               options={[{ value: "none", label: "Standalone" }, { value: "awsone", label: "AWS One" }, { value: "facts", label: "FACTS" }]} />
             <p className="text-xs text-muted-foreground">
-              {f.erpConnector === "none" ? "One POS keeps its own menu and stock; nothing is posted to an ERP."
+              {f.erpConnector === "none" ? "ONE POS keeps its own menu and stock; nothing is posted to an ERP."
                 : f.erpConnector === "awsone" ? "Items and stock come from AWS One; sales, payments and returns post back to it (phase 3)."
                   : "Items come from the FACTS item master and stock from the branch's FACTS location; returns post as STV documents (phase 3)."}
             </p>
@@ -385,7 +385,7 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
                 <Field label="Division" hint="FACTS division, e.g. 50. Empty = any.">
                   <Input value={f.factsDivision} maxLength={20} onChange={(e) => set("factsDivision", e.target.value)} placeholder="e.g. 50" />
                 </Field>
-                <Field label="Price type" hint={f.factsPriceType.trim() ? "Prices come only from this FACTS price type and can't be changed here." : "Empty = prices are set in One POS."}>
+                <Field label="Price type" hint={f.factsPriceType.trim() ? "Prices come only from this FACTS price type and can't be changed here." : "Empty = prices are set in ONE POS."}>
                   <Input value={f.factsPriceType} maxLength={20} onChange={(e) => set("factsPriceType", e.target.value)} placeholder="Code in FACTS Price Type Master" />
                 </Field>
                 {f.factsPriceType.trim() && (
@@ -578,7 +578,7 @@ function DiscountApprovalBox({ branch, onSaved }: { branch: Branch; onSaved: () 
 type CompanyUser = { id: string; displayName: string; username: string; isActive: boolean };
 
 /**
- * Wastage approval for one branch: who approves (a One POS user), where requests are emailed, and the approver's FACTS username,
+ * Wastage approval for one branch: who approves (a ONE POS user), where requests are emailed, and the approver's FACTS username,
  * which approved wastage is posted as in FACTS (it must be allowed STV50 "Transaction Posting" there). Saved on its own.
  */
 function WastageApprovalBox({ company, branch, onSaved }: { company: Company; branch: Branch; onSaved: () => void }) {
@@ -610,7 +610,7 @@ function WastageApprovalBox({ company, branch, onSaved }: { company: Company; br
       </div>
       {users.error ? <ErrorNote message={users.error} /> : (
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field label="Approver (One POS user)">
+          <Field label="Approver (ONE POS user)">
             <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
               <option value="">Choose a user</option>
               {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
@@ -666,7 +666,7 @@ function PricePostingBox({ branch, onSaved }: { branch: Branch; onSaved: () => v
 }
 
 /**
- * Marketing give-aways at one branch: who approves them (a One POS user), where requests are emailed, the approver's FACTS username
+ * Marketing give-aways at one branch: who approves them (a ONE POS user), where requests are emailed, the approver's FACTS username
  * the approved MCV50 is posted as (it must be allowed MCV50 "Transaction Posting" there), and the FACTS expense account it debits.
  * Set, the branch has a Marketing tab on Stock. Saved on its own.
  */
@@ -700,7 +700,7 @@ function MarketingBox({ company, branch, onSaved }: { company: Company; branch: 
       </div>
       {users.error ? <ErrorNote message={users.error} /> : (
         <div className="grid items-start gap-4 sm:grid-cols-2">
-          <Field label="Approver" hint="The One POS user who approves the give-aways.">
+          <Field label="Approver" hint="The ONE POS user who approves the give-aways.">
             <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
               <option value="">Choose a user</option>
               {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
@@ -720,7 +720,7 @@ function MarketingBox({ company, branch, onSaved }: { company: Company; branch: 
 }
 
 /**
- * Stock requests at one branch (STR50): who approves them (a One POS user), where requests are emailed, and the approver's FACTS
+ * Stock requests at one branch (STR50): who approves them (a ONE POS user), where requests are emailed, and the approver's FACTS
  * username the STR50 is posted as; or pre-approved, posted as soon as the branch sends it (the email then only gets a copy). Set, the
  * branch has a Requests tab on Stock. Saved on its own.
  */
@@ -758,7 +758,7 @@ function RequestApprovalBox({ company, branch, onSaved }: { company: Company; br
             <Switch on={v.pre} onChange={(pre) => setV({ ...v, pre })} label="Pre-approved" />
             <span className="text-sm">Pre-approved <span className="text-muted-foreground">· sent requests go to FACTS at once, no approval</span></span>
           </div>
-          <Field label="Approver" hint={v.pre ? "Optional: still decides requests already waiting." : "The One POS user who approves the requests."}>
+          <Field label="Approver" hint={v.pre ? "Optional: still decides requests already waiting." : "The ONE POS user who approves the requests."}>
             <select value={v.approverId} onChange={(e) => setV({ ...v, approverId: e.target.value })} className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm dark:bg-input/30">
               <option value="">Choose a user</option>
               {(users.data ?? []).filter((u) => u.isActive).map((u) => <option key={u.id} value={u.id}>{u.displayName} ({u.username})</option>)}
@@ -826,7 +826,7 @@ function RequestStoresBox({ company }: { company: Company }) {
 
 type Series = { series: "INV" | "CN"; label: string; factsType: string; shared: boolean; from: string | null; prefix: string | null; start: number | null;
   next: number | null; nextNo: string | null; started: boolean; highest: number | null; active: boolean };
-/** A shared number as One POS writes it: plain (200000), or the prefix and at least 6 digits (CN000001). */
+/** A shared number as ONE POS writes it: plain (200000), or the prefix and at least 6 digits (CN000001). */
 const fmtNo = (prefix: string, n: number) => (prefix ? prefix + String(n).padStart(6, "0") : String(n));
 
 /** Invoice and credit note numbers: per branch (INV-EBL-01-000221), or one plain series for all branches from a date and time. */
@@ -903,7 +903,7 @@ function SeriesRow({ company, s, timeZone, onSaved }: { company: Company; s: Ser
         {s.shared && s.started ? <>Running: the next is <b className="font-mono text-foreground">{s.nextNo}</b>. The prefix and starting number can&apos;t change any more; switched off and on again, it continues.</>
           : s.shared && s.from ? <>Not started yet: the first {s.label.toLowerCase().replace(/s$/, "")} from {when(s.from)} gets <b className="font-mono text-foreground">{s.nextNo}</b>; until then each branch its own.</>
           : `Plain numbers, or a prefix (e.g. CN) and 6 digits. The starting number must be above every number with that prefix already used${company.erpConnector === "facts" ? ` here and in FACTS (${s.factsType}), checked when you save` : ""}.`}
-        {s.highest !== null && <> Highest {s.prefix ? `${s.prefix} ` : "plain "}number in One POS now: {fmtNo(s.prefix ?? "", s.highest)}.</>}
+        {s.highest !== null && <> Highest {s.prefix ? `${s.prefix} ` : "plain "}number in ONE POS now: {fmtNo(s.prefix ?? "", s.highest)}.</>}
       </p>
     </div>
   );

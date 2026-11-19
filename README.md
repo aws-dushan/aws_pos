@@ -1,7 +1,7 @@
-# One POS
+# ONE POS
 
 Restaurant point of sale for the group's companies and branches. Same stack, design system and motion kit as AWS One.
-Requirements and development plan: the "One POS by AWS Distribution — Requirements & Development Plan" doc.
+Requirements and development plan: the "ONE POS by AWS Distribution — Requirements & Development Plan" doc.
 
 ## Run locally
 
@@ -147,7 +147,7 @@ Phase 2 is complete.
   QR code; it opens the receipt on the customer's phone (`/r/<token>`, no sign-in; a long random token per order; payment
   references and kitchen tickets left out), to keep, print or save as PDF.
 
-- Device status (Devices → "This branch's PCs", branch.manage): every PC running One POS reports each minute — online or
+- Device status (Devices → "This branch's PCs", branch.manage): every PC running ONE POS reports each minute — online or
   last seen, who's signed in, its Device Service version (or none), receipt printer and its state from the Windows spooler
   (ready, paper out, offline, error…), last print and last error. A PC with the Device Service is listed by its name.
 
@@ -159,9 +159,9 @@ Phase 2 is complete.
   protected) is set up, sent in the background each minute.
 
 - Device Service installer and self-update (REQ HW-01): an MSI (`tools/release-device-service.ps1 -Version x.y.z -WebOrigin
-  https://<One POS address>`, WiX 5; the address is built in, so on a till a double-click is enough)
-  installs the service (automatic start, restarts if it stops) and the One POS tray icon (starts with Windows: running or not,
-  printer state, test print, check for updates). Each till's service learns its One POS server from the web app (only that
+  https://<ONE POS address>`, WiX 5; the address is built in, so on a till a double-click is enough)
+  installs the service (automatic start, restarts if it stops) and the ONE POS tray icon (starts with Windows: running or not,
+  printer state, test print, check for updates). Each till's service learns its ONE POS server from the web app (only that
   address, from that address), checks every 6 hours and installs a newer release quietly after checking its SHA-256;
   per-PC switch and "Check for updates" / "Update now" under Devices. Devices offers "Download the installer" on a PC
   without the service. The installer isn't code-signed yet (Windows SmartScreen warns until it is).

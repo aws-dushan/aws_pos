@@ -339,7 +339,7 @@ public static class Menu
         });
 
         // An item's price changes at this branch, its company price and its platform prices (of the branch's "Platform prices from"
-        // location), newest first: from FACTS or set in One POS.
+        // location), newest first: from FACTS or set in ONE POS.
         api.MapGet("/menu/items/{id:guid}/price-history", async (Guid id, HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);

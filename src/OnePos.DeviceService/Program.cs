@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using OnePos.DeviceService;
 
-// One POS Device Service: runs as a Windows service on each till and listens only on this PC (127.0.0.1:5199).
-// The One POS web app (in Chrome/Edge on the same till) calls it to print receipts, open the drawer and drive a pole display.
+// ONE POS Device Service: runs as a Windows service on each till and listens only on this PC (127.0.0.1:5199).
+// The ONE POS web app (in Chrome/Edge on the same till) calls it to print receipts, open the drawer and drive a pole display.
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseWindowsService(o => o.ServiceName = "OnePosDevice");
 builder.WebHost.ConfigureKestrel(k => k.ListenLocalhost(builder.Configuration.GetValue("Port", 5199)));
@@ -19,7 +19,7 @@ var done = new ConcurrentDictionary<string, DateTime>();
 string? lastError = null;
 DateTime? lastPrintAt = null;
 
-// Only the One POS web app may call the service: its origin must be allowed. Chrome's "local network access" preflight is answered too.
+// Only the ONE POS web app may call the service: its origin must be allowed. Chrome's "local network access" preflight is answered too.
 app.Use(async (ctx, next) =>
 {
     var origin = ctx.Request.Headers.Origin.ToString();
@@ -46,13 +46,13 @@ app.MapGet("/status", () =>
     var s = store.Get();
     return new
     {
-        service = "One POS Device Service", version, machine = Environment.MachineName,
+        service = "ONE POS Device Service", version, machine = Environment.MachineName,
         s.ReceiptPrinter, s.PaperWidth, s.DrawerOnCash, s.PoleDisplayPort, s.PrintMode,
         printers = RawPrinter.Installed(), ports = System.IO.Ports.SerialPort.GetPortNames(),
         lastError, lastPrintAt,
         printerState = s.ReceiptPrinter is { } rp ? RawPrinter.State(rp) : null,
         update = new { s.AutoUpdate, latest = updater.LatestVersion, lastCheck = updater.LastCheck, result = updater.LastResult, paired = s.ServerApi is not null },
-        // The One POS web address (the tray's "Open One POS"): the server's API address without /api.
+        // The ONE POS web address (the tray's "Open ONE POS"): the server's API address without /api.
         server = s.ServerApi is { } api && api.EndsWith("/api", StringComparison.OrdinalIgnoreCase) ? api[..^4] : s.ServerApi,
     };
 });
@@ -73,7 +73,7 @@ app.MapPut("/settings", (DeviceSettings body) =>
     return Results.Ok(new { ok = true });
 });
 
-// The web app says which One POS server it came from (updates come only from there); only an allowed origin can say so,
+// The web app says which ONE POS server it came from (updates come only from there); only an allowed origin can say so,
 // and the address must be on that same origin.
 app.MapPut("/server", (ServerBody body, HttpContext ctx) =>
 {
@@ -108,7 +108,7 @@ IResult PrintReceipt(ReceiptJob job, string name, string? printer = null) => Sen
     if (s.PrintMode != "driver") { RawPrinter.Send(target, ReceiptRenderer.Render(job with { OpenDrawer = drawer }, s.Dots), name); return; }
     using (var page = ReceiptRenderer.Page(job, s.Dots)) DriverPrinter.Print(target, page, name);
     if (drawer)
-        try { RawPrinter.Send(target, [.. EscPos.Init, .. EscPos.OpenDrawer], "One POS drawer"); }
+        try { RawPrinter.Send(target, [.. EscPos.Init, .. EscPos.OpenDrawer], "ONE POS drawer"); }
         catch (Exception ex) { lastError = $"Receipt printed; the drawer didn't open: {ex.Message}"; }
 }, printer);
 
@@ -138,20 +138,20 @@ IResult Send(string jobId, Action<DeviceSettings, string> send, string? printer 
 }
 
 app.MapPost("/print/receipt", (ReceiptJob job) =>
-    PrintReceipt(job, job.Printer is null ? "One POS receipt" : "One POS kitchen ticket", job.Printer));
+    PrintReceipt(job, job.Printer is null ? "ONE POS receipt" : "ONE POS kitchen ticket", job.Printer));
 
 // The same receipt as a sharp picture (a PDF or a preview of exactly what prints), `scale` times the printer's resolution.
 app.MapPost("/print/preview", (ReceiptJob job, int? scale) =>
     Results.File(ReceiptRenderer.Preview(job, store.Get().Dots, scale ?? 3), "image/png"));
 
-app.MapPost("/drawer/open", (DrawerBody body) => Print(body.JobId, _ => [.. EscPos.Init, .. EscPos.OpenDrawer], "One POS drawer"));
+app.MapPost("/drawer/open", (DrawerBody body) => Print(body.JobId, _ => [.. EscPos.Init, .. EscPos.OpenDrawer], "ONE POS drawer"));
 
 app.MapPost("/print/test", () =>
 {
     var s = store.Get();
     return PrintReceipt(new ReceiptJob(Guid.NewGuid().ToString(),
     [
-        new("One POS", null, "center", true, "large", false),
+        new("ONE POS", null, "center", true, "large", false),
         new("Test print · طباعة تجريبية", null, "center", false, null, false),
         new(null, null, null, false, null, true),
         new("Printer", s.ReceiptPrinter, null, false, null, false),
@@ -161,7 +161,7 @@ app.MapPost("/print/test", () =>
         new("Time", DateTime.UtcNow.ToString("u"), null, false, null, false),
         new(null, null, null, false, null, true),
         new("If you can read this, receipts will print.", null, "center", false, "small", false),
-    ], OpenDrawer: false), "One POS test");
+    ], OpenDrawer: false), "ONE POS test");
 });
 
 app.MapPost("/display", (DisplayBody body) =>

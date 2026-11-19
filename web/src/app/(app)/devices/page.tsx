@@ -15,7 +15,7 @@ import { Field, FieldGroup, PageHeader, Segmented, Switch } from "@/components/k
 import { Button } from "@/components/ui/button";
 
 /**
- * This till's devices (REQ HW-01 … HW-08): whether the One POS Device Service runs here, which printer prints receipts, paper width,
+ * This till's devices (REQ HW-01 … HW-08): whether the ONE POS Device Service runs here, which printer prints receipts, paper width,
  * the cash drawer, a pole display; test print and open-drawer tests; the customer display on the second screen.
  */
 export default function DevicesPage() {
@@ -59,7 +59,7 @@ export default function DevicesPage() {
           </span>
           <div className="min-w-0 flex-1">
             <div className="font-heading text-base font-semibold">
-              {status === undefined ? "Looking for the Device Service…" : online ? "One POS Device Service is running" : "The Device Service isn't running on this PC"}
+              {status === undefined ? "Looking for the Device Service…" : online ? "ONE POS Device Service is running" : "The Device Service isn't running on this PC"}
             </div>
             <div className="text-sm text-muted-foreground">
               {online ? `Version ${status.version} on ${status.machine}${status.lastPrintAt ? ` · last print ${new Date(status.lastPrintAt).toLocaleTimeString("en-GB")}` : ""}`
@@ -74,7 +74,7 @@ export default function DevicesPage() {
 
         {online && status.update && (
           <FieldGroup title="Updates" className="flex flex-wrap items-center gap-3 p-5"
-            description="The Device Service updates itself from this One POS server (the installer's checksum is checked first). Off on a PC to update it by hand.">
+            description="The Device Service updates itself from this ONE POS server (the installer's checksum is checked first). Off on a PC to update it by hand.">
             <div className="min-w-56 flex-1 text-sm">
               <div>Version {status.version}{status.update.latest && status.update.latest !== status.version ? <span className="font-medium text-primary"> · {status.update.latest} available</span> : ""}</div>
               <div className="text-xs text-muted-foreground">{status.update.result ?? (status.update.paired ? "Not checked yet." : "Not paired with this server yet.")}{status.update.lastCheck ? ` · checked ${new Date(status.update.lastCheck).toLocaleString("en-GB")}` : ""}</div>

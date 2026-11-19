@@ -16,7 +16,7 @@ function deviceKey() {
 }
 
 /**
- * Device status (REQ HW-08): every minute this PC tells the server what its One POS Device Service says (or that none answers),
+ * Device status (REQ HW-08): every minute this PC tells the server what its ONE POS Device Service says (or that none answers),
  * so the branch's Devices screen shows which tills are online and whether their printers are ready.
  */
 export function useDeviceHeartbeat(branchId: string | null | undefined) {
@@ -26,7 +26,7 @@ export function useDeviceHeartbeat(branchId: string | null | undefined) {
     const beat = async () => {
       const s = await deviceStatus().catch(() => null);
       if (stop) return;
-      // Once per page load: tell this PC's Device Service which One POS server we are (its updates come from here).
+      // Once per page load: tell this PC's Device Service which ONE POS server we are (its updates come from here).
       if (s && !paired) { paired = true; void pairServer(`${window.location.origin}${withBase("/api")}`).catch(() => { paired = false; }); }
       await api("/devices/heartbeat", "POST", {
         // The PC's name (from its Device Service) is its id where there is one, so clearing the browser doesn't list it twice.

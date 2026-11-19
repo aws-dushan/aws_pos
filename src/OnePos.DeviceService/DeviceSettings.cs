@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace OnePos.DeviceService;
 
 /// <summary>
-/// This till's device settings, kept on the PC (%ProgramData%\OnePos\device.json) and changed from One POS (Devices screen).
+/// This till's device settings, kept on the PC (%ProgramData%\OnePos\device.json) and changed from ONE POS (Devices screen).
 /// A printer name "file:C:\path\out.bin" writes the printer's bytes to a file instead (testing without a printer).
 /// </summary>
 public sealed class DeviceSettings
@@ -20,11 +20,11 @@ public sealed class DeviceSettings
     public bool DrawerOnCash { get; set; } = true;
     /// <summary>A 2-line pole display on a serial port (e.g. COM3); null = none.</summary>
     public string? PoleDisplayPort { get; set; }
-    /// <summary>Web addresses allowed to use this service (the One POS web app).</summary>
+    /// <summary>Web addresses allowed to use this service (the ONE POS web app).</summary>
     public List<string> AllowedOrigins { get; set; } = ["http://localhost:3100"];
-    /// <summary>Install newer Device Service releases from the One POS server by itself (REQ HW-01).</summary>
+    /// <summary>Install newer Device Service releases from the ONE POS server by itself (REQ HW-01).</summary>
     public bool AutoUpdate { get; set; } = true;
-    /// <summary>The One POS server's API address (e.g. https://pos.example.com/api), told by the web app; updates come only from there.</summary>
+    /// <summary>The ONE POS server's API address (e.g. https://pos.example.com/api), told by the web app; updates come only from there.</summary>
     public string? ServerApi { get; set; }
 
     public int Dots => PaperWidth <= 58 ? 384 : 576;
@@ -43,7 +43,7 @@ public sealed class SettingsStore
         current = File.Exists(path) ? JsonSerializer.Deserialize<DeviceSettings>(File.ReadAllText(path), Json) ?? new() : new();
         foreach (var o in config.GetSection("AllowedOrigins").Get<string[]>() ?? [])
             if (!current.AllowedOrigins.Contains(o)) current.AllowedOrigins.Add(o);
-        // The installer's WEBORIGIN (HKLM\SOFTWARE\OnePos\DeviceService\WebOrigin): the One POS web address allowed to use this service.
+        // The installer's WEBORIGIN (HKLM\SOFTWARE\OnePos\DeviceService\WebOrigin): the ONE POS web address allowed to use this service.
         if (OperatingSystem.IsWindows()
             && Microsoft.Win32.Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\OnePos\DeviceService", "WebOrigin", null) is string web
             && Uri.TryCreate(web.Trim().TrimEnd('/'), UriKind.Absolute, out var u))

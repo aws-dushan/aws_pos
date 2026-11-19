@@ -6,7 +6,7 @@ using OnePos.Api.Platform;
 namespace OnePos.Api.Pos;
 
 /// <summary>
-/// Discounts (approved 19-10-2026, "One POS - Discounts for approval"):
+/// Discounts (approved 19-10-2026, "ONE POS - Discounts for approval"):
 ///   promotions — automatic, set up in the back office: % off, AED off each, or a fixed price, on all items / categories / items,
 ///     from a date (end date optional), on chosen days and hours, at chosen branches, in store and/or on delivery platforms;
 ///   cashier discounts — a ready-made list (% or AED, the whole bill or one item), each for chosen roles, a name/reason if needed;

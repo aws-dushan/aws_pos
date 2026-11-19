@@ -1,4 +1,4 @@
-// One POS documents as PDFs, printed with Edge or Chrome.
+// ONE POS documents as PDFs, printed with Edge or Chrome.
 //   node tools/docs/build-docs.mjs            technical docs: regenerates docs/reference/api.md, then docs/out/One-POS-Technical-Docs-<date>.pdf
 //   node tools/docs/build-docs.mjs --no-pdf   API reference only
 //   (docs/reference/data-dictionary.md and query-speed.md are made by tools/docs/data-dictionary.mjs and db-benchmark.mjs, which need
@@ -73,7 +73,7 @@ const today = new Date().toISOString().slice(0, 10);
 const day = Number(today.slice(8, 10));
 const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
 const dateText = `${day}${suffix} ${new Date(today).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
-// Cover: the One POS logo (white lockup) and the brand font from tools/brand.
+// Cover: the ONE POS logo (white lockup) and the brand font from tools/brand.
 const logoSvg = readFileSync(join(root, "web", "public", "brand", "one-pos-horizontal-dark.svg"), "utf8");
 const logo = "data:image/svg+xml;base64," + Buffer.from(logoSvg).toString("base64");
 const font = (w) => pathToFileURL(join(root, "tools", "brand", `Outfit-${w}.ttf`)).href;
@@ -81,10 +81,10 @@ const titles = manual ? [...markdown.matchAll(/^# (.+)$/gm)].map((m) => m[1])
   : pages.filter((p) => p !== "README.md").map((p) => readFileSync(join(docs, p), "utf8").match(/^# (.+)$/m)?.[1] ?? p);
 const contents = titles.map((t) => `<li>${t.replace(/^\d+\.\s*/, "")}</li>`).join("");
 const doc = manual
-  ? { name: "User manual", footer: "One POS · user manual", title: "One POS<br><span>user manual</span>", file: "One-POS-User-Manual",
-      sub: "Every task in One POS, step by step, for cashiers, kitchen and floor staff, managers and administrators." }
-  : { name: "Technical documentation", footer: "One POS · technical documentation", title: "One POS<br><span>how it is built and run</span>", file: "One-POS-Technical-Docs",
-      sub: "Architecture, database, FACTS integration, till devices, servers and support for the One POS restaurant point of sale." };
+  ? { name: "User manual", footer: "ONE POS · user manual", title: "ONE POS<br><span>user manual</span>", file: "One-POS-User-Manual",
+      sub: "Every task in ONE POS, step by step, for cashiers, kitchen and floor staff, managers and administrators." }
+  : { name: "Technical documentation", footer: "ONE POS · technical documentation", title: "ONE POS<br><span>how it is built and run</span>", file: "One-POS-Technical-Docs",
+      sub: "Architecture, database, FACTS integration, till devices, servers and support for the ONE POS restaurant point of sale." };
 const html = `<!doctype html><html><head><meta charset="utf-8"><title>${doc.footer}</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
@@ -141,7 +141,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><title>${doc.foot
   <div class="ring" style="width:190mm;height:190mm;right:-70mm;top:-60mm"></div>
   <div class="ring" style="width:130mm;height:130mm;right:-40mm;top:-30mm"></div>
   <div class="ring" style="width:260mm;height:260mm;left:-150mm;bottom:-140mm"></div>
-  <img class="logo" src="${logo}" alt="One POS">
+  <img class="logo" src="${logo}" alt="ONE POS">
   <div class="bar"></div>
   <div class="kicker">${doc.name}</div>
   <div class="title">${doc.title}</div>

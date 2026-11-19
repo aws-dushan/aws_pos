@@ -1,7 +1,7 @@
 "use client";
 
 /*
- * The One POS Device Service on this till (src/OnePos.DeviceService, http://127.0.0.1:5199): receipt printer, cash drawer
+ * The ONE POS Device Service on this till (src/OnePos.DeviceService, http://127.0.0.1:5199): receipt printer, cash drawer
  * (through the printer) and pole display (REQ HW-01 … HW-08). The browser calls it directly; when it isn't installed or running,
  * receipts fall back to the browser's print dialog.
  */
@@ -46,7 +46,7 @@ async function call<T>(path: string, method = "GET", body?: unknown, timeoutMs =
     if (!res.ok) throw new Error(data?.error ?? `The device service answered ${res.status}.`);
     return data as T;
   } catch (e) {
-    if ((e as Error).name === "AbortError" || e instanceof TypeError) throw new Error("The One POS Device Service isn't running on this till.");
+    if ((e as Error).name === "AbortError" || e instanceof TypeError) throw new Error("The ONE POS Device Service isn't running on this till.");
     throw e;
   } finally {
     window.clearTimeout(t);
@@ -107,7 +107,7 @@ export async function openDrawerForCash(): Promise<boolean> {
   }
 }
 export const printTest = () => call("/print/test", "POST", {});
-/** Tells the service which One POS server this web app is (updates come only from there). */
+/** Tells the service which ONE POS server this web app is (updates come only from there). */
 export const pairServer = (api: string) => call("/server", "PUT", { api }, 2000);
 export const setAutoUpdate = (on: boolean) => call("/update/auto", "PUT", { on });
 /** Asks the server for a newer Device Service; with install, a newer one is downloaded, checked and installed. */

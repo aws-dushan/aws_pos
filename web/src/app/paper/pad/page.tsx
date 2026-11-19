@@ -6,7 +6,7 @@ import { PrinterIcon } from "lucide-react";
 
 /*
  * Blank order pads for outages (REQ ONL-04): numbered slips, four to an A4 page, printed ahead of time. Staff write the items,
- * total and payment on them; a manager keys each in under Paper sales once One POS is reachable again.
+ * total and payment on them; a manager keys each in under Paper sales once ONE POS is reachable again.
  */
 export default function PadPage() {
   return <Suspense><Pads /></Suspense>;
@@ -81,7 +81,7 @@ function Slip({ no, company, branch, code }: { no: string; company: string; bran
         <div className="col-span-2 flex flex-wrap gap-x-3 whitespace-nowrap">Paid: {box} Cash {box} Card, ref ________ {box} Other</div>
         <div className="col-span-2 whitespace-nowrap">Cashier ______________ Sign ____________</div>
       </div>
-      <div className="mt-auto pt-1 text-[7pt] text-neutral-500">Prices include VAT. A tax invoice is issued when this slip is entered in One POS.</div>
+      <div className="mt-auto pt-1 text-[7pt] text-neutral-500">Prices include VAT. A tax invoice is issued when this slip is entered in ONE POS.</div>
     </div>
   );
 }

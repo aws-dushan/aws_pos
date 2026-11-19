@@ -17,7 +17,7 @@ must run against a scratch company, or snapshot and restore what they touch, nev
 | `src/OnePos.Api/` | API, see [Architecture](01-architecture.md) |
 | `src/OnePos.DeviceService/`, `src/OnePos.DeviceTray/`, `installer/` | Till software and its MSI (WiX 5) |
 | `db/migrations/` | Database migrations, applied once each in name order |
-| `db/facts/` | One POS' procedures for FACTS, `tests/` rehearsals, `fixes/` one-off corrections |
+| `db/facts/` | ONE POS' procedures for FACTS, `tests/` rehearsals, `fixes/` one-off corrections |
 | `db/maintenance/` | Hand-run scripts (clear transactions, remove tills); read them before running |
 | `deploy/` | Release and server scripts, see [Servers and releases](06-servers-and-releases.md) |
 | `tools/` | Logo builder, Device Service release script, FACTS procedure installer, docs builder |

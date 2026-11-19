@@ -168,7 +168,7 @@ function ReceiptSetup() {
               options={[{ value: "legal", label: "Legal name" }, { value: "trading", label: "Trading name" }, { value: "custom", label: "Own text" }, { value: "none", label: "None" }]} />
           </Field>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            {f.settings.nameSource === "legal" ? `“${co?.legalName ?? ""}”, as on the trade licence.` : f.settings.nameSource === "trading" ? `“${f.tradingName}”, the company's name in One POS.`
+            {f.settings.nameSource === "legal" ? `“${co?.legalName ?? ""}”, as on the trade licence.` : f.settings.nameSource === "trading" ? `“${f.tradingName}”, the company's name in ONE POS.`
               : f.settings.nameSource === "none" ? "No name line, e.g. when the logo already shows the name." : "Type the name to print, in English and Arabic."}
           </p>
           {f.settings.nameSource === "custom" && (
@@ -314,7 +314,7 @@ function DisplayPictures() {
         <div className="surface flex flex-col items-center gap-3 px-6 py-12 text-center">
           <MonitorIcon className="size-8 text-muted-foreground" />
           <div className="font-medium">No pictures yet</div>
-          <p className="max-w-md text-sm text-muted-foreground">Between orders the customer display shows the One POS welcome screen. Add pictures (offers, new items) to show them instead.</p>
+          <p className="max-w-md text-sm text-muted-foreground">Between orders the customer display shows the ONE POS welcome screen. Add pictures (offers, new items) to show them instead.</p>
         </div>
       )}
     </div>

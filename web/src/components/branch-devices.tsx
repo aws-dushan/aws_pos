@@ -20,7 +20,7 @@ function PrinterTag({ state }: { state: string | null }) {
 }
 
 /**
- * Every PC of this branch running One POS (REQ HW-08): online (seen in the last 2 minutes) or when last seen, its Device Service,
+ * Every PC of this branch running ONE POS (REQ HW-08): online (seen in the last 2 minutes) or when last seen, its Device Service,
  * receipt printer and the printer's state, last print and last error. Each PC reports itself once a minute.
  */
 export function BranchDevices() {
@@ -35,7 +35,7 @@ export function BranchDevices() {
 
   return (
     <FieldGroup title="This branch's PCs" className="p-0"
-      description={`Each PC running One POS reports every minute.${problems ? ` ${problems} need${problems === 1 ? "s" : ""} a look.` : ""}`}
+      description={`Each PC running ONE POS reports every minute.${problems ? ` ${problems} need${problems === 1 ? "s" : ""} a look.` : ""}`}
       actions={<Button variant="outline" className="h-10" onClick={() => list.reload()}>Refresh</Button>}>
       {!list.data ? <div className="h-24 skeleton-shimmer" /> : rows.length ? (
         <div className="divide-y">
@@ -65,7 +65,7 @@ export function BranchDevices() {
           ))}
         </div>
       ) : (
-        <p className="flex items-center gap-2 px-5 py-6 text-sm text-muted-foreground"><MonitorSmartphoneIcon className="size-4" /> No PC has reported yet. Each one shows here once One POS is open on it.</p>
+        <p className="flex items-center gap-2 px-5 py-6 text-sm text-muted-foreground"><MonitorSmartphoneIcon className="size-4" /> No PC has reported yet. Each one shows here once ONE POS is open on it.</p>
       )}
     </FieldGroup>
   );

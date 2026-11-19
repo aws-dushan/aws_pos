@@ -54,7 +54,7 @@ export function ErpConnectionDialog({ company, onClose }: { company: { id: strin
       <DialogContent className="min-w-0 sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><DatabaseIcon className="size-5 text-primary" /> FACTS connection · {company?.name}</DialogTitle>
-          <DialogDescription>One POS reads items, prices and stock from FACTS, and posts returns as STV documents. Use a read-only database login.</DialogDescription>
+          <DialogDescription>ONE POS reads items, prices and stock from FACTS, and posts returns as STV documents. Use a read-only database login.</DialogDescription>
         </DialogHeader>
 
         {d?.configured ? (

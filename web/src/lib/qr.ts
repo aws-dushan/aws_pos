@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { withBase } from "@/lib/base-path";
 
-/** The digital receipt's address (REQ PAY-05): this One POS site, /r/<token>. */
+/** The digital receipt's address (REQ PAY-05): this ONE POS site, /r/<token>. */
 export const receiptUrl = (token: string) => `${window.location.origin}${withBase(`/r/${token}`)}`;
 
 /** A QR code as a PNG data URL (black on white, for the receipt printer and the screen). The library loads only when needed. */

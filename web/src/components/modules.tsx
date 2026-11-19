@@ -5,7 +5,7 @@ import { ArmchairIcon, PercentIcon, LayersIcon, BarChart3Icon, PackageIcon, Cale
 import { cn } from "@/lib/utils";
 
 /*
- * The screens of One POS and their accent colours. The colours are AWS One's module tokens
+ * The screens of ONE POS and their accent colours. The colours are AWS One's module tokens
  * (--mod-fin …, globals.css): an element with data-module="sales" makes `bg-mod`, `text-mod`,
  * `bg-mod-grad` … use that colour, exactly as in AWS One.
  */

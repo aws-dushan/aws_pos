@@ -28,7 +28,7 @@ public static class DriverPrinter
         var width = (int)Math.Ceiling(receipt.Width * 100 / Dpi);
         var height = (int)Math.Ceiling(receipt.Height * 100 / Dpi);
         doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
-        try { doc.DefaultPageSettings.PaperSize = new PaperSize("One POS receipt", width, Math.Max(height, 100)); }
+        try { doc.DefaultPageSettings.PaperSize = new PaperSize("ONE POS receipt", width, Math.Max(height, 100)); }
         catch (Exception) { /* a driver that takes no custom size keeps its own; the receipt then goes on over its pages */ }
         var top = 0;   // the first picture row of the next page
         doc.PrintPage += (_, e) =>

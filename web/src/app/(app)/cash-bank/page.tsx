@@ -30,7 +30,7 @@ export default function CashBankPage() {
   useLiveEvent(["day.changed", "order.changed"], () => data.reload());
   const d = data.data;
   const late = d?.oldest ? daysSince(d.oldest) : 0;
-  // Amounts added by hand (e.g. cash held from before One POS): their own column, only when there are any.
+  // Amounts added by hand (e.g. cash held from before ONE POS): their own column, only when there are any.
   const anyAdded = !!d?.days.some((r) => r.added);
 
   return (

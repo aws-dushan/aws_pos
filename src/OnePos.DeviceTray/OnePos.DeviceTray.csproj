@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- One POS Device tray (REQ HW-01): the icon by the clock on each till showing whether the Device Service runs, its printer,
+  <!-- ONE POS Device tray (REQ HW-01): the icon by the clock on each till showing whether the Device Service runs, its printer,
        and updates; starts with Windows (the installer adds it). -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>

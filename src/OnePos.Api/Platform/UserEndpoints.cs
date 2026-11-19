@@ -12,7 +12,7 @@ namespace OnePos.Api.Platform;
 public static class UserEndpoints
 {
     /// <summary>Limits: the user's own over the role's (null value: no limit for them; left out: as the role). Not sent: unchanged.</summary>
-    /// <summary>IsAdmin: an administrator of One POS (every company); only an administrator changes it. Not sent: unchanged.</summary>
+    /// <summary>IsAdmin: an administrator of ONE POS (every company); only an administrator changes it. Not sent: unchanged.</summary>
     public sealed record UserBody(string? Username, string DisplayName, string? Password, Guid RoleId, Guid[]? BranchIds, string? Pin, bool? ClearPin, bool? IsActive,
         JsonElement? Limits = null, bool? IsAdmin = null);
     public sealed record RoleBody(string Name, string[]? Permissions, JsonElement? Limits);
@@ -244,7 +244,7 @@ public static class UserEndpoints
         c.ExecuteScalarAsync<int>("select count(*)::int from app_user where is_admin and is_active and id <> @id", new { id }, tx);
 
     /// <summary>
-    /// Makes a user an administrator of One POS (every company) or takes it away: only an administrator does it, never for themselves,
+    /// Makes a user an administrator of ONE POS (every company) or takes it away: only an administrator does it, never for themselves,
     /// and never the last active administrator. Recorded in the audit log.
     /// </summary>
     private static async Task SetAdminAsync(NpgsqlConnection c, NpgsqlTransaction tx, Scope scope, Guid id, bool was, bool admin)

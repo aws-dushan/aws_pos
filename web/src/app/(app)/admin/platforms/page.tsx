@@ -74,7 +74,7 @@ export default function PlatformsAdminPage() {
       )}
       <div className="surface flex items-start justify-between gap-4 p-5">
         <div>
-          <div className="font-medium">Track platform payouts in One POS</div>
+          <div className="font-medium">Track platform payouts in ONE POS</div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             {settings.data?.payoutsEnabled
               ? "On: record each payout as it arrives (amount, the commission kept, its statement). The report shows what each platform still owes."

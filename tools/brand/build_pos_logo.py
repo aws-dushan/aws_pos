@@ -31,7 +31,7 @@ def text_block(tone, style, tag_size=None):
 
 
 bl.text_block = text_block
-bl.TITLE = "One POS"
+bl.TITLE = "ONE POS"
 
 if __name__ == "__main__":
     out = sys.argv[1]

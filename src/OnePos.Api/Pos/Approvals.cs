@@ -180,7 +180,7 @@ public static class Approvals
                 if (kind != "discount" || body.OrderId is null) throw new DomainException("An emailed code approves a discount on an order.");
                 var slot = $"code|{scope.Branch:N}|{scope.UserId:N}";
                 if (PinFailures.TryGetValue(slot, out var f) && f.Count >= Pins.MaxFailures && f.Until > DateTime.UtcNow)
-                    throw new DomainException("Too many wrong codes. Ask the manager to approve it in One POS instead, or wait a few minutes.");
+                    throw new DomainException("Too many wrong codes. Ask the manager to approve it in ONE POS instead, or wait a few minutes.");
                 var typed = body.Code.Trim();
                 var candidates = await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<(Guid Id, Guid ApprovalId, string Email, string Hash)>("""
                     select ac.id, ac.approval_id, ac.email, ac.code_hash from approval_code ac join approval a on a.id = ac.approval_id

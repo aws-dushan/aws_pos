@@ -80,7 +80,7 @@ public static class Stock
                     byReason = live.GroupBy(r => r.Reason).Select(g => new { reason = g.Key, lines = g.Count(), value = g.Sum(r => r.CostValue ?? 0) }),
                     total = live.Sum(r => r.CostValue ?? 0),
                     erpLinked = await c.ExecuteScalarAsync<bool>("select erp_location_code is not null from branch where id = @b", new { b = scope.Branch }, tx),
-                    // How wastage reaches FACTS: finance enters it, or One POS sends a draft STV50 (to the branch's wastage location).
+                    // How wastage reaches FACTS: finance enters it, or ONE POS sends a draft STV50 (to the branch's wastage location).
                     // Wastage approval at this branch: who approves (then it's posted in FACTS once approved).
                     approver = await c.ExecuteScalarAsync<string?>("select u.display_name from branch b join app_user u on u.id = b.wastage_approver_id where b.id = @b and b.erp_location_code is not null and b.erp_waste_location is not null", new { b = scope.Branch }, tx),
                     factsWastage = await c.ExecuteScalarAsync<string>("select case when co.facts_wastage = 'draft' and b.erp_waste_location is not null then 'draft' else 'finance' end from branch b join company co on co.id = b.company_id where b.id = @b", new { b = scope.Branch }, tx),
@@ -220,7 +220,7 @@ public static class Stock
                     """, args, commandTimeout: 60)).ToList();
             }
             var dateOf = heads.ToDictionary(h => (h.DocType, h.DocNo), h => DateOnly.FromDateTime(h.DocDate));
-            // One POS' drafts that finance has posted since.
+            // ONE POS' drafts that finance has posted since.
             var postedDocs = heads.Where(h => h.PostedAt is not null).Select(h => $"{h.DocType} {h.DocNo}").ToArray();
             if (postedDocs.Length > 0)
                 await db.Company(scope.CompanyId, (c, tx) => c.ExecuteAsync(
@@ -423,7 +423,7 @@ public static class Stock
             });
         });
 
-        // Undo a check-in made by mistake (a manager): the delivery shows as not checked again. Only One POS's record goes; FACTS is untouched.
+        // Undo a check-in made by mistake (a manager): the delivery shows as not checked again. Only ONE POS's record goes; FACTS is untouched.
         api.MapPost("/stock/deliveries/uncheck", async (UncheckBody body, HttpContext http, Db db, Live live) =>
         {
             var scope = await http.ScopeAsync(db);

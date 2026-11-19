@@ -12,13 +12,13 @@ The full runbook is [`deploy/README.md`](../deploy/README.md). This page is the 
 | Limits | API 1.5 GB, web 768 MB, DB 4 GB |
 
 It runs on the SFA servers behind the shared gateway `aws-edge-nginx-1` (port 1000), routed by
-`/opt/aws/edge/apps/onepos.conf`. Everything else is One POS' own: containers, databases, folders under `/opt/aws/onepos`,
+`/opt/aws/edge/apps/onepos.conf`. Everything else is ONE POS' own: containers, databases, folders under `/opt/aws/onepos`,
 ports and limits. Settings and passwords are in `/opt/aws/onepos/live/.env` (mode 600); never print or copy them.
 
 ## Docker: what runs in it and why
 
-Every part of One POS on the servers runs in a **Docker container**: a sealed package holding the program and exactly the
-software it needs, started from an **image** built once on the development PC. Docker itself is the only software One POS
+Every part of ONE POS on the servers runs in a **Docker container**: a sealed package holding the program and exactly the
+software it needs, started from an **image** built once on the development PC. Docker itself is the only software ONE POS
 needs on the servers.
 
 ### What runs where
@@ -52,16 +52,16 @@ flowchart LR
 
 ### Why Docker
 
-| Reason | What it gives One POS |
+| Reason | What it gives ONE POS |
 | --- | --- |
 | **The same image on test and live** | A release is tested on test and the identical image goes to live; only the settings file (`.env`) differs. "It worked on test" means it will work on live |
 | **Repeatable builds** | Each image is built from a file in the repository with fixed versions (.NET 10 SDK, Node 22, PostgreSQL 17), so any release can be rebuilt the same way |
-| **Separate from SFA on shared servers** | One POS has its own containers, networks, data folders, ports and database roles, so it can't disturb the SFA system on the same servers, or be disturbed by it |
+| **Separate from SFA on shared servers** | ONE POS has its own containers, networks, data folders, ports and database roles, so it can't disturb the SFA system on the same servers, or be disturbed by it |
 | **Resource limits** | API 1.5 GB / 2 CPUs, web 768 MB / 1 CPU, database 4 GB: one part running away can't starve the server |
 | **Safe deploys and rollback** | Every version stays on the server as its own image. `deploy live` takes a backup, starts the new containers, and goes back to the old image by itself if the health checks fail; `onepos rollback live` is one command |
 | **Health checks** | Each image checks itself (`/health` for the API, the sign-in page for the web app); Docker restarts a container that stops (`restart: unless-stopped`) |
 | **Least privilege** | The API and web containers run as an unprivileged user, not root. Only the web app is on the gateway's network; the API and database are not reachable from outside |
-| **Nothing installed on the servers** | No .NET, Node or PostgreSQL installed on the host, so server updates can't break One POS and One POS can't break the server |
+| **Nothing installed on the servers** | No .NET, Node or PostgreSQL installed on the host, so server updates can't break ONE POS and ONE POS can't break the server |
 | **Easy to move** | Everything a container keeps lives in one data folder per environment, and the database address is a setting, so moving to a new server is "copy the folder, start the containers" or a restore from backup |
 | **Logs kept in bounds** | Container logs rotate at 5 × 20 MB, so they never fill the disk |
 

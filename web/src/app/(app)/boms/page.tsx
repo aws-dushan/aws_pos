@@ -90,7 +90,7 @@ export default function BomsPage() {
                         : cur ? cur.lines.map((l) => `${l.itemName.toLowerCase()} ${qty(l.qty)} ${l.unit}`).join(" · ")
                         : <Pill className={TONE.open} dot>From {day(r.bom.versions[r.bom.versions.length - 1].validFrom)}</Pill>}
                     </TableCell>
-                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">{r.bom?.factsDoc ?? (r.bom ? "One POS" : "")}</TableCell>
+                    <TableCell className="text-sm whitespace-nowrap text-muted-foreground">{r.bom?.factsDoc ?? (r.bom ? "ONE POS" : "")}</TableCell>
                   </TableRow>
                 );
               })}
@@ -103,7 +103,7 @@ export default function BomsPage() {
           <DialogContent className="max-h-[calc(100dvh-1rem)] sm:max-w-xl">
             <DialogHeader>
               <DialogTitle>BOM · {sel.menuItems[0] ?? sel.itemName}</DialogTitle>
-              <DialogDescription>For 1 {sel.unit} of FACTS {sel.itemCode} {sel.itemName}{sel.bom.factsDoc ? `, from ${sel.bom.factsDoc}` : ""}. Change it in FACTS; One POS reads it every few minutes.</DialogDescription>
+              <DialogDescription>For 1 {sel.unit} of FACTS {sel.itemCode} {sel.itemName}{sel.bom.factsDoc ? `, from ${sel.bom.factsDoc}` : ""}. Change it in FACTS; ONE POS reads it every few minutes.</DialogDescription>
             </DialogHeader>
             {sel.bom.versions.map((v) => (
               <div key={v.id} className={cn("overflow-hidden rounded-2xl border bg-card", v.id === sel.bom!.currentVersionId && "ring-2 ring-primary/40")}>

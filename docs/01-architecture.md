@@ -1,12 +1,12 @@
 # 1. Architecture
 
-One POS is a browser-based point of sale: a Next.js web app and an ASP.NET Core API over one PostgreSQL
+ONE POS is a browser-based point of sale: a Next.js web app and an ASP.NET Core API over one PostgreSQL
 database, with a small Windows service on each till for the printer and cash drawer, and an optional link to FACTS (the ERP).
 
 ```mermaid
 flowchart LR
   subgraph Till["Till PC (Windows)"]
-    B[Browser: One POS web app]
+    B[Browser: ONE POS web app]
     D[Device Service<br/>127.0.0.1:5199]
     T[Tray app]
     P[(Receipt printer,<br/>cash drawer,<br/>pole display)]
@@ -41,7 +41,7 @@ flowchart LR
 | Database | PostgreSQL 17 | `db/migrations/` | All data, one database for all companies, separated by row-level security |
 | Device Service | .NET Windows service | `src/OnePos.DeviceService/` | Receipt printing (ESC/POS raster, Arabic), cash drawer, pole display, self-update |
 | Tray app | .NET WinForms | `src/OnePos.DeviceTray/` | Shows the service state, test print, check for updates |
-| FACTS procedures | T-SQL | `db/facts/` | One POS' own procedures in FACTS for posting stock documents |
+| FACTS procedures | T-SQL | `db/facts/` | ONE POS' own procedures in FACTS for posting stock documents |
 
 The UI theme, components and animations are the same as AWS One (`web/src/components/ui`, `motion.tsx`, `kit.tsx`).
 
@@ -175,7 +175,7 @@ Events carry ids, never data. A lost connection shows a "reconnecting" banner an
   random passwords at installation; nothing secret is in the repository.
 - **Containers:** the API and web app run as unprivileged users with memory and CPU limits; only the web app is reachable
   through the gateway (see [Servers and releases](06-servers-and-releases.md)).
-- **Card data:** One POS never sees card numbers. Cards are taken on the bank's own terminal; One POS records only the method,
+- **Card data:** ONE POS never sees card numbers. Cards are taken on the bank's own terminal; ONE POS records only the method,
   the card type and the amount, which keeps it outside the scope of card-data (PCI DSS) storage rules.
 
 ## Audit trail
@@ -196,7 +196,7 @@ delete an entry. Only administrators and users with the `audit.view` permission 
   failure leaves no gap and a number is never given twice. A company can instead run invoices and credit notes each as one
   series for all its branches (`company_number_series`: on/off, start date and time, optional prefix, starting number; plain
   200000, 200001 … or prefix + 6 digits, CN000001 …): from the start time the number comes from that one counter row, locked by the update that takes it. The
-  starting number must be above every number with that prefix already used in One POS and in FACTS (POS51 / PSR51); prefix
+  starting number must be above every number with that prefix already used in ONE POS and in FACTS (POS51 / PSR51); prefix
   and start can't change once the first number is given; switched off, branches go back to their own numbers, and switched on again it continues. A paid bill can't be changed or deleted; it is corrected only by
   a credit note (`CN-<branch>-…`) that refers to it. The receipt carries the words TAX INVOICE / فاتورة ضريبية, the
   company's TRN, legal name and address in English and Arabic, the invoice number, date and time, the amount before VAT and
@@ -216,6 +216,6 @@ delete an entry. Only administrators and users with the `audit.view` permission 
 
 - Table service and the kitchen are per-branch switches; optional features each have a switch, mostly off by default.
 - Every page follows the branch chosen in the header; customers belong to one branch.
-- Items and prices come from FACTS: an item without a FACTS price cannot be sold. One POS adds combos and options; BOMs are read from FACTS outlet BOMs (BOMO50).
+- Items and prices come from FACTS: an item without a FACTS price cannot be sold. ONE POS adds combos and options; BOMs are read from FACTS outlet BOMs (BOMO50).
 - The API never writes to FACTS tables itself: it calls FACTS procedures, which run FACTS' own approval framework. One-off
   corrections (`db/facts/fixes/`) are run by hand in FACTS by the business, never by the app.

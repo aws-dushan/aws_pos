@@ -10,7 +10,7 @@ namespace OnePos.Api.Pos;
 
 /// <summary>
 /// Stock activity report (anyone who sees reports): what the branch threw away, gave away (marketing), asked the stores for, received
-/// and sent back, over a range of business days, one row per line. Deliveries are read from FACTS (read-only), the rest is One POS'
+/// and sent back, over a range of business days, one row per line. Deliveries are read from FACTS (read-only), the rest is ONE POS'
 /// own. Admin and finance also see the value of wastage, marketing and returns: quantity × the item's latest FACTS batch landed cost,
 /// read from FACTS when the report opens (today's cost, not the cost on the day).
 /// </summary>
@@ -20,11 +20,11 @@ public static class StockActivity
     {
         public DateOnly Date { get; set; }
         public string Branch { get; set; } = "";
-        /// <summary>The One POS document (REQ-12) or the FACTS one (STV50 8114) the line is on.</summary>
+        /// <summary>The ONE POS document (REQ-12) or the FACTS one (STV50 8114) the line is on.</summary>
         public string? Doc { get; set; }
         public string? Code { get; set; }
         public string Item { get; set; } = "";
-        /// <summary>The item's category: its One POS menu category, else its FACTS sub-category, else "Other".</summary>
+        /// <summary>The item's category: its ONE POS menu category, else its FACTS sub-category, else "Other".</summary>
         public string Category { get; set; } = "";
         public string? Unit { get; set; }
         /// <summary>Wasted / given / approved (requests) / sent (deliveries) / returned.</summary>
@@ -187,7 +187,7 @@ public static class StockActivity
         return lines;
     }
 
-    /// <summary>Each line's category: the One POS menu category of the item with that FACTS code; items not on the menu (store items) get
+    /// <summary>Each line's category: the ONE POS menu category of the item with that FACTS code; items not on the menu (store items) get
     /// their FACTS sub-category, named as the menu import names it; "Other" when neither is known (or FACTS can't be reached).</summary>
     private static async Task CategoriesAsync(List<Line> lines, Db db, FactsSync facts, Guid companyId)
     {

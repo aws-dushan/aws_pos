@@ -1,11 +1,11 @@
 # 5. Till devices
 
-A browser cannot drive a receipt printer or a cash drawer, so each till PC runs the **One POS Device Service**: a .NET
+A browser cannot drive a receipt printer or a cash drawer, so each till PC runs the **ONE POS Device Service**: a .NET
 Windows service listening only on `127.0.0.1:5199`. The web app on that PC talks to it directly.
 
 ```mermaid
 flowchart LR
-  W[One POS page<br/>in the browser] -- receipt job JSON --> D[Device Service<br/>127.0.0.1:5199]
+  W[ONE POS page<br/>in the browser] -- receipt job JSON --> D[Device Service<br/>127.0.0.1:5199]
   D --> R[ReceiptRenderer<br/>draws a raster image]
   R --> E[ESC/POS bytes]
   E --> SP[Windows spooler<br/>printer driver]
@@ -13,7 +13,7 @@ flowchart LR
   P -- kick --> DR[Cash drawer]
   D -- serial --> PD[Pole display]
   W -. no service .-> BP[Browser print<br/>80 mm page]
-  D -. every 6 h .-> S[One POS server:<br/>latest installer + SHA-256]
+  D -. every 6 h .-> S[ONE POS server:<br/>latest installer + SHA-256]
 ```
 
 ## What it does
@@ -61,7 +61,7 @@ A printer named `file:C:\path\out.bin` writes the bytes to a file, for testing w
 
 ## Device status
 
-Every PC running One POS reports each minute (`Pos/DeviceStatus.cs`): online or last seen, who is signed in, the Device
+Every PC running ONE POS reports each minute (`Pos/DeviceStatus.cs`): online or last seen, who is signed in, the Device
 Service version, the receipt printer and its spooler state (ready, paper out, offline, error), last print and last error.
 Shown under Devices → **This branch's PCs**.
 

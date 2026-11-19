@@ -84,11 +84,11 @@ export default function FactsPostingPage() {
           <div className="space-y-2">
             <span className="block text-[0.8rem] font-medium text-foreground/80">Wastage</span>
             <Segmented id="wastage-mode" value={d.wastage} onChange={(v) => admin && void saveCompany({ wastage: v })} className="w-full max-w-xl"
-              options={[{ value: "finance", label: "Finance enters in FACTS" }, { value: "draft", label: "Draft transfer from One POS" }]} />
+              options={[{ value: "finance", label: "Finance enters in FACTS" }, { value: "draft", label: "Draft transfer from ONE POS" }]} />
             <p className="text-xs text-muted-foreground">
               {d.wastage === "draft"
                 ? "Each branch's day of wastage goes to FACTS at the day's close (night) as one draft STV50 to its wastage location (procedure usp_ONEPOS_SaveWastageTransfer), not posted: finance gives the batches and posts it there. Needs the branch's wastage location."
-                : "Finance enters the wastage in FACTS as today; One POS matches their transfers to the branch's wastage by itself."}
+                : "Finance enters the wastage in FACTS as today; ONE POS matches their transfers to the branch's wastage by itself."}
             </p>
           </div>
           <div className="space-y-2">

@@ -1,8 +1,8 @@
 # About this manual
 
-This manual covers every One POS user, from cashier to administrator, and is organised by task: find the job you want to do, then follow the steps.
+This manual covers every ONE POS user, from cashier to administrator, and is organised by task: find the job you want to do, then follow the steps.
 
-One POS is the restaurant point of sale for the group's companies and branches. It runs in a web browser, on the till and in the back office, and posts sales to FACTS. What you see depends on your role and on the branch chosen in the header. Each company sees only its own data: the database itself keeps companies apart, not just the screens.
+ONE POS is the restaurant point of sale for the group's companies and branches. It runs in a web browser, on the till and in the back office, and posts sales to FACTS. What you see depends on your role and on the branch chosen in the header. Each company sees only its own data: the database itself keeps companies apart, not just the screens.
 
 | Role (as set up for a new company) | Mostly uses |
 | --- | --- |
@@ -24,11 +24,11 @@ There are two ways in: back-office staff sign in with a user name and password, 
 
 ## Sign in to the back office
 
-1. Open One POS in the browser (live: `https://ralsnahashho.dyndns.org:1000/onepos`).
+1. Open ONE POS in the browser (live: `https://ralsnahashho.dyndns.org:1000/onepos`).
 2. Type your user name and password, then **Sign in**. User names are not case-sensitive.
 3. The first time, you are asked to choose a new password: at least 8 characters, letters and digits, not containing your user name.
 
-One POS never stores your password itself, only a scrambled form of it that can't be turned back into the password. Five wrong passwords lock the account for 15 minutes.
+ONE POS never stores your password itself, only a scrambled form of it that can't be turned back into the password. Five wrong passwords lock the account for 15 minutes.
 
 ![The back-office sign-in page](images/login.jpg)
 
@@ -174,7 +174,7 @@ A customer is optional except for own delivery. In **Customer (optional): name o
 - **Split payment** adds several parts (e.g. cash and card) and takes them together.
 - A 0.00 bill (e.g. 100% complimentary) shows **Complete · nothing to pay**.
 
-One POS never sees or keeps card numbers: the bank's terminal takes the card, and One POS records only the card type and amount. If the network drops while you pay, just tap again: One POS recognises the repeat and never takes the payment twice.
+ONE POS never sees or keeps card numbers: the bank's terminal takes the card, and ONE POS records only the card type and amount. If the network drops while you pay, just tap again: ONE POS recognises the repeat and never takes the payment twice.
 
 After payment the receipt prints and a message says **Paid. Give AED x change.** with a **Receipt** button. Without a receipt printer, the receipt opens on screen with **Print**.
 
@@ -282,7 +282,7 @@ With your shift open, tap **Cash in / out**, pick a tab, a reason, the amount, t
 | Tab | Reasons |
 | --- | --- |
 | Safe drop | Cash moved to the safe. |
-| Cash in | Change from the safe, float top-up (float), or **Cash to deposit to bank**: cash owed to the bank (e.g. held from before One POS), added to Cash to bank with the note typed. |
+| Cash in | Change from the safe, float top-up (float), or **Cash to deposit to bank**: cash owed to the bank (e.g. held from before ONE POS), added to Cash to bank with the note typed. |
 | Cash out | Supplier paid, petty cash, staff advance. Over your limit needs approval. |
 | Bank deposit | Cash taken to the bank. The bag or bank slip number and who takes it are required. |
 
@@ -366,7 +366,7 @@ Managers run the branch's day, keep the menu and stock right, answer approvals a
 
 1. Open **Day & shifts** and tap **Open the day** (branches on Manual day control; Automatic branches open and close on their schedule).
 2. During the day, watch **Shifts today** and approve any shift under **Variances waiting for approval** with a note.
-3. At the end, make sure every shift is closed (One POS names any still open), then tap **Close the day**. The Z report is kept and the day locks.
+3. At the end, make sure every shift is closed (ONE POS names any still open), then tap **Close the day**. The Z report is kept and the day locks.
 
 ```mermaid
 flowchart LR
@@ -394,7 +394,7 @@ The shield icon in the header shows how many requests are waiting. Open **Approv
 
 ## Menu
 
-Items, their codes and their prices come from FACTS. One POS decides what each branch sells and adds combos and options.
+Items, their codes and their prices come from FACTS. ONE POS decides what each branch sells and adds combos and options.
 
 1. Open **Menu**. The view shows **Sold here**, **New from FACTS**, **No price** or **All items**.
 2. To sell an item here, tap **Sell here**; to stop, **Don't sell here**. **Sold out** hides it for today only; **Back on** returns it.
@@ -486,13 +486,13 @@ flowchart LR
 
 **Find the item** on Wastage and Marketing lists the menu items first, then other FACTS items such as raw materials used in recipes (e.g. a carton of oat drink), marked **FACTS item** with their code and unit. A FACTS item is recorded in its FACTS unit (e.g. 0.5 ltr) and has no value shown, since it has no menu price.
 
-An item made from a BOM (e.g. a cappuccino) is wasted like any other item. On approval, One POS checks that the branch has its materials in FACTS, then FACTS first makes it from them (a repacking voucher, RPO50, as for a sale) and then moves it to the wastage location.
+An item made from a BOM (e.g. a cappuccino) is wasted like any other item. On approval, ONE POS checks that the branch has its materials in FACTS, then FACTS first makes it from them (a repacking voucher, RPO50, as for a sale) and then moves it to the wastage location.
 
-A wastage entry can be taken off the same day by whoever recorded it or by a manager, until it is approved. **Undo check-in** (manager, with a reason) changes only One POS, never FACTS.
+A wastage entry can be taken off the same day by whoever recorded it or by a manager, until it is approved. **Undo check-in** (manager, with a reason) changes only ONE POS, never FACTS.
 
 ## Ingredients
 
-For branches using One POS recipes: **Receive** deliveries (a new cost per unit becomes the cost), record **Waste**, and **Count** the shelves (the difference is kept). **Food cost** and **Usage** show cost against sales. Recipes are edited from Menu → item → **Recipe**.
+For branches using ONE POS recipes: **Receive** deliveries (a new cost per unit becomes the cost), record **Waste**, and **Count** the shelves (the difference is kept). **Food cost** and **Usage** show cost against sales. Recipes are edited from Menu → item → **Recipe**.
 
 ## Reports
 
@@ -522,7 +522,7 @@ Shows each platform's orders, sales, refunds, commission and bank fee, and what 
 Every cash sale goes to the bank. **Cash to bank** shows, for the branch chosen in the header, what is still owed to the bank: cash sales less cash refunds, less the bank deposits. What isn't deposited carries forward to the next day until it is.
 
 - **Owed to bank now**, and the **oldest cash not deposited** (deposits pay off the oldest cash first).
-- **By day**: brought forward, cash sales, cash refunds, deposited and carried forward. An amount owed that isn't a cash sale (e.g. cash held from before One POS started) shows under **Added to owed** with its remark.
+- **By day**: brought forward, cash sales, cash refunds, deposited and carried forward. An amount owed that isn't a cash sale (e.g. cash held from before ONE POS started) shows under **Added to owed** with its remark.
 - **Bank deposits**: each deposit with its bag or slip number, who took it and the drawer it came from.
 - **All branches**: what each of your branches owes and since when (administrators see every branch).
 
@@ -559,7 +559,7 @@ Administrators set up companies, branches, people and the link to FACTS. Most se
 
 Company settings (administrators): name, legal names in English and Arabic, TRN, currency, VAT rate, whether menu prices include VAT, the ERP (**Standalone**, **AWS One** or **FACTS**), and the **Gift vouchers** and **Loyalty points** switches. **Request stores** lists the FACTS stores branches may request stock from.
 
-**Invoice and credit note numbers** (in the company's settings): by default each branch numbers its own bills (INV-EBL-01-000001) and credit notes (CN-EBL-01-000001). Switch on **One series for all branches** for invoices, credit notes or both, enter the date and time it starts **From**, an optional **Prefix** and the **Starting number**, and **Save**. Without a prefix the numbers are plain (200000, 200001 …); with one they are the prefix and 6 digits (prefix CN, start 1: CN000001, CN000002 …; prefix CN-: CN-000001). The screen shows the first number before you save. From that moment every branch takes the next number from the one series, the same number on the bill and in FACTS; bills before it keep their numbers. The starting number must be above every number with that prefix already used in One POS and in FACTS (for example the old outlet POS's bills); saving checks this. Once the first number is given, the prefix and starting number can't change. Switched off, each branch goes back to its own numbers; switched on again, the series continues where it stopped.
+**Invoice and credit note numbers** (in the company's settings): by default each branch numbers its own bills (INV-EBL-01-000001) and credit notes (CN-EBL-01-000001). Switch on **One series for all branches** for invoices, credit notes or both, enter the date and time it starts **From**, an optional **Prefix** and the **Starting number**, and **Save**. Without a prefix the numbers are plain (200000, 200001 …); with one they are the prefix and 6 digits (prefix CN, start 1: CN000001, CN000002 …; prefix CN-: CN-000001). The screen shows the first number before you save. From that moment every branch takes the next number from the one series, the same number on the bill and in FACTS; bills before it keep their numbers. The starting number must be above every number with that prefix already used in ONE POS and in FACTS (for example the old outlet POS's bills); saving checks this. Once the first number is given, the prefix and starting number can't change. Switched off, each branch goes back to its own numbers; switched on again, the series continues where it stopped.
 
 ![Companies & branches](images/companies.jpg)
 
@@ -587,7 +587,7 @@ Table service cannot be switched off while dine-in orders are open.
 
 ## FACTS connection
 
-On a FACTS company card, open **FACTS connection**, paste the **Connection string**, tap **Test**, then **Save**. Use a read-only login: One POS warns if it can write. The saved string is encrypted and never shown again; **Replace with a new connection string** or **Remove** it later.
+On a FACTS company card, open **FACTS connection**, paste the **Connection string**, tap **Test**, then **Save**. Use a read-only login: ONE POS warns if it can write. The saved string is encrypted and never shown again; **Replace with a new connection string** or **Remove** it later.
 
 ## Users
 
@@ -614,9 +614,9 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 | --- | --- |
 | Post to FACTS | The master switch (off by default). Off: bills wait in the queue. |
 | Company options | Batches (finance or FIFO with each bill), wastage, BOM items (repacking), refunds (not posted, PSR51 or SR50), future orders' advances (not posted, or QRV51 to advances), bank deposits (not posted, or posted QRV50) |
-| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. A cancelled order's advances go back as one posted PV51. The log lists them as **Advance ADV-…** and **Advance return ADV-…**. Needs One POS' advance procedures (usp_ONEPOS_PostAdvance, usp_ONEPOS_PostAdvanceReturn) created in FACTS first. |
+| Future orders' advances | **Not posted**: the bill on collection carries every payment, advances included. **QRV51 to advances**: each advance is posted when taken; the bill waits until its advances are posted. A cancelled order's advances go back as one posted PV51. The log lists them as **Advance ADV-…** and **Advance return ADV-…**. Needs ONE POS' advance procedures (usp_ONEPOS_PostAdvance, usp_ONEPOS_PostAdvanceReturn) created in FACTS first. |
 | Bank deposits | **Not posted**: accounts enter deposits in FACTS. **Posted QRV50**: each bank deposit recorded on a till goes to FACTS at once as a posted QRV50: the bank (2322) in, the branch's cash account out, the bag or slip number as its reference. The log lists them as **Bank deposit &lt;slip&gt;**, and **Cash to bank** shows each deposit's QRV50 number. Accounts don't make an RV50 for these deposits. |
-| Branches | Queue counts per branch and the **Posts from** date. The old POS and One POS must never post the same day for a branch. |
+| Branches | Queue counts per branch and the **Posts from** date. The old POS and ONE POS must never post the same day for a branch. |
 | Dry run | A day's bills as they would go, with any problems; nothing is sent. |
 | Posting log | **All / Failed / Waiting / Posted**; **Push now**, **Re-push failed**, per row **Re-push** or **Leave out** (finance then enters it by hand). |
 
@@ -626,7 +626,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 
 ## Delivery platforms
 
-**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in One POS** adds payouts to the platform report.
+**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
 
 ![Delivery platforms](images/platforms.jpg)
 
@@ -704,7 +704,7 @@ The TV goes full screen by itself where it allows it; otherwise press **OK** on 
 
 To play just a video on a TV, make a design with one **Picture or video** slide. The video then loops without stopping. Turn off the clock, logo and ticker to give it the whole screen.
 
-When One POS itself is updated, the TVs load the new version by themselves within about a minute: between two slides, or when a video reaches its end. Nobody needs to touch the TV.
+When ONE POS itself is updated, the TVs load the new version by themselves within about a minute: between two slides, or when a video reaches its end. Nobody needs to touch the TV.
 
 Pictures and videos for designs go under **Pictures and videos** (pictures up to 5 MB, MP4 or WebM videos up to 25 MB), or straight from a slide with **Upload**. They belong to the branch chosen at the top: each branch sees, uses and removes only its own.
 
@@ -716,7 +716,7 @@ When a branch closes its day, a summary goes to the newspaper icon (and by email
 
 ## Audit log and problem reports
 
-**Audit log** lists every sign-in and change, newest first, with who did it, when, at which branch, and the values before and after; tap a row for details. Entries can't be changed or deleted from One POS. **Problem reports** is the inbox for **Report a problem**: set the **Status**, **Priority**, **Assigned to** and a **Resolution** the reporter sees.
+**Audit log** lists every sign-in and change, newest first, with who did it, when, at which branch, and the values before and after; tap a row for details. Entries can't be changed or deleted from ONE POS. **Problem reports** is the inbox for **Report a problem**: set the **Status**, **Priority**, **Assigned to** and a **Resolution** the reporter sees.
 
 ![The audit log](images/audit.jpg)
 
@@ -726,7 +726,7 @@ Most messages say what to do. The ones staff ask about most:
 
 | Message | What to do |
 | --- | --- |
-| Reconnecting to One POS… | Wait before taking payments; nothing sent is lost or doubled. If it stays, check the network. |
+| Reconnecting to ONE POS… | Wait before taking payments; nothing sent is lost or doubled. If it stays, check the network. |
 | Open your shift first: count the float in the drawer | Open your shift on the Dashboard. |
 | Pick the register you're at first | Choose the register on the Dashboard, then open your shift. |
 | The business day isn't open yet | A manager opens it under Day & shifts. |
@@ -744,7 +744,7 @@ Most messages say what to do. The ones staff ask about most:
 | Future orders are switched off for this branch | An administrator switches Future orders on under Companies & branches. |
 | Only a manager returns a bill from an earlier day | Ask a manager, or use Manager approval. |
 | No receipt printer chosen on this till | Choose one under Devices → Receipt printer. |
-| The One POS Device Service isn't running on this till | Restart the PC or install it from Devices. Receipts meanwhile open in the browser's print window. |
+| The ONE POS Device Service isn't running on this till | Restart the PC or install it from Devices. Receipts meanwhile open in the browser's print window. |
 | Too many wrong PINs. The PIN pad is locked for a few minutes. | Wait a few minutes, or ask a manager to reset the PIN. |
 | Wrong PIN, or this user doesn't work at this branch | Check the PIN and the user's branches under Users. |
 | This user is switched off | Ask an administrator. |
@@ -774,7 +774,7 @@ Still stuck? Use **Report a problem** in the header: describe what happened and 
 | Combo | A set menu built from menu items. |
 | BOM | Bill of materials: the raw materials one item is made from. |
 | Approver | The person named per branch to approve wastage, marketing, returns or stock requests. |
-| FACTS | The company's ERP; One POS takes items, prices and stock from it and posts sales back. |
+| FACTS | The company's ERP; ONE POS takes items, prices and stock from it and posts sales back. |
 | POS51 | FACTS point-of-sale invoice: every paid bill. |
 | PSR51 | FACTS point-of-sale return: every returned bill. |
 | STV50 | FACTS stock transfer: deliveries in, wastage out, returns to the store. |

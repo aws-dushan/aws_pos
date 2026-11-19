@@ -30,7 +30,7 @@ const asNumber = (v: string | number) => {
 export async function downloadXlsx(name: string, t: ExportTable | ExportTable[]) {
   const { Workbook } = await import("exceljs");
   const wb = new Workbook();
-  wb.creator = "One POS";
+  wb.creator = "ONE POS";
   // Several tables (the Summary report): a sheet each.
   for (const x of Array.isArray(t) ? t : [t]) addSheet(wb, x);
   const buf = await wb.xlsx.writeBuffer();
@@ -75,7 +75,7 @@ export function printPdf(t: ExportTable | ExportTable[], heading?: { title: stri
     footer { margin-top: 10px; color: #888; font-size: 10px; }
   </style></head><body><h1>${esc(top.title)}</h1>${top.subtitle ? `<p>${esc(top.subtitle)}</p>` : ""}
   ${tables.map(table).join("")}
-  <footer>One POS · printed ${esc(new Date().toLocaleString("en-GB"))}</footer>
+  <footer>ONE POS · printed ${esc(new Date().toLocaleString("en-GB"))}</footer>
   <script>window.onload = () => { window.print(); };</script></body></html>`;
   const w = window.open("", "_blank");
   if (!w) return false;

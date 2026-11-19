@@ -256,7 +256,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             <div data-module="admin" className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
               <span className="text-sm"><span className="font-medium">Administrator</span> <span className="text-muted-foreground">· everything in every company: companies, branches, email server, problem reports</span></span>
               <Switch on={f.isAdmin} label="Administrator" onChange={async (v) => {
-                if (v && !(await confirmDialog({ title: `Make ${f.displayName || "this user"} an administrator?`, message: "They can do everything in every company of One POS.", confirmLabel: "Make administrator" }))) return;
+                if (v && !(await confirmDialog({ title: `Make ${f.displayName || "this user"} an administrator?`, message: "They can do everything in every company of ONE POS.", confirmLabel: "Make administrator" }))) return;
                 set("isAdmin", v);
               }} />
             </div>

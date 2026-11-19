@@ -9,7 +9,7 @@ namespace OnePos.Api.Erp;
 /// <summary>
 /// Each company's ERP connection (REQ ERP-01). An administrator pastes the FACTS connection string in Companies &amp; branches; it is
 /// stored encrypted (Data Protection) and never sent back to the browser, which sees only a summary. "Test" connects and reports the
-/// server, database and login, and warns when the login can write (One POS only reads FACTS; returns go in as STV documents).
+/// server, database and login, and warns when the login can write (ONE POS only reads FACTS; returns go in as STV documents).
 /// </summary>
 public sealed class ErpConnections(IDataProtectionProvider dp, Db db)
 {
@@ -57,14 +57,14 @@ public sealed class ErpConnections(IDataProtectionProvider dp, Db db)
                 """, commandTimeout: 15);
             var write = r.CanWrite == 1;
             return new TestResult(true,
-                write ? "Connected. This login can also change data in FACTS: ask for a read-only login (One POS only reads it)." : "Connected with a read-only login.",
+                write ? "Connected. This login can also change data in FACTS: ask for a read-only login (ONE POS only reads it)." : "Connected with a read-only login.",
                 b.DataSource, r.Database, r.Login, r.Version, r.Tables, write);
         }
         catch (SqlException ex)
         {
             var hint = ex.Message.Contains("certificate", StringComparison.OrdinalIgnoreCase)
                 ? " The server's certificate isn't trusted: add TrustServerCertificate=True to the connection string (or install a trusted certificate on the server)."
-                : ex.Number is 18456 ? " The login or password is wrong." : ex.Number is -2 or 53 or 40 or 258 || ex.Message.Contains("network-related", StringComparison.OrdinalIgnoreCase) ? " The server can't be reached from the One POS server (address, port 1433, firewall or VPN)." : "";
+                : ex.Number is 18456 ? " The login or password is wrong." : ex.Number is -2 or 53 or 40 or 258 || ex.Message.Contains("network-related", StringComparison.OrdinalIgnoreCase) ? " The server can't be reached from the ONE POS server (address, port 1433, firewall or VPN)." : "";
             return new TestResult(false, $"Couldn't connect: {ex.Message.Split('\n')[0].Trim()}{hint}", b.DataSource, b.InitialCatalog, null, null, null, null);
         }
     }

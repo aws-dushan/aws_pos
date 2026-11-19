@@ -241,7 +241,7 @@ export function CashMoveDialog({ shiftId, currency, onClose, onDone }: { shiftId
                   className={cn("h-10 rounded-full border px-4 text-sm active:scale-[0.97]", bank ? "border-primary bg-primary/10 text-primary" : "bg-card hover:bg-muted")}>{TO_BANK}</button>
               )}
             </div>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={bank ? "Note (optional), e.g. Balance from before One POS" : "Reason"} className="h-11" />
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={bank ? "Note (optional), e.g. Balance from before ONE POS" : "Reason"} className="h-11" />
             {bank && <p className="text-xs text-muted-foreground">Goes into the drawer and is added to what this branch owes the bank (Cash to bank). Any other reason is float.</p>}
           </>
         )}

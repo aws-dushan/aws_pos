@@ -82,7 +82,7 @@ export default function AlertsPage() {
                 <Switch on={!!f.emailEnabled} onChange={(v) => set("emailEnabled", v)} label="Email" />
               </div>
               {f.emailEnabled && <Field label="Send to" hint="One address per line (owner, head office…)."><Textarea rows={3} value={String(f.emails)} onChange={(e) => set("emails", e.target.value)} placeholder="owner@company.ae" /></Field>}
-              {f.emailEnabled && !data.data?.smtp && <p className="text-xs text-warning">No email server yet: summaries show in One POS only until one is set up.</p>}
+              {f.emailEnabled && !data.data?.smtp && <p className="text-xs text-warning">No email server yet: summaries show in ONE POS only until one is set up.</p>}
             </div>
           </>
           <div className="flex justify-end"><Button className="h-11" disabled={busy === "save"} onClick={() => void save()}>Save</Button></div>
@@ -119,7 +119,7 @@ export default function AlertsPage() {
               </Field>
               <Field label="From address"><Input value={mail.from} onChange={(e) => setMail({ ...mail, from: e.target.value })} placeholder="pos@company.ae" /></Field>
               <div className="flex items-end"><div className="flex h-10 w-full items-center justify-between gap-2 rounded-xl border px-3"><span className="text-sm">TLS</span><Switch on={mail.ssl} onChange={(v) => setMail({ ...mail, ssl: v })} label="TLS" /></div></div>
-              <Field label="From name" hint="The sender people see. Empty = One POS."><Input value={mail.fromName} maxLength={80} onChange={(e) => setMail({ ...mail, fromName: e.target.value })} placeholder="e.g. European Bakery POS" /></Field>
+              <Field label="From name" hint="The sender people see. Empty = ONE POS."><Input value={mail.fromName} maxLength={80} onChange={(e) => setMail({ ...mail, fromName: e.target.value })} placeholder="e.g. European Bakery POS" /></Field>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button className="h-11" disabled={!!busy || !mail.host || !mail.from} onClick={() => void run("smtp", () => api("/notices/smtp", "PUT",

@@ -345,7 +345,7 @@ public static class Signage
 
         // The TV page every few seconds: what this TV shows now (its design and the branch's menu, prices, sold-out and sold-today
         // counts); while it is not linked yet, its code. 401: the key is unknown (the TV was removed or its code expired): get a new one.
-        // The One POS version: a TV whose player came from another version loads the page again (between slides, or when its video ends).
+        // The ONE POS version: a TV whose player came from another version loads the page again (between slides, or when its video ends).
         var version = Environment.GetEnvironmentVariable("ONEPOS_VERSION") ?? "dev";
         app.MapGet("/api/public/signage/play", async (HttpContext http, Db db, int? w, int? h) =>
         {

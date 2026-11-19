@@ -22,10 +22,10 @@ public static partial class FactsPosting
 {
     public sealed record CompanyBody(bool Posting, string Refunds, string? RefundProc, string? InvoiceProc = null, string? Wastage = null, string? Repacking = null, string? Advances = null, string? Deposits = null);
 
-    /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostReturn.sql): a whole bill's return as a POSTED PSR51, a copy of its POS51.</summary>
+    /// <summary>ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostReturn.sql): a whole bill's return as a POSTED PSR51, a copy of its POS51.</summary>
     public const string PostReturnProc = "usp_ONEPOS_PostReturn";
 
-    /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveWastageTransfer.sql): a day's wastage as a draft STV50.</summary>
+    /// <summary>ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveWastageTransfer.sql): a day's wastage as a draft STV50.</summary>
     public const string WastageProc = "usp_ONEPOS_SaveWastageTransfer";
     /// <summary>FACTS: approved wastage as a POSTED STV50 (batches FIFO, FACTS' own approval), as the branch approver's FACTS user.</summary>
     public const string PostWastageProc = "usp_ONEPOS_PostWastageTransfer";
@@ -40,12 +40,12 @@ public static partial class FactsPosting
     public const string WastageUser = "POSBAKERY";
 
     /// <summary>
-    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvance.sql): a future order's advance as a posted QRV51
+    /// ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvance.sql): a future order's advance as a posted QRV51
     /// (Dr the payment method's account, Cr 2802 POS CUSTOMER ADVANCES).
     /// </summary>
     public const string PostAdvanceProc = "usp_ONEPOS_PostAdvance";
     /// <summary>
-    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvanceReturn.sql): a cancelled future order's advances given back as
+    /// ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostAdvanceReturn.sql): a cancelled future order's advances given back as
     /// ONE posted PV51 (Cr each advance's account, as its QRV51 debited it; Dr 2802), each line linked to its QRV51.
     /// </summary>
     public const string PostAdvanceReturnProc = "usp_ONEPOS_PostAdvanceReturn";
@@ -53,7 +53,7 @@ public static partial class FactsPosting
     public const string AdvanceMode = "ADVANCE";
 
     /// <summary>
-    /// One POS' procedure in FACTS (db/facts/usp_ONEPOS_PostDeposit.sql): a till's bank deposit as a posted QRV50
+    /// ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostDeposit.sql): a till's bank deposit as a posted QRV50
     /// (Dr the bank collection account, Cr the outlet's cash account), the slip as its reference.
     /// </summary>
     public const string PostDepositProc = "usp_ONEPOS_PostDeposit";
@@ -62,7 +62,7 @@ public static partial class FactsPosting
 
     /// <summary>FACTS' own procedure for a POS bill (the outlet POS uses it): the sale, no batches.</summary>
     public const string StandardInvoiceProc = "usp_FQAPI_PWA_POS_SaveInvoice";
-    /// <summary>One POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveInvoice.sql): the standard one, then each line its batch, FIFO.</summary>
+    /// <summary>ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_SaveInvoice.sql): the standard one, then each line its batch, FIFO.</summary>
     public const string FifoInvoiceProc = "usp_ONEPOS_SaveInvoice";
     public sealed record BranchBody(DateOnly? PostFrom);
 
@@ -186,7 +186,7 @@ public static partial class FactsPosting
     public const int FactsNoLength = 20;
 
     /// <summary>
-    /// The number a One POS document goes to FACTS by: its own number (INV-EBL-01-000123), at most <see cref="FactsNoLength"/> characters;
+    /// The number a ONE POS document goes to FACTS by: its own number (INV-EBL-01-000123), at most <see cref="FactsNoLength"/> characters;
     /// null when it is longer. The prefix is not used (kept for old callers).
     /// </summary>
     public static string? FactsNo(string? number, string? prefix) => number is { Length: > 0 and <= FactsNoLength } ? number : null;
@@ -219,7 +219,7 @@ public static partial class FactsPosting
                    p.is_advance and exists (select 1 from erp_post e where e.payment_id = p.id and e.kind = 'advance' and e.status <> 'skipped'), p.advance_no
             from payment p where p.order_id = @orderId and p.kind = 'payment' order by p.at
             """, new { orderId }, tx)).ToList();
-        // A future order: its FO number and its advances (their QRV51s), so One POS' procedure links the bill and the QRV51s both ways.
+        // A future order: its FO number and its advances (their QRV51s), so ONE POS' procedure links the bill and the QRV51s both ways.
         var futureRef = await c.ExecuteScalarAsync<string?>("select future_ref from pos_order where id = @orderId", new { orderId }, tx);
 
         // Each line's discount as the bill worked it out (its promotion / item discount, or its share of the bill discount).
@@ -291,9 +291,9 @@ public static partial class FactsPosting
                 new XElement("VatCategory", "SR"), new XElement("VatRateType", "-1"),
                 new XElement("BillToAddress", new XElement("Street", o.DeliveryAddress ?? ""), new XElement("City", ""), new XElement("State", ""), new XElement("Country", "AE"), new XElement("POBox", ""))),
             new XElement("DeliveryDetails", new XElement("EDD", o.BusinessDate.ToString("yyyy-MM-dd", Inv)), new XElement("DeliveryTiming", "")),
-            // A delivery platform's order: its own order number, which One POS' procedure writes into SAL_REF1 (FACTS' own one ignores it).
+            // A delivery platform's order: its own order number, which ONE POS' procedure writes into SAL_REF1 (FACTS' own one ignores it).
             o.PlatformName is not null && !string.IsNullOrWhiteSpace(o.PlatformRef) ? new XElement("PlatformOrderNo", o.PlatformRef.Trim()) : null,
-            // A future order: its number and the advances posted as QRV51 (FACTS' own procedure ignores it; One POS' links them).
+            // A future order: its number and the advances posted as QRV51 (FACTS' own procedure ignores it; ONE POS' links them).
             futureRef is null ? null : new XElement("FutureOrder", new XElement("FutureOrderNo", futureRef),
                 pays.Where(p => p.Posted && p.AdvanceNo is not null).Select(p => new XElement("AdvanceNo", p.AdvanceNo))),
             receipts, details));
@@ -332,7 +332,7 @@ public static partial class FactsPosting
         return (xml.ToString(SaveOptions.DisableFormatting), FactsNo(n.Number, o.DocPrefix) ?? n.Number, n.Total);
     }
 
-    /// <summary>The FACTS payment method (PM_DESC, e.g. "ERBQS VISA CARD") a One POS payment goes as at a branch, or null.</summary>
+    /// <summary>The FACTS payment method (PM_DESC, e.g. "ERBQS VISA CARD") a ONE POS payment goes as at a branch, or null.</summary>
     private static string? ModeOf(List<(string Name, string Kind, string Label)> modes, string method, string? cardType, string? platformName)
     {
         switch (method)
@@ -347,7 +347,7 @@ public static partial class FactsPosting
     }
 
     /// <summary>
-    /// A future order's advance, where the company posts advances to FACTS and the branch posts from that day: queued for One POS'
+    /// A future order's advance, where the company posts advances to FACTS and the branch posts from that day: queued for ONE POS'
     /// procedure (<see cref="PostAdvanceProc"/>). Advances given back go together, per order (<see cref="EnqueueAdvanceReturnAsync"/>).
     /// </summary>
     public static async Task EnqueueAdvanceAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid paymentId)
@@ -441,7 +441,7 @@ public static partial class FactsPosting
 
     /// <summary>
     /// A bank deposit recorded on a till, where the company posts deposits to FACTS and the branch posts from that day: queued for
-    /// One POS' procedure (<see cref="PostDepositProc"/>) as a posted QRV50 from the outlet's cash account to the bank.
+    /// ONE POS' procedure (<see cref="PostDepositProc"/>) as a posted QRV50 from the outlet's cash account to the bank.
     /// </summary>
     public static async Task EnqueueDepositAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid depositId)
     {
@@ -532,7 +532,7 @@ public static partial class FactsPosting
 
     /// <summary>
     /// A credit note was made: where the company posts refunds and the bill itself went to FACTS, posted as SR50 (any credit note,
-    /// through the FACTS developer's procedure) or as PSR51 (a whole bill returned, through One POS' procedure; other refunds stay
+    /// through the FACTS developer's procedure) or as PSR51 (a whole bill returned, through ONE POS' procedure; other refunds stay
     /// for finance). It waits for the bill's POS51.
     /// </summary>
     public static async Task EnqueueRefundAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid creditNoteId, Guid orderId)
@@ -595,7 +595,7 @@ public static partial class FactsPosting
             if (body.Refunds is not ("none" or "sr50" or "psr51")) throw new DomainException("Refunds are not posted, posted as SR50, or returned bills posted as PSR51.");
             var proc = string.IsNullOrWhiteSpace(body.RefundProc) ? null : body.RefundProc.Trim();
             if (proc is not null && !ProcName().IsMatch(proc)) throw new DomainException("The SR50 procedure is a FACTS procedure name (letters, digits, _).");
-            if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or One POS' (FIFO batches).");
+            if (body.InvoiceProc is not (null or StandardInvoiceProc or FifoInvoiceProc)) throw new DomainException("Bills are saved by FACTS' standard procedure or ONE POS' (FIFO batches).");
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
             if (body.Advances is not (null or "off" or "qrv51")) throw new DomainException("Future orders' advances are not posted, or posted as QRV51.");
@@ -616,7 +616,7 @@ public static partial class FactsPosting
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "erp", "posting", "changed", "FACTS posting settings changed",
                     [new("Posting", old.Posting, body.Posting), new("Refunds", old.Refunds, body.Refunds), new("SR50 procedure", old.Proc, proc),
                      new("Bill procedure", old.InvoiceProc ?? StandardInvoiceProc, invoiceProc ?? StandardInvoiceProc),
-                     new("Wastage", old.Wastage == "draft" ? "Draft STV from One POS" : "Finance enters", wastage == "draft" ? "Draft STV from One POS" : "Finance enters"),
+                     new("Wastage", old.Wastage == "draft" ? "Draft STV from ONE POS" : "Finance enters", wastage == "draft" ? "Draft STV from ONE POS" : "Finance enters"),
                      new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
                      new("Future order advances", old.Advances == "qrv51" ? "QRV51" : "Not posted", advances == "qrv51" ? "QRV51" : "Not posted"),
                      new("Bank deposits", old.Deposits == "qrv50" ? "Posted QRV50" : "Not posted", deposits == "qrv50" ? "Posted QRV50" : "Not posted")]);
@@ -908,7 +908,7 @@ public static partial class FactsPosting
                             for (var i = 0; i < r.FieldCount; i++) cols.TryAdd(r.GetName(i), r.IsDBNull(i) ? "" : Convert.ToString(r.GetValue(i), Inv) ?? "");
                             if (cols.TryGetValue("DocumentNo", out var d)) doc = d;
                             if (cols.TryGetValue("status", out var s) && s.Equals("FAILED", StringComparison.OrdinalIgnoreCase)) { failed = true; error = cols.GetValueOrDefault("description") ?? "FACTS said FAILED."; }
-                            // One POS' procedure: how many lines got their batch (FIFO), and any left without.
+                            // ONE POS' procedure: how many lines got their batch (FIFO), and any left without.
                             if (cols.TryGetValue("OnePosBatches", out var given))
                                 batchNote = $"Batches given (FIFO): {given} line{(given == "1" ? "" : "s")}." + (cols.GetValueOrDefault("OnePosNote") is { Length: > 0 } note ? $" {note}" : "");
                         }

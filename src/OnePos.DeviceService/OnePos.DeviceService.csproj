@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-  <!-- One POS Device Service (REQ HW-01 … HW-08): a small Windows service on each till that drives the receipt printer, the cash drawer
-       (through the printer) and a pole display, for the One POS web app running in the browser on the same PC. -->
+  <!-- ONE POS Device Service (REQ HW-01 … HW-08): a small Windows service on each till that drives the receipt printer, the cash drawer
+       (through the printer) and a pole display, for the ONE POS web app running in the browser on the same PC. -->
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <RootNamespace>OnePos.DeviceService</RootNamespace>

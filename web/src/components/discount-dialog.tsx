@@ -121,7 +121,7 @@ export function DiscountDialog({ open, line, detail, currency, onClose, apply }:
 
 /**
  * A delivery platform's offer on its order: the amount shown on the platform's tablet, and who pays for it. "We pay" becomes the
- * bill discount (so One POS matches what the platform pays us); "Platform pays" leaves the bill at full price and only notes it.
+ * bill discount (so ONE POS matches what the platform pays us); "Platform pays" leaves the bill at full price and only notes it.
  */
 export function PlatformOfferDialog({ open, detail, currency, onClose, apply }: {
   open: boolean; detail: OrderDetail; currency: string; onClose: () => void; apply: (path: string, body: unknown) => Promise<OrderDetail | null>;

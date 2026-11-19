@@ -11,7 +11,7 @@ using OnePos.Api.Platform;
 namespace OnePos.Api.Pos;
 
 /// <summary>
-/// Wastage approval. A branch with a wastage approver (a One POS user, the email the request goes to, and the approver's FACTS
+/// Wastage approval. A branch with a wastage approver (a ONE POS user, the email the request goes to, and the approver's FACTS
 /// username): wastage recorded there waits for that approver (company administrators can stand in). Approved, it goes to FACTS
 /// at once as a POSTED STV50 to the branch's wastage location (usp_ONEPOS_PostWastageTransfer: batches FIFO, FACTS' own approval,
 /// as the approver's FACTS username), never a draft; approving checks FACTS has the stock first. Rejected, it is taken off and

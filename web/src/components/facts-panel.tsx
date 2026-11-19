@@ -56,7 +56,7 @@ export function FactsPanel({ branchName, onChanged }: { branchName: string | und
           <div className="text-xs text-muted-foreground">
             {d.itemMaster ? `${d.itemMaster} ` : ""}{d.itemType} items{d.division ? `, division ${d.division}` : ""} · {d.counts.catalogue} in the catalogue · {d.counts.onHere} on here
             {d.location ? ` · stock from ${d.location}` : " · no stock location set for this branch"}
-            {d.priceType ? ` · prices from ${d.priceType}${d.pricesIncludeVat ? "" : " + VAT"}` : " · prices set in One POS"}
+            {d.priceType ? ` · prices from ${d.priceType}${d.pricesIncludeVat ? "" : " + VAT"}` : " · prices set in ONE POS"}
           </div>
         </div>
       </div>

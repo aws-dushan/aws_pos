@@ -3,7 +3,7 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 /** Product and company names, so every screen spells them the same way (same scheme as AWS One). */
-export const PRODUCT = "One POS";
+export const PRODUCT = "ONE POS";
 export const MAKER = "AWS Distribution";
 export const BRAND = PRODUCT;
 
@@ -13,7 +13,7 @@ const ART = {
   full: { file: "one-pos-horizontal", w: 5917, h: 1327 },
 } as const;
 
-/** The One POS logo; follows the light/dark theme unless `tone` pins it. Size it with a height class. */
+/** The ONE POS logo; follows the light/dark theme unless `tone` pins it. Size it with a height class. */
 export function Logo({ variant = "header", tone, className }: { variant?: keyof typeof ART; tone?: "light" | "dark"; className?: string }) {
   const a = ART[variant];
   const img = (t: "light" | "dark", extra?: string) => (

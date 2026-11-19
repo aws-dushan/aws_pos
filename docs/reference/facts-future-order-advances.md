@@ -1,8 +1,8 @@
 # FACTS changes for future-order advances
 
-**For:** the FACTS developer · **From:** One POS (European Bakery outlets) · **Database:** FactsERPAWSEB
+**For:** the FACTS developer · **From:** ONE POS (European Bakery outlets) · **Database:** FactsERPAWSEB
 
-## What One POS does
+## What ONE POS does
 
 A customer orders now for a later day (for example, a cake for Saturday) and pays an advance. On the collection day they pay the balance and take the order. Example: advance 50 by card, bill 100.
 
@@ -27,7 +27,7 @@ Result over the whole order:
 - Advances given back on a cancelled order: one posted PV51 for the order (`usp_ONEPOS_PostAdvanceReturn`), saved as finance's PV51 1001 and posted through FACTS' own step (`usp_PAY_REC_APPR_Posting`). It refuses an advance with no posted QRV51, one already given back, or a cash method that isn't a FACTS cash payment method (a card's 2315 can't be used).
 - Test bill POS51 **0001** (30 Oct) was posted with the old ADVANCE sign: it leaves 5.00 credit on 2802 and 10.00 debit on AR C0006. Please reverse it.
 
-One POS writes and sends:
+ONE POS writes and sends:
 - `usp_ONEPOS_PostAdvance`: one QRV51 per advance.
 - `usp_ONEPOS_PostAdvanceReturn`: one PV51 per cancelled order, giving its advances back.
 - `usp_ONEPOS_SaveInvoice`, which already posts bills, links each bill to its advances:

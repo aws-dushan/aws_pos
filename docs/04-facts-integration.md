@@ -1,6 +1,6 @@
 # 4. FACTS integration
 
-FACTS (SQL Server) is the ERP of the FACTS companies (e.g. European Bakery, EBL). One POS **reads** items, prices,
+FACTS (SQL Server) is the ERP of the FACTS companies (e.g. European Bakery, EBL). ONE POS **reads** items, prices,
 stock, payment methods, deliveries and BOMs from it, and **posts** bills, returns and stock documents to it through
 stored procedures. A company with the ERP set to Standalone or AWS One skips all of this.
 
@@ -9,7 +9,7 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 - Set per company by an administrator: Companies & branches → **FACTS connection**. Tested, then encrypted with ASP.NET Data
   Protection (`Erp/ErpConnections.cs`); never shown again.
 - Reads open the connection with `ApplicationIntent=ReadOnly` and run SELECTs only.
-- Posting uses the same connection with `ApplicationName = "One POS posting"` and calls procedures only.
+- Posting uses the same connection with `ApplicationName = "ONE POS posting"` and calls procedures only.
 - Each branch maps to a FACTS **location** (e.g. ERBQS Al Qusais), a **wastage location** (e.g. WEBQS), the item types /
   item master / division on its menu, a **price type** (PTM) and **Platform prices from**: the FACTS location whose delivery
   platform price lists (CPL50) it sells at, e.g. ERBQS (one branch can use another's lists). Set under Companies & branches →
@@ -33,7 +33,7 @@ stored procedures. A company with the ERP set to Standalone or AWS One skips all
 | What sold here | The location's POS documents of the last 14 days | **Switch on what sold here** |
 
 Rules: new items arrive switched off ("New from FACTS"); items inactive or sale-blocked in FACTS switch off; a renamed item
-keeps its One POS name; **FACTS prices always win** and an item without a FACTS price cannot be sold; every price change is
+keeps its ONE POS name; **FACTS prices always win** and an item without a FACTS price cannot be sold; every price change is
 kept in `item_price_history` and rung-up bills keep their prices. Every run is logged in `erp_sync`.
 
 ### Units: "Sold as" (`Pos/SoldAs.cs`)
@@ -59,7 +59,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 
 ## What is posted (`Erp/FactsPosting.cs`)
 
-| One POS event | Queue kind | FACTS document | Procedure | Posted as |
+| ONE POS event | Queue kind | FACTS document | Procedure | Posted as |
 | --- | --- | --- | --- | --- |
 | Bill paid (and paper slip keyed in) | `invoice` | **POS51**, numbered with the invoice number (`INV-<branch>-000001`, or the company's shared plain number) | `usp_FQAPI_PWA_POS_SaveInvoice` (FACTS' own), or `usp_ONEPOS_SaveInvoice` (same, then FIFO batches per line) | ONEPOS |
 | Whole bill returned | `refund` | **PSR51** copied from the bill's POS51, numbered with the credit note number | `usp_ONEPOS_PostReturn` | POSBAKERY |
@@ -76,7 +76,7 @@ in `item_unit`, the stock unit with `per_unit` 1):
 
 ```mermaid
 flowchart TB
-  subgraph POS["One POS"]
+  subgraph POS["ONE POS"]
     E1[Bill paid] --> Q
     E2[Bill returned] --> Q
     E3[Wastage / give-away / return / request] --> AP{Branch approver}
@@ -93,7 +93,7 @@ flowchart TB
   L2 -. Re-push / Leave out .-> Q
 ```
 
-Sources of the One POS procedures are in `db/facts/`. "Posted" means FACTS' own approval framework ran
+Sources of the ONE POS procedures are in `db/facts/`. "Posted" means FACTS' own approval framework ran
 (`usp_DocumentAutoApprove` and the document's `DOCUMENT_PROCEDURES` steps), so FACTS shows the document as posted; if FACTS
 refuses, the procedure removes what it saved, so nothing half-done stays.
 
@@ -129,7 +129,7 @@ the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the c
 | Option | Choices |
 | --- | --- |
 | Batches | Finance assigns later (batch update), or FIFO batch with each bill (`usp_ONEPOS_SaveInvoice`) |
-| Wastage | Finance enters in FACTS, or draft transfer from One POS; with a branch approver it is posted on approval |
+| Wastage | Finance enters in FACTS, or draft transfer from ONE POS; with a branch approver it is posted on approval |
 | BOM items (repacking) | Off, draft per day, posted per bill |
 | Refunds | Not posted (finance enters them), returned bills as PSR51, or SR50 via a named procedure |
 | Future orders' advances | Not posted (the bill on collection carries every payment, advances included, as normal payments), or QRV51 to advances (each advance posted when taken; the bill paid by ADVANCE) |
@@ -174,7 +174,7 @@ was on are not sent.
 cash account with no sub-ledger, Others account (debited) = 2322, default cash account 2202 untouched, division 50, no
 department or salesman. FACTS' QRV posting (`usp_QRV_APPR_AccountsUpdation`) asks for a party sub-ledger only when the party
 account has `ACMST_SUBLEDGER_EXISTS = 1`; the outlet cash accounts have 0. It then posts it through `usp_ApproveDocuments`,
-as FACTS' Approve button does. One POS' deposit id is kept in `QRP_UD_LABEL5` ("ONEPOS &lt;id&gt;"), so a retry finds the
+as FACTS' Approve button does. ONE POS' deposit id is kept in `QRP_UD_LABEL5` ("ONEPOS &lt;id&gt;"), so a retry finds the
 posted QRV50 and answers "Already posted". FACTS' ledger keeps only the first 50 characters of the narration and leaves the
 ledger reference empty, so the slip number starts the narration.
 
@@ -186,7 +186,7 @@ Cash to bank shows each deposit's QRV50 number (or Sending / Failed). Accounts d
 
 ## Changing anything in FACTS
 
-- One POS' procedures are created in FACTS by the business (or by a developer only with their explicit go-ahead), using
+- ONE POS' procedures are created in FACTS by the business (or by a developer only with their explicit go-ahead), using
   the scripts in `db/facts/`. `tools/facts-create-proc.cs` creates a procedure and never replaces one.
 - Before a new posting procedure goes live, run its rehearsal in `db/facts/tests/` (`rehearse_post_*.sql`): it posts one
   document inside a transaction and rolls it back, proving the procedure and FACTS' approval steps work.
