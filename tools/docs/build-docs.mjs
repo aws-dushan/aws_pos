@@ -74,11 +74,7 @@ const day = Number(today.slice(8, 10));
 const suffix = day % 10 === 1 && day !== 11 ? "st" : day % 10 === 2 && day !== 12 ? "nd" : day % 10 === 3 && day !== 13 ? "rd" : "th";
 const dateText = `${day}${suffix} ${new Date(today).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}`;
 // Cover: the One POS logo (white lockup) and the brand font from tools/brand.
-// The lockup without its signature line: the "One POS" wordmark moved down to sit level with the symbol.
-const logoSvg = readFileSync(join(root, "web", "public", "brand", "one-pos-horizontal-dark.svg"), "utf8")
-  .replace(/<g transform="translate\(0 [\d.]+\) scale\([\d.]+\)">.*?<\/g>/, "")
-  .replace(/translate\(1888\.7 839\.2\)/, `translate(1888.7 ${process.env.WORD_Y ?? 1100})`)
-  .replaceAll("One POS by AWS Distribution", "One POS");
+const logoSvg = readFileSync(join(root, "web", "public", "brand", "one-pos-horizontal-dark.svg"), "utf8");
 const logo = "data:image/svg+xml;base64," + Buffer.from(logoSvg).toString("base64");
 const font = (w) => pathToFileURL(join(root, "tools", "brand", `Outfit-${w}.ttf`)).href;
 const titles = manual ? [...markdown.matchAll(/^# (.+)$/gm)].map((m) => m[1])

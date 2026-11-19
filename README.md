@@ -1,4 +1,4 @@
-# One POS by AWS Distribution
+# One POS
 
 Restaurant point of sale for the group's companies and branches. Same stack, design system and motion kit as AWS One.
 Requirements and development plan: the "One POS by AWS Distribution — Requirements & Development Plan" doc.

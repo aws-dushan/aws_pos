@@ -389,7 +389,7 @@ public static class Notices
                         html.Append("</table>");
                         if (n.Link is not null && !string.IsNullOrEmpty(web))
                             html.Append($"<p style=\"margin:20px 0\"><a href=\"{WebUtility.HtmlEncode(web + n.Link)}\" style=\"font-family:sans-serif;background:#3b3fd8;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none\">Open in One POS</a></p>");
-                        const string footer = "<p style=\"font-family:sans-serif;color:#888;font-size:12px\">One POS by AWS Distribution</p>";
+                        const string footer = "<p style=\"font-family:sans-serif;color:#888;font-size:12px\">One POS</p>";
                         if (n.ApprovalId is { } approvalId)
                         {
                             // A discount request: one email per address, each with its own code (then only the code's hash is kept).
