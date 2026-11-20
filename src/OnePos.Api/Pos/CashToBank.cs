@@ -18,7 +18,7 @@ public static class CashToBank
         /// <summary>What this day adds to the amount owed: its cash (sales less refunds) and anything added by hand.</summary>
         public decimal Owed => CashSales - Refunds + Added;
     }
-    /// <summary>A deposit; FactsStatus/FactsDoc: its QRV50 in FACTS (pending, posted with its number, failed, skipped), null if not sent.</summary>
+    /// <summary>A deposit; FactsStatus/FactsDoc: its QRV50 in FACTS (pending, sent with its number, failed, skipped), null if not sent.</summary>
     public sealed record DepositRow(DateOnly Date, decimal Amount, string? BagNo, string TakenBy, string? Register, DateTime At, string? FactsStatus, string? FactsDoc);
 
     public static void Map(RouteGroupBuilder api)

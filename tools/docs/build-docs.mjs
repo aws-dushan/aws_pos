@@ -55,9 +55,9 @@ if (process.argv.includes("--no-pdf")) process.exit(0);
 
 // PDF: the pages in order, rendered with marked (+ mermaid diagrams) and printed by a headless browser.
 const browser = [
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
-  "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "/usr/bin/google-chrome", "/usr/bin/chromium",
 ].find(existsSync);
 if (!browser) throw new Error("No Edge or Chrome found to print the PDF.");

@@ -53,8 +53,8 @@ public static partial class FactsPosting
     public const string AdvanceMode = "ADVANCE";
 
     /// <summary>
-    /// ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostDeposit.sql): a till's bank deposit as a posted QRV50
-    /// (Dr the bank collection account, Cr the outlet's cash account), the slip as its reference.
+    /// ONE POS' procedure in FACTS (db/facts/usp_ONEPOS_PostDeposit.sql): a till's bank deposit as a QRV50 saved
+    /// unposted (accounts post it in FACTS: Dr the bank collection account, Cr the outlet's cash account), the slip as its reference.
     /// </summary>
     public const string PostDepositProc = "usp_ONEPOS_PostDeposit";
     /// <summary>The bank account deposits are paid into (EIB - COLLECTION), the QRV50's Others account.</summary>
@@ -441,7 +441,7 @@ public static partial class FactsPosting
 
     /// <summary>
     /// A bank deposit recorded on a till, where the company posts deposits to FACTS and the branch posts from that day: queued for
-    /// ONE POS' procedure (<see cref="PostDepositProc"/>) as a posted QRV50 from the outlet's cash account to the bank.
+    /// ONE POS' procedure (<see cref="PostDepositProc"/>) as an unposted QRV50 from the outlet's cash account to the bank.
     /// </summary>
     public static async Task EnqueueDepositAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid depositId)
     {
@@ -599,7 +599,7 @@ public static partial class FactsPosting
             if (body.Wastage is not (null or "finance" or "draft")) throw new DomainException("Wastage is entered by finance, or sent as a draft STV50.");
             if (body.Repacking is not (null or "off" or "draft" or "posted")) throw new DomainException("BOM items' repacking is off, a draft RPO50 per day, or a posted RPO50 per bill.");
             if (body.Advances is not (null or "off" or "qrv51")) throw new DomainException("Future orders' advances are not posted, or posted as QRV51.");
-            if (body.Deposits is not (null or "off" or "qrv50")) throw new DomainException("Bank deposits are not posted, or posted as QRV50.");
+            if (body.Deposits is not (null or "off" or "qrv50")) throw new DomainException("Bank deposits are not sent, or saved in FACTS as QRV50.");
             await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 var old = await c.QuerySingleAsync<(bool Posting, string Refunds, string? Proc, string? InvoiceProc, string Wastage, string Repacking, string Advances, string Deposits)>(
@@ -619,7 +619,7 @@ public static partial class FactsPosting
                      new("Wastage", old.Wastage == "draft" ? "Draft STV from ONE POS" : "Finance enters", wastage == "draft" ? "Draft STV from ONE POS" : "Finance enters"),
                      new("BOM repacking", RepackingLabel(old.Repacking), RepackingLabel(repacking)),
                      new("Future order advances", old.Advances == "qrv51" ? "QRV51" : "Not posted", advances == "qrv51" ? "QRV51" : "Not posted"),
-                     new("Bank deposits", old.Deposits == "qrv50" ? "Posted QRV50" : "Not posted", deposits == "qrv50" ? "Posted QRV50" : "Not posted")]);
+                     new("Bank deposits", old.Deposits == "qrv50" ? "QRV50 (not posted)" : "Not sent", deposits == "qrv50" ? "QRV50 (not posted)" : "Not sent")]);
                 return 0;
             });
             return Results.Ok(new { ok = true });

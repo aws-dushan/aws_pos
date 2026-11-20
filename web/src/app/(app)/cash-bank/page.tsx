@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 type Day = { date: string; broughtForward: number; cashSales: number; refunds: number; added: number; remarks: string | null; deposited: number; carriedForward: number };
 type Deposit = { date: string; amount: number; bagNo: string | null; takenBy: string; register: string | null; at: string; factsStatus: string | null; factsDoc: string | null };
 
-/** A deposit's QRV50 in FACTS: its number once posted, else where it is. */
+/** A deposit's QRV50 in FACTS: its number once sent (accounts post it there), else where it is. */
 const factsLabel = (status: string | null, doc: string | null) =>
   status === "posted" ? `QRV50 ${doc ?? ""}`.trim() : status === "pending" ? "Sending…" : status === "failed" ? "Failed (see FACTS posting)" : status === "skipped" ? "Left out" : "—";
 type BranchOwed = { id: string; code: string; name: string; owed: number; oldest: string | null };

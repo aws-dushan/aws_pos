@@ -3,7 +3,7 @@ CREATE PROCEDURE dbo.usp_ONEPOS_PostDeposit
     @BodyXML  XML
 AS
 /*
-  One POS by AWS Distribution - an outlet's bank deposit into FACTS, POSTED.                              Created 16-11-2026 for One POS.
+  ONE POS - an outlet's bank deposit into FACTS, SAVED, NOT POSTED.             Created 16-11-2026, changed 20-11-2026 for ONE POS.
 
   The cashier takes cash from the drawer to the bank and records it on the till (amount, bag / bank slip number, who takes it).
   One QRV50 (Quick Receipt Voucher) per deposit, dated the deposit's business day, saved the way FACTS' screen saves a QRV in
@@ -11,11 +11,11 @@ AS
   e.g. ERBQS CASH -> 2205), without a sub-ledger (the cash accounts have none, so FACTS' posting doesn't ask for one); the Others
   account (debited) is the bank collection account (2322 EIB - COLLECTION unless the XML says another); the default cash account
   (2202) is not touched. Division 50. Ref no = the bag / slip number. No department, no salesman.
-  Posted the way FACTS' Approve button posts it: usp_ApproveDocuments, step usp_QRV_APPR_AccountsUpdation, which writes
-  ACTION_STATUS and its log. Ledger: Dr 2322, Cr the outlet cash account.
+  The QRV50 is left unposted: accounts check it against the bank and post it with FACTS' Approve button
+  (Transaction Posting). Only then the ledger shows Dr 2322, Cr the outlet cash account.
 
-  The same DepositId again (a retry, kept in QRP_UD_LABEL5) finds the QRV50 already posted and answers it. If FACTS refuses, nothing stays: the unposted
-  QRV50 is removed again, and the answer is FAILED with FACTS' message.
+  The same DepositId again (a retry, kept in QRP_UD_LABEL5) finds the QRV50 already saved (posted or not) and answers it;
+  it never saves a second one, and never removes or changes one already saved.
 
   XML:  <data><Deposit>
           <DepositId>(One POS' id of the deposit)</DepositId> <DocDate>2026-11-16</DocDate> <LocationCode>ERBQS</LocationCode>
@@ -29,7 +29,7 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @FyCode NVARCHAR(6) = N'CFY', @DocType NVARCHAR(6) = N'QRV50', @Key NVARCHAR(50) = N'usp_QRV_APPR_AccountsUpdation',
+    DECLARE @FyCode NVARCHAR(6) = N'CFY', @DocType NVARCHAR(6) = N'QRV50',
             @Id NVARCHAR(40)        = @BodyXML.value('(/data/Deposit/DepositId)[1]', 'NVARCHAR(40)'),
             @DocDate DATETIME       = @BodyXML.value('(/data/Deposit/DocDate)[1]', 'DATETIME'),
             @Mode NVARCHAR(100)     = @BodyXML.value('(/data/Deposit/CashMode)[1]', 'NVARCHAR(100)'),
@@ -69,34 +69,26 @@ BEGIN
     SET @Tag = LEFT(N'ONEPOS ' + @Id, 50);
     SET @Narr = LEFT(ISNULL(NULLIF(@Narr, N''), N'Deposit ' + @Slip), 2000);
 
-    -- Sent before (a retry): posted -> answered as is.
-    SELECT TOP 1 @DocNo = QRP_DOCNO FROM dbo.QRP_HEADER
-    WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_UD_LABEL5 = @Tag
-      AND EXISTS (SELECT 1 FROM dbo.ACTION_STATUS WHERE ACTION_FYCODE = QRP_FYCODE AND ACTION_DOCTYPE = QRP_DOCTYPE AND ACTION_DOCNO = QRP_DOCNO AND ACTION_KEY = @Key);
-    IF @DocNo IS NOT NULL
-    BEGIN
-        SELECT @DocNo AS DocumentNo, 'SUCCESS' AS status, N'Already posted.' AS description;
-        RETURN;
-    END
-
     BEGIN TRY
         BEGIN TRANSACTION;
         DECLARE @lock INT;
         EXEC @lock = sp_getapplock @Resource = N'ONEPOS_QRV50_NUMBER', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;
         IF @lock < 0 THROW 50001, 'The QRV50 numbering is busy; try again.', 1;
 
-        -- Leftover of an earlier try that FACTS didn't post (not normally there): removed, then saved again under its number.
-        SELECT TOP 1 @DocNo = QRP_DOCNO FROM dbo.QRP_HEADER WITH (UPDLOCK)
+        -- Sent before (a retry): the QRV50 already saved is answered as is, posted or not.
+        SELECT TOP 1 @DocNo = QRP_DOCNO FROM dbo.QRP_HEADER WITH (UPDLOCK, HOLDLOCK)
         WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_UD_LABEL5 = @Tag;
         IF @DocNo IS NOT NULL
-            DELETE FROM dbo.QRP_HEADER WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_DOCNO = @DocNo;
-        ELSE
         BEGIN
-            EXEC dbo.usp_UpdateLastNoMaster_From_Transaction_Table @DocType, NULL;
-            SET @DocNo = dbo.fn_GetNewDocNo(@DocType, '');
-            WHILE EXISTS (SELECT 1 FROM dbo.QRP_HEADER WITH (UPDLOCK, HOLDLOCK) WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_DOCNO = @DocNo)
-                SET @DocNo = dbo.fn_GetNewDocNo(@DocType, @DocNo);
+            COMMIT TRANSACTION;
+            SELECT @DocNo AS DocumentNo, 'SUCCESS' AS status, N'Already sent.' AS description;
+            RETURN;
         END
+
+        EXEC dbo.usp_UpdateLastNoMaster_From_Transaction_Table @DocType, NULL;
+        SET @DocNo = dbo.fn_GetNewDocNo(@DocType, '');
+        WHILE EXISTS (SELECT 1 FROM dbo.QRP_HEADER WITH (UPDLOCK, HOLDLOCK) WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_DOCNO = @DocNo)
+            SET @DocNo = dbo.fn_GetNewDocNo(@DocType, @DocNo);
 
         -- "Others" mode: the party (outlet cash, no sub-ledger) is credited, the Others account (the bank) debited.
         INSERT INTO dbo.QRP_HEADER (QRP_FYCODE, QRP_DOCTYPE, QRP_DOCNO, QRP_DOCDATE, QRP_NARRATION, QRP_DR_AC_DOCNO, QRP_DR_SUBLEDGER_DOCNO, QRP_CR_AC_DOCNO, QRP_CR_SUBLEDGER_DOCNO,
@@ -121,29 +113,6 @@ BEGIN
         RETURN;
     END CATCH
 
-    -- FACTS' own posting, as its Approve button runs it.
-    DECLARE @Refused NVARCHAR(400) = NULL;
-    DECLARE @Docs NVARCHAR(MAX) = N'<FACTS><PARAMETERS><COLUMN1>' + @DocType + N'</COLUMN1><COLUMN2>' + @DocNo + N'</COLUMN2></PARAMETERS></FACTS>';
-    SET XACT_ABORT OFF;
-    BEGIN TRY
-        EXEC dbo.usp_ApproveDocuments @strFyCode = @FyCode, @strDocType = @DocType, @strXmlDocDetails = @Docs, @strLoginID = @ClientID, @strKey = @Key, @strMachineId = N'One POS';
-    END TRY
-    BEGIN CATCH
-        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-        SET @Refused = LEFT(ERROR_MESSAGE(), 300);
-    END CATCH
-    SET XACT_ABORT ON;
-
-    IF NOT EXISTS (SELECT 1 FROM dbo.ACTION_STATUS WHERE ACTION_FYCODE = @FyCode AND ACTION_DOCTYPE = @DocType AND ACTION_DOCNO = @DocNo AND ACTION_KEY = @Key)
-    BEGIN
-        -- Not posted: nothing stays in FACTS (the unposted QRV50 moved no money; it is removed with its save log).
-        DELETE FROM dbo.QRP_HEADER WHERE QRP_FYCODE = @FyCode AND QRP_DOCTYPE = @DocType AND QRP_DOCNO = @DocNo;
-        DELETE FROM dbo.ACCOUNT_TRANSACTION WHERE ACTRN_FYCODE = @FyCode AND ACTRN_DOCTYPE = @DocType AND ACTRN_DOCNO = @DocNo;
-        DELETE FROM dbo.ADD_EDIT_DELETE_LOG WHERE AED_FYCODE = @FyCode AND AED_DOCTYPE = @DocType AND AED_DOCNO = @DocNo AND AED_MACHINE_ID = N'One POS' AND AED_STATUS = 'A';
-        SELECT NULL AS DocumentNo, 'FAILED' AS status,
-               LEFT(N'FACTS did not post the QRV50: ' + ISNULL(@Refused, N'its posting step refused it') + N'. Nothing was saved in FACTS.', 400) AS description;
-        RETURN;
-    END
-
-    SELECT @DocNo AS DocumentNo, 'SUCCESS' AS status, N'QRV50 posted.' AS description;
+    -- Not posted here: accounts post it in FACTS.
+    SELECT @DocNo AS DocumentNo, 'SUCCESS' AS status, N'QRV50 saved, not posted.' AS description;
 END

@@ -651,7 +651,7 @@ public static class Days
                 var depositId = await c.ExecuteScalarAsync<Guid>("insert into bank_deposit (company_id, branch_id, business_day_id, amount, bag_no, taken_by, recorded_by, shift_id) values (@co, @b, @d, @amount, @bag, @who, @u, @id) returning id",
                     new { co = scope.CompanyId, b = scope.Branch, d = s.BusinessDayId, amount, bag, who, u = scope.UserId, id }, tx);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, scope.Branch, scope.UserId, "shift", id.ToString(), "deposit", $"Bank deposit {amount:N2} from the drawer, taken by {who}", note: bag);
-                // FACTS: a posted QRV50 (bank in, outlet cash out), where the company posts deposits.
+                // FACTS: a QRV50 saved unposted (bank in, outlet cash out; accounts post it), where the company sends deposits.
                 await Erp.FactsPosting.EnqueueDepositAsync(c, tx, depositId);
                 return 0;
             });

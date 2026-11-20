@@ -3,9 +3,10 @@
 #:package System.Security.Cryptography.Pkcs@10.0.13
 #:package Npgsql@10.0.3
 // Creates ONE One POS procedure in a company's FACTS database (the user's go-ahead is needed for every run).
-//   dotnet run tools/facts-create-proc.cs --no-cache -- <file.sql> <COMPANY CODE>
+//   dotnet run tools/facts-create-proc.cs --no-cache -- <file.sql> <COMPANY CODE> [--replace]
 // Guarded: the file must be a single "CREATE PROCEDURE dbo.usp_ONEPOS_…" and nothing else; an existing procedure of that name is
-// left as it is (never replaced). Uses the company's saved FACTS connection (never printed), not read-only.
+// left as it is, unless --replace: then its current text is saved to data/facts-proc-backups/ first and it is ALTERed.
+// Uses the company's saved FACTS connection (never printed), not read-only.
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
@@ -18,6 +19,8 @@ var m = Regex.Match(sql, @"^CREATE\s+PROCEDURE\s+dbo\.(usp_ONEPOS_[A-Za-z0-9_]+)
 if (!m.Success) { Console.WriteLine("Refused: the file must start with CREATE PROCEDURE dbo.usp_ONEPOS_<name>."); return 1; }
 if (Regex.IsMatch(sql, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)) { Console.WriteLine("Refused: one batch only (no GO)."); return 1; }
 var name = m.Groups[1].Value;
+var replace = args.Skip(2).Contains("--replace");
+var exists = false;
 
 var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
 root = Directory.Exists(Path.Combine(root, "data", "keys")) ? root : @"C:\Users\Saboor.a\Desktop\AWS One POS_Restaurant";
@@ -40,13 +43,25 @@ await f.OpenAsync();
 await using (var chk = new SqlCommand("select count(*) from sys.procedures where name = @n and schema_id = schema_id('dbo')", f))
 {
     chk.Parameters.AddWithValue("n", name);
-    if ((int)(await chk.ExecuteScalarAsync())! > 0) { Console.WriteLine($"dbo.{name} already exists: left as it is."); return 0; }
+    exists = (int)(await chk.ExecuteScalarAsync())! > 0;
+    if (exists && !replace) { Console.WriteLine($"dbo.{name} already exists: left as it is."); return 0; }
+}
+if (exists)
+{
+    await using var def = new SqlCommand("select object_definition(object_id(@n))", f);
+    def.Parameters.AddWithValue("n", "dbo." + name);
+    var old = (string)(await def.ExecuteScalarAsync())!;
+    var dir = Directory.CreateDirectory(Path.Combine(root, "data", "facts-proc-backups"));
+    var file = Path.Combine(dir.FullName, $"{name}-{args[1]}-{DateTime.UtcNow:yyyyMMdd-HHmmss}Z.sql");
+    File.WriteAllText(file, old);
+    Console.WriteLine($"Old text saved: {file}");
+    sql = Regex.Replace(sql, @"^CREATE\s+PROCEDURE", "ALTER PROCEDURE", RegexOptions.IgnoreCase);
 }
 await using (var create = new SqlCommand(sql, f) { CommandTimeout = 60 })
     await create.ExecuteNonQueryAsync();
-await using (var chk = new SqlCommand("select create_date from sys.procedures where name = @n and schema_id = schema_id('dbo')", f))
+await using (var chk = new SqlCommand("select modify_date from sys.procedures where name = @n and schema_id = schema_id('dbo')", f))
 {
     chk.Parameters.AddWithValue("n", name);
-    Console.WriteLine($"Created dbo.{name} at {await chk.ExecuteScalarAsync():yyyy-MM-dd HH:mm:ss}.");
+    Console.WriteLine($"{(exists ? "Replaced" : "Created")} dbo.{name} at {await chk.ExecuteScalarAsync():yyyy-MM-dd HH:mm:ss}.");
 }
 return 0;
