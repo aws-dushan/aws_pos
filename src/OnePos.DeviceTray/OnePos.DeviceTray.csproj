@@ -9,7 +9,7 @@
     <RootNamespace>OnePos.DeviceTray</RootNamespace>
     <AssemblyName>OnePos.DeviceTray</AssemblyName>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
