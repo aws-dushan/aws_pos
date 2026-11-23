@@ -151,8 +151,19 @@ public static class FutureOrders
             if (o.Paid > o.Total)
                 throw new DomainException($"The advance ({o.Paid:N2}) is more than the order now ({o.Total:N2}). Add the items back, or cancel the order to refund it.");
             var day = (await Days.CurrentAsync(c, tx, o.BranchId, scope.UserId)).Date;
-            await c.ExecuteAsync("update pos_order set future_status = 'collected', business_date = @day, register_id = coalesce(@reg, register_id) where id = @id",
-                new { id, day, reg = scope.RegisterId }, tx);
+            // It becomes today's bill, so it takes today's next order number: the one from the day it was taken would clash with
+            // today's orders (two orders with the same number on one day can't be saved).
+            var moved = o.BusinessDate != day;
+            await c.ExecuteAsync("""
+                update pos_order set future_status = 'collected', business_date = @day, number = case when @moved then null else number end,
+                                     register_id = coalesce(@reg, register_id) where id = @id
+                """, new { id, day, moved, reg = scope.RegisterId }, tx);
+            if (moved)
+            {
+                o.BusinessDate = day;
+                o.Number = null;
+                await Orders.NumberAsync(c, tx, o);
+            }
             await Audit.RecordAsync(c, tx, o.CompanyId, o.BranchId, scope.UserId, "order", id.ToString(), "collected",
                 $"Future order {o.FutureRef} collected: advance {o.Paid:N2}, balance {o.Due:N2}");
             if (o.Due <= 0)

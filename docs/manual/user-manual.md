@@ -256,7 +256,7 @@ An order for a later day (a cake for Saturday): the customer pays an advance now
 
    ![Collecting an order paid in full](images/future-collect.jpg)
 
-The advance counts in the shift and day it was taken; the balance in the day it is collected. The tax invoice is dated the collection day and shows each advance with its date and number, then the balance as paid.
+The advance counts in the shift and day it was taken; the balance in the day it is collected. On collection the order takes that day's next order number. The tax invoice is dated the collection day and shows each advance with its date and number, then the balance as paid.
 
 ![The tax invoice on collection: the advance, then the balance](images/future-invoice.jpg)
 

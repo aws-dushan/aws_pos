@@ -140,7 +140,7 @@ the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the c
 A future order (`Pos/FutureOrders.cs`) is an order with a collection time (`pos_order.collect_at`, `future_status` waiting →
 collected / cancelled, `future_ref` FO-…). While it waits, every payment on it is an advance (`payment.is_advance`, its own
 number `advance_no`), counted in the shift and day it was taken; the order stays open even when paid in full. Collecting moves
-the order to that business day, so its tax invoice and POS51 are dated the collection day; the balance is paid as on any bill.
+the order to that business day and gives it that day's next order number, so its tax invoice and POS51 are dated the collection day; the balance is paid as on any bill.
 With the QRV51 option, each advance is queued as `advance` (`payment_id`); the bill's XML takes the posted advances as one
 `ADVANCE` receipt line, and the sender holds the bill until they are posted. An advance left out of FACTS is sent on the bill as
 a normal payment instead (the bill is rebuilt). The bill's XML also carries `FutureOrder` (FO number and its posted advance

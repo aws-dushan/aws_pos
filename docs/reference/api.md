@@ -209,7 +209,7 @@
 | GET | `/api/future-orders` | pos.sell | src/OnePos.Api/Pos/FutureOrders.cs:61 |
 | POST | `/api/future-orders` | pos.sell | src/OnePos.Api/Pos/FutureOrders.cs:98 |
 | PUT | `/api/future-orders/{id:guid}` |  | src/OnePos.Api/Pos/FutureOrders.cs:125 |
-| POST | `/api/future-orders/{id:guid}/cancel` | day.manage | src/OnePos.Api/Pos/FutureOrders.cs:170 |
+| POST | `/api/future-orders/{id:guid}/cancel` | day.manage | src/OnePos.Api/Pos/FutureOrders.cs:181 |
 | POST | `/api/future-orders/{id:guid}/collect` |  | src/OnePos.Api/Pos/FutureOrders.cs:146 |
 | POST | `/api/future-orders/{id:guid}/ready` |  | src/OnePos.Api/Pos/FutureOrders.cs:138 |
 
@@ -276,32 +276,32 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/orders` | pos.sell | src/OnePos.Api/Pos/Orders.cs:265 |
-| POST | `/api/orders` | pos.sell, day.shift | src/OnePos.Api/Pos/Orders.cs:221 |
-| DELETE | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:243 |
-| GET | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:287 |
-| PUT | `/api/orders/{id:guid}` | pos.discount | src/OnePos.Api/Pos/Orders.cs:314 |
+| GET | `/api/orders` | pos.sell | src/OnePos.Api/Pos/Orders.cs:273 |
+| POST | `/api/orders` | pos.sell, day.shift | src/OnePos.Api/Pos/Orders.cs:229 |
+| DELETE | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:251 |
+| GET | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:295 |
+| PUT | `/api/orders/{id:guid}` | pos.discount | src/OnePos.Api/Pos/Orders.cs:322 |
 | POST | `/api/orders/{id:guid}/bill` |  | src/OnePos.Api/Pos/OrderTables.cs:128 |
 | POST | `/api/orders/{id:guid}/customer` |  | src/OnePos.Api/Pos/Customers.cs:199 |
 | POST | `/api/orders/{id:guid}/discount` |  | src/OnePos.Api/Pos/Discounts.cs:205 |
-| POST | `/api/orders/{id:guid}/lines` |  | src/OnePos.Api/Pos/Orders.cs:372 |
-| DELETE | `/api/orders/{id:guid}/lines/{lineId:guid}` | pos.void | src/OnePos.Api/Pos/Orders.cs:473 |
-| PUT | `/api/orders/{id:guid}/lines/{lineId:guid}` |  | src/OnePos.Api/Pos/Orders.cs:451 |
+| POST | `/api/orders/{id:guid}/lines` |  | src/OnePos.Api/Pos/Orders.cs:380 |
+| DELETE | `/api/orders/{id:guid}/lines/{lineId:guid}` | pos.void | src/OnePos.Api/Pos/Orders.cs:481 |
+| PUT | `/api/orders/{id:guid}/lines/{lineId:guid}` |  | src/OnePos.Api/Pos/Orders.cs:459 |
 | POST | `/api/orders/{id:guid}/lines/{lineId:guid}/discount` |  | src/OnePos.Api/Pos/Discounts.cs:234 |
 | DELETE | `/api/orders/{id:guid}/lock` |  | src/OnePos.Api/Pos/OrderTables.cs:87 |
 | POST | `/api/orders/{id:guid}/lock` | pos.sell | src/OnePos.Api/Pos/OrderTables.cs:71 |
 | POST | `/api/orders/{id:guid}/merge` |  | src/OnePos.Api/Pos/OrderTables.cs:106 |
-| POST | `/api/orders/{id:guid}/pay` |  | src/OnePos.Api/Pos/Orders.cs:495 |
+| POST | `/api/orders/{id:guid}/pay` |  | src/OnePos.Api/Pos/Orders.cs:503 |
 | PUT | `/api/orders/{id:guid}/pickup` | pos.sell, kitchen.view | src/OnePos.Api/Pos/Pickup.cs:85 |
 | POST | `/api/orders/{id:guid}/platform-offer` |  | src/OnePos.Api/Pos/Discounts.cs:264 |
-| GET | `/api/orders/{id:guid}/receipt` | reports.view, facts.post, day.manage, pos.sell | src/OnePos.Api/Pos/Orders.cs:300 |
+| GET | `/api/orders/{id:guid}/receipt` | reports.view, facts.post, day.manage, pos.sell | src/OnePos.Api/Pos/Orders.cs:308 |
 | POST | `/api/orders/{id:guid}/refund` | day.manage, pos.refund | src/OnePos.Api/Pos/Returns.cs:185 |
 | POST | `/api/orders/{id:guid}/return` |  | src/OnePos.Api/Pos/Returns.cs:95 |
 | POST | `/api/orders/{id:guid}/return-bill` | day.manage | src/OnePos.Api/Pos/Returns.cs:141 |
-| POST | `/api/orders/{id:guid}/send` |  | src/OnePos.Api/Pos/Orders.cs:489 |
+| POST | `/api/orders/{id:guid}/send` |  | src/OnePos.Api/Pos/Orders.cs:497 |
 | POST | `/api/orders/{id:guid}/split` | pos.sell | src/OnePos.Api/Pos/OrderTables.cs:134 |
 | PUT | `/api/orders/{id:guid}/tables` |  | src/OnePos.Api/Pos/OrderTables.cs:96 |
-| POST | `/api/orders/{id:guid}/void` | pos.void | src/OnePos.Api/Pos/Orders.cs:578 |
+| POST | `/api/orders/{id:guid}/void` | pos.void | src/OnePos.Api/Pos/Orders.cs:586 |
 | GET | `/api/orders/paper` | day.manage | src/OnePos.Api/Pos/Paper.cs:100 |
 | POST | `/api/orders/paper` | day.manage | src/OnePos.Api/Pos/Paper.cs:23 |
 

@@ -199,16 +199,24 @@ public static class Orders
 
     /// <summary>
     /// Gives the order its number when its first item is added: 1, 2, 3 … per business day and branch, allocated inside this
-    /// transaction (no doubles). An order started and left empty never takes one.
+    /// transaction (no doubles). An order started and left empty never takes one. A number already used that day (an order
+    /// moved onto the day with its number, or a counter behind its orders) is skipped, so the register never gets stuck on it.
     /// </summary>
     public static async Task NumberAsync(NpgsqlConnection c, NpgsqlTransaction tx, OrderRow o)
     {
         if (o.Number is not null) return;
-        var number = await c.ExecuteScalarAsync<int>("""
-            insert into number_series (company_id, branch_id, series, next_no) values (@co, @b, @series, 2)
-            on conflict (branch_id, series) do update set next_no = number_series.next_no + 1
-            returning next_no - 1
-            """, new { co = o.CompanyId, b = o.BranchId, series = $"order:{o.BusinessDate:yyyy-MM-dd}" }, tx);
+        int number;
+        do
+        {
+            number = await c.ExecuteScalarAsync<int>("""
+                insert into number_series (company_id, branch_id, series, next_no) values (@co, @b, @series, 2)
+                on conflict (branch_id, series) do update set next_no = number_series.next_no + 1
+                returning next_no - 1
+                """, new { co = o.CompanyId, b = o.BranchId, series = $"order:{o.BusinessDate:yyyy-MM-dd}" }, tx);
+        }
+        while (await c.ExecuteScalarAsync<bool>(
+            "select exists (select 1 from pos_order where branch_id = @b and business_date = @d and number = @number)",
+            new { b = o.BranchId, d = o.BusinessDate, number }, tx));
         await c.ExecuteAsync("update pos_order set number = @number where id = @id and number is null", new { number, o.Id }, tx);
         o.Number = number;
     }
