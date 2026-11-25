@@ -628,7 +628,9 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 
 **Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. **On at these branches** picks the branches that take its orders: only they see it at the register and on Prices. A new platform starts on at the branch in the header; tap a branch to switch it on or off. Each platform shows the branches it is on at, and is greyed out where it is off at the header branch. A new branch has no platforms until they are switched on for it. **FACTS payment method** picks, for each of those branches, what its bills are paid by in FACTS (e.g. ERBQS TALABAT). It starts on the method whose name matches the platform; **Not chosen: its bills can't post** means none was found, so choose one. A platform missing one at a branch shows **FACTS payment method not chosen** in red. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
 
-![Delivery platforms](images/platforms.jpg)
+![Delivery platforms: each one with its commission and the branches it is on at](images/platforms.jpg)
+
+![A platform: its branches and the FACTS payment method at each](images/platform-dialog.jpg)
 
 ## Devices
 
