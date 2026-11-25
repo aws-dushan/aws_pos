@@ -10,7 +10,7 @@ namespace OnePos.Api.Pos;
 /// </summary>
 public static class Platforms
 {
-    public sealed record PlatformBody(string Name, decimal CommissionPct, bool? IsActive, int? Sort, decimal? BankFeePct = null);
+    public sealed record PlatformBody(string Name, decimal CommissionPct, bool? IsActive, int? Sort, decimal? BankFeePct = null, Guid[]? BranchIds = null, Dictionary<Guid, string?>? PaymentModes = null);
     public sealed record SettingsBody(bool PayoutsEnabled);
     public sealed record PayoutBody(Guid PlatformId, DateOnly ReceivedOn, DateOnly? PeriodFrom, DateOnly? PeriodTo, decimal Amount, decimal? Commission, string? Reference, string? Note, decimal? BankFee = null);
 
@@ -49,6 +49,12 @@ public static class Platforms
         public decimal BankFeePct { get; set; }
         public bool IsActive { get; set; }
         public int Sort { get; set; }
+        /// <summary>The branches it is switched on at: only they take its orders and see it at the register and on Prices.</summary>
+        public Guid[] BranchIds { get; set; } = [];
+        /// <summary>On at the branch asking (the header branch, or the till's).</summary>
+        public bool Here { get; set; }
+        /// <summary>Per branch it is on at: the FACTS payment method (code) its bills post with there.</summary>
+        public Dictionary<Guid, string> PaymentModes { get; set; } = [];
         /// <summary>The platform's FACTS customer (e.g. AR-D0005); its FACTS prices are the platform's prices.</summary>
         public string? FactsCustomer { get; set; }
         public string? FactsCustomerName { get; set; }
@@ -83,16 +89,66 @@ public static class Platforms
         return b with { Name = name };
     }
 
+    /// <summary>
+    /// The FACTS payment method per branch its bills post with: only branches it is on at, only that branch's synced methods.
+    /// Returns the choice as words for the audit.
+    /// </summary>
+    private static async Task<string> SaveModesAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Guid companyId, Guid platformId, Guid[] branchIds, Dictionary<Guid, string?> modes)
+    {
+        var chosen = modes.Where(m => branchIds.Contains(m.Key) && !string.IsNullOrWhiteSpace(m.Value)).Select(m => (Branch: m.Key, Code: m.Value!.Trim())).ToList();
+        var known = (await c.QueryAsync<(Guid Branch, string Code)>("select branch_id, code from erp_payment_mode where branch_id = any(@b)",
+            new { b = chosen.Select(x => x.Branch).ToArray() }, tx)).ToHashSet();
+        if (chosen.Any(x => !known.Contains((x.Branch, x.Code)))) throw new DomainException("A FACTS payment method isn't one of that branch's. Reload the page.");
+        await c.ExecuteAsync("delete from platform_payment_mode where platform_id = @platformId", new { platformId }, tx);
+        foreach (var x in chosen)
+            await c.ExecuteAsync("insert into platform_payment_mode (company_id, platform_id, branch_id, mode_code) values (@companyId, @platformId, @Branch, @Code)",
+                new { companyId, platformId, x.Branch, x.Code }, tx);
+        return await ModesTextAsync(c, tx, platformId);
+    }
+
+    private static async Task<string> ModesTextAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Guid platformId)
+    {
+        var rows = (await c.QueryAsync<string>("""
+            select coalesce(m.name, pm.mode_code) from platform_payment_mode pm left join erp_payment_mode m on m.branch_id = pm.branch_id and m.code = pm.mode_code
+            where pm.platform_id = @platformId order by 1
+            """, new { platformId }, tx)).ToList();
+        return rows.Count > 0 ? string.Join(", ", rows) : "none";
+    }
+
+    /// <summary>The chosen branches that are this company's (others dropped), and their names for the audit.</summary>
+    private static async Task<(Guid[] Ids, string Names)> BranchesAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Guid[] ids)
+    {
+        var rows = (await c.QueryAsync<(Guid Id, string Name)>("select id, name from branch where id = any(@ids) order by name", new { ids }, tx)).ToList();
+        return (rows.Select(r => r.Id).ToArray(), rows.Count == 0 ? "none" : string.Join(", ", rows.Select(r => r.Name)));
+    }
+
     public static void Map(RouteGroupBuilder api)
     {
         api.MapGet("/platforms", async (HttpContext http, Db db) =>
         {
             var scope = await http.ScopeAsync(db);
             if (!scope.Can("pos.sell") && !scope.Can("reports.view")) scope.Require("branch.manage");
-            return await db.Company(scope.CompanyId, (c, tx) => c.QueryAsync<Row>("""
-                select dp.*, (select count(distinct pp.item_id) from platform_item_price pp where pp.platform_id = dp.id)::int as facts_priced
+            return await db.Company(scope.CompanyId, async (c, tx) =>
+            {
+                var rows = (await c.QueryAsync<Row>("""
+                select dp.*, (select count(distinct pp.item_id) from platform_item_price pp where pp.platform_id = dp.id)::int as facts_priced,
+                       coalesce(@b = any(dp.branch_ids), false) as here
                 from delivery_platform dp order by dp.is_active desc, dp.sort, dp.name
-                """, transaction: tx));
+                """, new { b = scope.BranchId }, tx)).ToList();
+                var modes = (await c.QueryAsync<(Guid Platform, Guid Branch, string Code)>("select platform_id, branch_id, mode_code from platform_payment_mode", transaction: tx)).ToList();
+                foreach (var r in rows) r.PaymentModes = modes.Where(m => m.Platform == r.Id).ToDictionary(m => m.Branch, m => m.Code);
+                return rows;
+            });
+        });
+
+        // Every branch's FACTS payment methods a platform's bills can post with (platform ones first), for its per-branch choice.
+        api.MapGet("/platforms/payment-modes", async (HttpContext http, Db db) =>
+        {
+            var scope = await http.ScopeAsync(db);
+            scope.Require("branch.manage");
+            return await db.Company(scope.CompanyId, async (c, tx) => (await c.QueryAsync<(Guid BranchId, string Code, string Name, string Kind, string Label)>(
+                "select branch_id, code, name, kind, label from erp_payment_mode where kind <> 'cash' order by branch_id, kind <> 'platform', label", transaction: tx))
+                .Select(m => new { m.BranchId, m.Code, m.Name, m.Kind, m.Label }).ToList());
         });
 
         // FACTS customers to link a platform to (receivable accounts, e.g. AR-D0005 DELIVERY HERO TALABAT), by code or name.
@@ -153,9 +209,12 @@ public static class Platforms
                 if (await c.ExecuteScalarAsync<bool>("select exists (select 1 from delivery_platform where lower(name) = lower(@Name))", new { b.Name }, tx))
                     throw new ConflictException($"{b.Name} is already on the list.");
                 var sort = b.Sort ?? await c.ExecuteScalarAsync<int>("select coalesce(max(sort), 0) + 1 from delivery_platform", transaction: tx);
-                var id = await c.ExecuteScalarAsync<Guid>("insert into delivery_platform (company_id, name, commission_pct, bank_fee_pct, sort) values (@co, @Name, @CommissionPct, @fee, @sort) returning id",
-                    new { co = scope.CompanyId, b.Name, b.CommissionPct, fee = b.BankFeePct ?? 0, sort }, tx);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "created", $"Delivery platform {b.Name} added ({b.CommissionPct:0.##} %)");
+                // A new platform is on at the branch it was added at, unless branches were chosen.
+                var (branchIds, names) = await BranchesAsync(c, tx, b.BranchIds ?? (scope.BranchId is { } here ? [here] : []));
+                var id = await c.ExecuteScalarAsync<Guid>("insert into delivery_platform (company_id, name, commission_pct, bank_fee_pct, sort, branch_ids) values (@co, @Name, @CommissionPct, @fee, @sort, @branchIds) returning id",
+                    new { co = scope.CompanyId, b.Name, b.CommissionPct, fee = b.BankFeePct ?? 0, sort, branchIds }, tx);
+                var modeText = b.PaymentModes is null ? "none" : await SaveModesAsync(c, tx, scope.CompanyId, id, branchIds, b.PaymentModes);
+                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "created", $"Delivery platform {b.Name} added ({b.CommissionPct:0.##} %), on at: {names}; FACTS payment: {modeText}");
                 return await c.QuerySingleAsync<Row>("select * from delivery_platform where id = @id", new { id }, tx);
             });
             await live.ToCompany(scope.CompanyId, "platforms.changed");
@@ -172,10 +231,18 @@ public static class Platforms
                 var old = await c.QuerySingleOrDefaultAsync<Row>("select * from delivery_platform where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Platform not found.");
                 if (await c.ExecuteScalarAsync<bool>("select exists (select 1 from delivery_platform where lower(name) = lower(@Name) and id <> @id)", new { b.Name, id }, tx))
                     throw new ConflictException($"{b.Name} is already on the list.");
-                await c.ExecuteAsync("update delivery_platform set name = @Name, commission_pct = @CommissionPct, bank_fee_pct = coalesce(@BankFeePct, bank_fee_pct), is_active = coalesce(@IsActive, is_active), sort = coalesce(@Sort, sort) where id = @id",
-                    new { id, b.Name, b.CommissionPct, b.BankFeePct, b.IsActive, b.Sort }, tx);
+                var (_, oldNames) = await BranchesAsync(c, tx, old.BranchIds);
+                var oldModes = await ModesTextAsync(c, tx, id);
+                var (branchIds, names) = b.BranchIds is null ? (old.BranchIds, oldNames) : await BranchesAsync(c, tx, b.BranchIds);
+                await c.ExecuteAsync("update delivery_platform set name = @Name, commission_pct = @CommissionPct, bank_fee_pct = coalesce(@BankFeePct, bank_fee_pct), is_active = coalesce(@IsActive, is_active), sort = coalesce(@Sort, sort), branch_ids = @branchIds where id = @id",
+                    new { id, b.Name, b.CommissionPct, b.BankFeePct, b.IsActive, b.Sort, branchIds }, tx);
+                // The choice as sent; not sent = kept, less the branches switched off.
+                if (b.PaymentModes is not null) await SaveModesAsync(c, tx, scope.CompanyId, id, branchIds, b.PaymentModes);
+                else await c.ExecuteAsync("delete from platform_payment_mode where platform_id = @id and not (branch_id = any(@branchIds))", new { id, branchIds }, tx);
+                var newModes = await ModesTextAsync(c, tx, id);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "changed", $"Delivery platform {old.Name} changed",
-                    [new("Name", old.Name, b.Name), new("Commission %", old.CommissionPct, b.CommissionPct), new("Bank fee %", old.BankFeePct, b.BankFeePct ?? old.BankFeePct), new("Active", old.IsActive, b.IsActive ?? old.IsActive)]);
+                    [new("Name", old.Name, b.Name), new("Commission %", old.CommissionPct, b.CommissionPct), new("Bank fee %", old.BankFeePct, b.BankFeePct ?? old.BankFeePct), new("Active", old.IsActive, b.IsActive ?? old.IsActive),
+                     new("Branches", oldNames, names), new("FACTS payment method", oldModes, newModes)]);
                 return await c.QuerySingleAsync<Row>("select * from delivery_platform where id = @id", new { id }, tx);
             });
             await live.ToCompany(scope.CompanyId, "platforms.changed");
@@ -200,7 +267,9 @@ public static class Platforms
                                      where po.platform_id = p.id and pay.method = 'platform' and po.branch_id = any(@ids) and po.business_date between @from and @to), 0) as owed
                     from delivery_platform p
                     left join pos_order o on o.platform_id = p.id and o.branch_id = any(@ids) and o.business_date between @from and @to and o.status in ('paid','refunded')
-                    group by p.id, p.name, p.commission_pct, p.bank_fee_pct, p.sort order by p.sort, p.name
+                    group by p.id, p.name, p.commission_pct, p.bank_fee_pct, p.sort, p.branch_ids
+                    having p.branch_ids && @ids or exists (select 1 from pos_order po where po.platform_id = p.id and po.branch_id = any(@ids))
+                    order by p.sort, p.name
                     """, new { ids, from, to }, tx)).ToList();
                 var payouts = await PayoutsOnAsync(c, tx, scope.CompanyId);
                 // Payouts are per branch: received in these days, and what each platform still owes these branches to date.

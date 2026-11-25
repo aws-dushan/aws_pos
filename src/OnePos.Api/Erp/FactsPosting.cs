@@ -102,6 +102,8 @@ public static partial class FactsPosting
         public string Currency { get; set; } = "AED";
         public string? Cashier { get; set; }
         public string? PlatformName { get; set; }
+        /// <summary>The FACTS payment method (PM_DESC) chosen for the platform at this branch (Administration → Delivery platforms).</summary>
+        public string? PlatformMode { get; set; }
         /// <summary>The delivery platform's own order number (Talabat…), as typed at the till.</summary>
         public string? PlatformRef { get; set; }
         public DateOnly? PostFrom { get; set; }
@@ -175,7 +177,9 @@ public static partial class FactsPosting
     private const string OrderSql = """
         select o.id, o.company_id, o.branch_id, o.invoice_no, o.business_date, o.order_type, o.status, o.subtotal, o.discount_total, o.discount_pct,
                o.service_charge, o.vat, o.total, o.vat_rate, o.customer_name, o.customer_phone, o.delivery_address, o.closed_at,
-               b.erp_location_code as location, co.base_currency as currency, u.display_name as cashier, dp.name as platform_name, o.platform_ref, b.facts_post_from as post_from,
+               b.erp_location_code as location, co.base_currency as currency, u.display_name as cashier, dp.name as platform_name, o.platform_ref,
+               (select m.name from platform_payment_mode pm join erp_payment_mode m on m.branch_id = pm.branch_id and m.code = pm.mode_code
+                 where pm.platform_id = o.platform_id and pm.branch_id = o.branch_id) as platform_mode, b.facts_post_from as post_from,
                b.facts_doc_prefix as doc_prefix, case when o.discount_source = 'customer' then o.discount_name end as preapproved_label
         from pos_order o join branch b on b.id = o.branch_id join company co on co.id = o.company_id
         left join app_user u on u.id = o.opened_by left join delivery_platform dp on dp.id = o.platform_id
@@ -225,7 +229,7 @@ public static partial class FactsPosting
         // Each line's discount as the bill worked it out (its promotion / item discount, or its share of the bill discount).
         var discounts = lines.Select(l => l.Discount).ToArray();
 
-        string? Mode(string method, string? cardType) => ModeOf(modes, method, cardType, o.PlatformName);
+        string? Mode(string method, string? cardType) => ModeOf(modes, method, cardType, o.PlatformMode);
         var receipts = new List<XElement>();
         if (pays.Where(p => p.Posted).Sum(p => p.Amount) is var advanced and > 0)
             receipts.Add(new XElement("ReceiptDetails",
@@ -234,7 +238,9 @@ public static partial class FactsPosting
         foreach (var p in pays.Where(p => !p.Posted))
         {
             var mode = Mode(p.Method, p.CardType);
-            if (mode is null) problems.Add($"No FACTS payment method for {p.Method}{(p.Method == "platform" ? $" ({o.PlatformName})" : "")} at {o.Location}.");
+            if (mode is null) problems.Add(p.Method == "platform"
+                ? $"No FACTS payment method chosen for {o.PlatformName} at {o.Location} (Administration → Delivery platforms)."
+                : $"No FACTS payment method for {p.Method} at {o.Location}.");
             receipts.Add(new XElement("ReceiptDetails",
                 new XElement("ReceiptMode", mode ?? ""), new XElement("ReceiptAmount", N(p.Amount)), new XElement("ReceiptVoucherNo", ""),
                 new XElement("ReceiptChequeNo", ""), new XElement("ReceiptChequeDate", "")));
@@ -333,15 +339,13 @@ public static partial class FactsPosting
     }
 
     /// <summary>The FACTS payment method (PM_DESC, e.g. "ERBQS VISA CARD") a ONE POS payment goes as at a branch, or null.</summary>
-    private static string? ModeOf(List<(string Name, string Kind, string Label)> modes, string method, string? cardType, string? platformName)
+    private static string? ModeOf(List<(string Name, string Kind, string Label)> modes, string method, string? cardType, string? platformMode)
     {
         switch (method)
         {
             case "cash": return modes.FirstOrDefault(m => m.Kind == "cash").Name;
             case "card": return cardType ?? modes.FirstOrDefault(m => m.Kind == "card").Name;
-            case "platform":
-                var p = (platformName ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant();
-                return p is null ? null : modes.FirstOrDefault(m => m.Kind == "platform" && m.Label.Contains(p, StringComparison.OrdinalIgnoreCase)).Name;
+            case "platform": return platformMode;   // chosen per platform and branch (platform_payment_mode)
             default: return null;
         }
     }

@@ -101,7 +101,9 @@ refuses, the procedure removes what it saved, so nothing half-done stays.
 
 The same XML the old outlet POS (Polaris) sends: `/data/Invoice` with invoice number and date, currency, location, gross,
 net and VAT, `Party` (walk-in customer AR C0006; `BillToAddress` is required), `ReceiptDetails` per payment (ReceiptMode =
-the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the cashier) and `InvoiceDetails` per line
+the FACTS payment method name, e.g. "ERBQS VISA CARD"; card type picked by the cashier; a platform's payment = the method
+chosen for that platform at the branch in Administration → Delivery platforms, `platform_payment_mode`, e.g. "ERBQS TALABAT";
+none chosen = the bill waits with "No FACTS payment method chosen") and `InvoiceDetails` per line
 (item code, qty, unit, rate, discount, VAT). The unit is the line's **Sold as** unit (see Units above). Notes:
 
 - **Discounts go on the lines only**; the header discount is 0 and header gross is the lines' total after discount. FACTS

@@ -15,11 +15,15 @@ const SUGGESTED = ["Talabat", "Deliveroo", "Careem", "Noon Food", "Keeta", "Smil
 
 /** Delivery platforms (Administration): the company's list with each one's commission; the register offers the active ones on a delivery. */
 export default function PlatformsAdminPage() {
-  const { can } = useSession();
+  const { can, company } = useSession();
+  const branchName = new Map((company?.branches ?? []).map((b) => [b.id, b.name]));
   const list = useApi<Platform[]>("/platforms");
   useLiveEvent(["platforms.changed"], () => list.reload());
   const [edit, setEdit] = useState<Platform | "new" | null>(null);
   const manage = can("branch.manage");
+  // Branches with FACTS payment methods: there a platform needs one chosen for its bills to post.
+  const payModes = useApi<{ branchId: string }[]>(manage ? "/platforms/payment-modes" : null);
+  const factsBranches = new Set((payModes.data ?? []).map((m) => m.branchId));
   const settings = useApi<{ payoutsEnabled: boolean }>("/platforms/settings");
   async function setPayouts(on: boolean) {
     try {
@@ -45,25 +49,29 @@ export default function PlatformsAdminPage() {
   return (
     <div>
       <PageHeader title="Delivery platforms" icon={BikeIcon} module="bank" count={list.data?.length}
-        description="The platforms the outlets take orders from, and the commission each one takes. Their sales and what they owe are in the Delivery platform report."
+        description="The platforms the outlets take orders from, the branches each one is on at, and the commission it takes. Their sales and what they owe are in the Delivery platform report."
         actions={manage && <Button size="lg" onClick={() => setEdit("new")}><PlusIcon /> Add platform</Button>} />
       <ErrorNote message={list.error} />
       {list.loading && !list.data ? <LoadingRows rows={3} /> : list.data?.length ? (
         <div className="mb-6 flex flex-wrap gap-2">
           {list.data.map((p) => (
             <button key={p.id} type="button" disabled={!manage} onClick={() => setEdit(p)}
-              className={cn("surface flex items-center gap-3 px-4 py-3 text-left transition-transform active:scale-[0.98] disabled:active:scale-100", !p.isActive && "opacity-55")}>
+              className={cn("surface flex items-center gap-3 px-4 py-3 text-left transition-transform active:scale-[0.98] disabled:active:scale-100", (!p.isActive || !p.here) && "opacity-55")}>
               <BikeIcon className="size-5 text-mod-bank" />
               <span>
                 <span className="block font-medium">{p.name}</span>
                 <span className="block text-xs text-muted-foreground">{p.commissionPct}% commission{p.bankFeePct ? ` + ${p.bankFeePct}% bank fee` : ""}{p.factsCustomer ? ` · FACTS ${p.factsCustomer} prices (${p.factsPriced})` : " · outlet prices"}{!p.isActive ? " · not in use" : ""}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {p.branchIds.length ? `On at: ${p.branchIds.map((id) => branchName.get(id)).filter(Boolean).join(", ")}` : "Not on at any branch"}
+                  {p.branchIds.some((id) => !p.paymentModes?.[id] && factsBranches.has(id)) && <span className="text-danger"> · FACTS payment method not chosen</span>}
+                </span>
               </span>
             </button>
           ))}
         </div>
       ) : (
         <EmptyState icon={BikeIcon} title="No delivery platforms yet" module="bank" compact>
-          Add the platforms the outlets take orders from. The register then offers them on a delivery.
+          Add the platforms the outlets take orders from, and the branches each one is on at. The register there then offers them on a delivery.
         </EmptyState>
       )}
       {manage && missing.length > 0 && (

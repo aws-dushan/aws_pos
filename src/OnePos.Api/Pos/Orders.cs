@@ -338,8 +338,10 @@ public static class Orders
                 if (pid == Guid.Empty) { platformId = null; commission = null; bankFee = null; }
                 else
                 {
-                    var plat = await c.QuerySingleOrDefaultAsync<(Guid Id, decimal Pct, bool Active, decimal Fee)>("select id, commission_pct, is_active, bank_fee_pct from delivery_platform where id = @pid", new { pid }, tx);
+                    var plat = await c.QuerySingleOrDefaultAsync<(Guid Id, decimal Pct, bool Active, decimal Fee, bool Here)>(
+                        "select id, commission_pct, is_active, bank_fee_pct, @b = any(branch_ids) from delivery_platform where id = @pid", new { pid, b = o.BranchId }, tx);
                     if (plat.Id == Guid.Empty || !plat.Active) throw new DomainException("That delivery platform isn't in use.");
+                    if (!plat.Here) throw new DomainException("That delivery platform isn't switched on at this branch (Administration → Delivery platforms).");
                     platformId = plat.Id; commission = plat.Pct; bankFee = plat.Fee;
                 }
             }

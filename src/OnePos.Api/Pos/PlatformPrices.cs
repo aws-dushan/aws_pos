@@ -95,7 +95,7 @@ public static class PlatformPrices
         var rows = (await c.QueryAsync<(Guid PlatformId, string Name, Guid? ItemId, decimal? FactsPrice)>("""
             select dp.id, dp.name, pp.item_id, pp.facts_price from delivery_platform dp
             left join platform_item_price pp on pp.platform_id = dp.id and pp.location = (select upper(facts_platform_location) from branch where id = @branchId)
-            where dp.facts_customer is not null and dp.is_active
+            where dp.facts_customer is not null and dp.is_active and @branchId = any(dp.branch_ids)
             """, new { branchId }, tx)).ToList();
         return rows.GroupBy(r => (r.PlatformId, r.Name)).OrderBy(g => g.Key.Name).Select(g => new
         {

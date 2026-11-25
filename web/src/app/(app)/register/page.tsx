@@ -145,7 +145,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
   const [offerOpen, setOfferOpen] = useState(false);
   const cur = company?.currency ?? "AED";
   const menuApi = useApi<Menu>("/pos/menu");
-  const platforms = useApi<{ id: string; name: string; isActive: boolean }[]>("/platforms");
+  const platforms = useApi<{ id: string; name: string; isActive: boolean; here: boolean }[]>("/platforms");
   const loaded = useApi<OrderDetail>(`/orders/${orderId}`);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const d = detail ?? loaded.data ?? null;
@@ -405,7 +405,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
               <Segmented id="order-type" size="sm" value={o.orderType} className="w-full" options={types} onChange={(v) => { setDetailsOpen(null); void run(`/orders/${o.id}`, "PUT", { type: v }); if (v === "dine_in" && branch?.tableService && !o.tableIds.length) setDialog("tables"); }} />
               {showDetails ? (
                 <div className="space-y-2">
-                  <OrderDetailsFields order={o} currency={cur} platforms={(platforms.data ?? []).filter((p) => p.isActive)} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
+                  <OrderDetailsFields order={o} currency={cur} platforms={(platforms.data ?? []).filter((p) => p.isActive && p.here)} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
                   {!needsDetails && d.lines.length > 0 && (
                     <button type="button" onClick={() => setDetailsOpen(false)} className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                       <ChevronUpIcon className="size-3.5" /> Hide details

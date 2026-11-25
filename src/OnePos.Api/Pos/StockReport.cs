@@ -65,10 +65,10 @@ public static class StockReport
                 var vat = await c.QuerySingleAsync<(bool InclVat, decimal Rate)>(
                     "select b.facts_prices_include_vat, co.vat_rate from branch b join company co on co.id = b.company_id where b.id = @branchId", new { branchId }, tx);
                 var platforms = (await c.QueryAsync<(Guid Id, string Name)>(
-                    "select id, name from delivery_platform where facts_customer is not null and is_active order by sort, name", transaction: tx)).ToList();
+                    "select id, name from delivery_platform where facts_customer is not null and is_active and @branchId = any(branch_ids) order by sort, name", new { branchId }, tx)).ToList();
                 var prices = (await c.QueryAsync<(Guid PlatformId, Guid ItemId, decimal FactsPrice)>("""
                     select pp.platform_id, pp.item_id, pp.facts_price from platform_item_price pp join delivery_platform dp on dp.id = pp.platform_id
-                    where dp.facts_customer is not null and dp.is_active and pp.location = (select upper(facts_platform_location) from branch where id = @branchId)
+                    where dp.facts_customer is not null and dp.is_active and @branchId = any(dp.branch_ids) and pp.location = (select upper(facts_platform_location) from branch where id = @branchId)
                     """, new { branchId }, tx)).ToDictionary(p => (p.PlatformId, p.ItemId), p => Money.Round(vat.InclVat ? p.FactsPrice : p.FactsPrice * (1 + vat.Rate / 100m)));
                 foreach (var r in rows)
                     foreach (var p in platforms)

@@ -51,7 +51,7 @@ public static class Prices
             {
                 var b = await BranchAsync(c, tx, scope.Branch);
                 var platforms = (await c.QueryAsync<(Guid Id, string Name, string Customer)>(
-                    "select id, name, facts_customer from delivery_platform where facts_customer is not null and is_active order by sort, name", transaction: tx)).ToList();
+                    "select id, name, facts_customer from delivery_platform where facts_customer is not null and is_active and @b = any(branch_ids) order by sort, name", new { b = b.Id }, tx)).ToList();
                 var items = (await c.QueryAsync<(Guid Id, string Code, string? Type, string Name, string Category, decimal? Price, bool ErpPriced)>("""
                     select i.id, i.erp_item_code, i.erp_item_type, i.name, cat.name, bi.price, bi.erp_priced
                     from branch_item bi join menu_item i on i.id = bi.item_id join menu_category cat on cat.id = i.category_id
@@ -127,9 +127,9 @@ public static class Prices
                     """, new { b = b.Id, itemIds }, tx)).ToDictionary(x => x.Id);
                 if (items.Count != itemIds.Length) throw new DomainException("Some items aren't FACTS items enabled for selling at this branch. Reload the page.");
                 var platforms = (await c.QueryAsync<(Guid Id, string Name, string Customer)>(
-                    "select id, name, facts_customer from delivery_platform where facts_customer is not null and is_active", transaction: tx)).ToDictionary(x => x.Id);
+                    "select id, name, facts_customer from delivery_platform where facts_customer is not null and is_active and @b = any(branch_ids)", new { b = b.Id }, tx)).ToDictionary(x => x.Id);
                 var platformIds = changes.Where(x => x.PlatformId is not null).Select(x => x.PlatformId!.Value).Distinct().ToArray();
-                if (platformIds.Any(p => !platforms.ContainsKey(p))) throw new DomainException("A platform isn't linked to a FACTS customer. Reload the page.");
+                if (platformIds.Any(p => !platforms.ContainsKey(p))) throw new DomainException("A platform isn't linked to a FACTS customer or isn't on at this branch. Reload the page.");
                 if (changes.Any(x => x.PlatformId is null) && b.PriceType is null)
                     throw new DomainException("This branch has no FACTS price type, so its outlet prices can't be posted. Set it under Companies & branches.");
                 if (platformIds.Length > 0 && b.PlatformLocation is null)

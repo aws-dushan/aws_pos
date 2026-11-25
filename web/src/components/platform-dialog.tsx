@@ -4,29 +4,51 @@ import { useState } from "react";
 import { Loader2Icon, SearchIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
-import { timeAgo } from "@/lib/utils";
-import { Field, ObjectStatus, Switch, TONE } from "@/components/kit";
+import { cn, timeAgo } from "@/lib/utils";
+import { useSession } from "@/components/session";
+import { Field, ObjectStatus, Switch, TONE, selectClass } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 export type Platform = { id: string; name: string; commissionPct: number; bankFeePct: number; isActive: boolean; sort: number;
+  /** The branches it is on at; here = on at the header branch. */
+  branchIds: string[]; here: boolean;
+  /** Branch → the FACTS payment method (code) its bills post with there. */
+  paymentModes: Record<string, string>;
   factsCustomer: string | null; factsCustomerName: string | null; factsPriceType: string | null; factsPriceAt: string | null; factsPriced: number };
 
-/** Adds or edits a delivery platform and its commission (Administration). */
+type PayMode = { branchId: string; code: string; name: string; kind: "card" | "platform"; label: string };
+
+/** The FACTS payment method that looks like the platform's (its first word in the method's name), as the starting choice. */
+function suggest(modes: PayMode[], branchId: string, name: string) {
+  const word = name.trim().split(/\s+/)[0]?.toLowerCase();
+  return word ? modes.find((m) => m.branchId === branchId && m.kind === "platform" && m.label.toLowerCase().includes(word))?.code ?? "" : "";
+}
+
+/** Adds or edits a delivery platform, its commission, the branches it is on at and the FACTS payment method at each (Administration). */
 export function PlatformDialog({ value, onClose, onSaved }: { value: Platform | "new" | null; onClose: () => void; onSaved: () => void }) {
   const existing = value && value !== "new" ? value : null;
-  const [f, setF] = useState({ name: "", commissionPct: "", bankFeePct: "", isActive: true });
+  const { company, branch } = useSession();
+  const branches = company?.branches ?? [];
+  const payModes = useApi<PayMode[]>(value ? "/platforms/payment-modes" : null);
+  const modes = payModes.data ?? [];
+  // A branch's choice; one not touched yet shows (and saves) the method that looks like the platform's.
+  const [f, setF] = useState({ name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: [] as string[], paymentModes: {} as Record<string, string> });
+  const modeOf = (branchId: string) => f.paymentModes[branchId] ?? suggest(modes, branchId, f.name);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
   if (value !== seen) {
     setSeen(value);
-    setF(existing ? { name: existing.name, commissionPct: String(existing.commissionPct), bankFeePct: String(existing.bankFeePct ?? 0), isActive: existing.isActive } : { name: "", commissionPct: "", bankFeePct: "", isActive: true });
+    setF(existing ? { name: existing.name, commissionPct: String(existing.commissionPct), bankFeePct: String(existing.bankFeePct ?? 0), isActive: existing.isActive, branchIds: existing.branchIds ?? [], paymentModes: existing.paymentModes ?? {} }
+      : { name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: branch ? [branch.id] : [], paymentModes: {} });
   }
   async function save() {
     setBusy(true);
     try {
-      const body = { name: f.name, commissionPct: Number(f.commissionPct || 0), bankFeePct: Number(f.bankFeePct || 0), isActive: f.isActive };
+      const body = { name: f.name, commissionPct: Number(f.commissionPct || 0), bankFeePct: Number(f.bankFeePct || 0), isActive: f.isActive, branchIds: f.branchIds,
+        // Only once the methods are read, so a slow list never wipes the choice.
+        ...(payModes.data ? { paymentModes: Object.fromEntries(f.branchIds.map((id) => [id, modeOf(id) || null])) } : {}) };
       if (existing) await api(`/platforms/${existing.id}`, "PUT", body); else await api("/platforms", "POST", body);
       toast.success(existing ? "Platform saved." : `${f.name} added.`);
       onSaved();
@@ -49,6 +71,37 @@ export function PlatformDialog({ value, onClose, onSaved }: { value: Platform | 
           <Field label="Commission (%)"><Input value={f.commissionPct} inputMode="decimal" onChange={(e) => setF({ ...f, commissionPct: e.target.value })} placeholder="e.g. 25" /></Field>
           <Field label="Bank fee (%)" hint="Card / online payment fee it keeps."><Input value={f.bankFeePct} inputMode="decimal" onChange={(e) => setF({ ...f, bankFeePct: e.target.value })} placeholder="e.g. 2.5" /></Field>
         </div>
+        {branches.length > 0 && (
+          <Field label="On at these branches" hint="Only these branches see it at the register and on Prices.">
+            <div className="flex flex-wrap gap-1.5">
+              {branches.map((b) => {
+                const sel = f.branchIds.includes(b.id);
+                return (
+                  <button key={b.id} type="button" aria-pressed={sel} onClick={() => setF({ ...f, branchIds: sel ? f.branchIds.filter((x) => x !== b.id) : [...f.branchIds, b.id] })}
+                    className={cn("h-9 rounded-lg border px-3 text-sm transition-[background-color,transform] active:scale-[0.97]", sel ? "border-primary bg-primary/10 font-medium text-primary" : "bg-card hover:bg-muted")}>
+                    {b.name}
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        )}
+        {f.branchIds.some((id) => modes.some((m) => m.branchId === id)) && (
+          <Field label="FACTS payment method" hint="What its bills are paid by in FACTS at each branch.">
+            <div className="grid gap-2">
+              {branches.filter((b) => f.branchIds.includes(b.id) && modes.some((m) => m.branchId === b.id)).map((b) => (
+                <label key={b.id} className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-2 text-sm">
+                  <span className="truncate">{b.name}</span>
+                  <select className={cn(selectClass, "h-9", !modeOf(b.id) && "border-danger text-danger")} value={modeOf(b.id)} aria-label={`FACTS payment method at ${b.name}`}
+                    onChange={(e) => setF({ ...f, paymentModes: { ...f.paymentModes, [b.id]: e.target.value } })}>
+                    <option value="">Not chosen: its bills can&apos;t post</option>
+                    {modes.filter((m) => m.branchId === b.id).map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </Field>
+        )}
         {existing && (
           <div className="flex items-center justify-between rounded-xl border px-3 py-2.5">
             <span className="text-sm">In use <span className="text-muted-foreground">· off hides it at the register</span></span>

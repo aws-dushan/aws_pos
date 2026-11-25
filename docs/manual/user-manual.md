@@ -134,7 +134,7 @@ flowchart LR
 ## Delivery and platform orders
 
 - **Own delivery** needs the customer's **Phone** and **Delivery address** before it can be paid.
-- For Talabat, Deliveroo, Careem and other platforms, tap the platform's chip and type the **platform order number (needed)**. No phone or address is needed: the platform delivers. The platform's own prices apply.
+- For Talabat, Deliveroo, Careem and other platforms switched on at this branch, tap the platform's chip and type the **platform order number (needed)**. No phone or address is needed: the platform delivers. The platform's own prices apply.
 - A platform deal goes under the platform's **offer** chip: **We pay** (a discount on our bill) or **the platform pays**.
 - The platform chip and offer lock once money has been taken.
 
@@ -626,7 +626,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 
 ## Delivery platforms
 
-**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
+**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. **On at these branches** picks the branches that take its orders: only they see it at the register and on Prices. A new platform starts on at the branch in the header; tap a branch to switch it on or off. Each platform shows the branches it is on at, and is greyed out where it is off at the header branch. A new branch has no platforms until they are switched on for it. **FACTS payment method** picks, for each of those branches, what its bills are paid by in FACTS (e.g. ERBQS TALABAT). It starts on the method whose name matches the platform; **Not chosen: its bills can't post** means none was found, so choose one. A platform missing one at a branch shows **FACTS payment method not chosen** in red. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
 
 ![Delivery platforms](images/platforms.jpg)
 
