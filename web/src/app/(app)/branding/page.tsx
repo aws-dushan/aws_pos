@@ -45,12 +45,16 @@ const DETAILS: { key: "table" | "customer" | "cashier"; label: string }[] = [
 /** Receipt & display: the company logo, what this branch's receipts show (live preview), and the customer display's pictures. */
 export default function BrandingPage() {
   const { company, branch } = useSession();
-  const [tab, setTab] = useState<"receipt" | "display">("receipt");
+  const [picked, setTab] = useState<"receipt" | "display">("receipt");
+  // A branch whose receipts are off (Companies & branches → Receipt after payment) has no receipt to design: only its display.
+  const receiptsOff = branch?.printReceipts === false;
+  const tab = receiptsOff ? "display" : picked;
   return (
     <div className="pb-8">
-      <PageHeader title="Receipt & display" icon={ReceiptTextIcon} module="admin"
-        description={`The logo and receipt for ${branch?.name ?? "this branch"} of ${company?.name ?? "the company"}, and the pictures on its customer display.`}
-        actions={<Segmented id="brand-tab" value={tab} onChange={setTab} options={[{ value: "receipt", label: "Receipt", icon: ReceiptTextIcon }, { value: "display", label: "Customer display", icon: MonitorIcon }]} />} />
+      <PageHeader title={receiptsOff ? "Customer display" : "Receipt & display"} icon={receiptsOff ? MonitorIcon : ReceiptTextIcon} module="admin"
+        description={receiptsOff ? `The pictures on the customer display of ${branch?.name ?? "this branch"}. Receipts are off at this branch (Companies & branches → Receipt after payment).`
+          : `The logo and receipt for ${branch?.name ?? "this branch"} of ${company?.name ?? "the company"}, and the pictures on its customer display.`}
+        actions={receiptsOff ? undefined : <Segmented id="brand-tab" value={tab} onChange={setTab} options={[{ value: "receipt", label: "Receipt", icon: ReceiptTextIcon }, { value: "display", label: "Customer display", icon: MonitorIcon }]} />} />
       {tab === "receipt" ? <ReceiptSetup /> : <DisplayPictures />}
     </div>
   );

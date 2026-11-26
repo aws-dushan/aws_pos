@@ -570,7 +570,7 @@ Key branch settings:
 | Setting | Choices |
 | --- | --- |
 | Receipts | English and Arabic, or English only |
-| Receipt after payment | On: the receipt prints by itself when a bill is paid. Off: it prints only when someone taps **Print** on the bill (advance receipts of future orders still print) |
+| Receipt after payment | On: the receipt prints by itself when a bill is paid. Off: it prints only when someone taps **Print** on the bill (advance receipts of future orders still print), and **Receipt & display** shows only the customer display pictures |
 | Order types and payments | **Takeaway** and **Delivery** on or off (**Dine-in** comes with table service), and for each order type the payment types the till offers: **Cash**, **Card**, **Other**, **Account**, **Platform** (a delivery platform's order of that type). An order type that's on needs at least one. Voucher and Points follow the company's settings. An order type can be switched off only when it has no open orders. |
 | When stock runs short | Allow (sell anyway), Warn, Block |
 | Order-ready screen | Off, Automatic, Cashier taps ready |
