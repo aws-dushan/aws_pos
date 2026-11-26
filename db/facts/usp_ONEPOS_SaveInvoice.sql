@@ -21,6 +21,8 @@ AS
      the sale takes that batch out again. Only when that batch hasn't enough left does the line go FIFO.          (20-10-2026)
   A delivery platform's bill (Talabat, Deliveroo…) gets the platform's order number in "Cust. LPO#" (SAL_REFNO) and SAL_REF1: One POS sends it
      as /data/Invoice/PlatformOrderNo, which FACTS' own procedure ignores.                                         (24-10-2026)
+  Every bill gets its order type as delivery terms (SAL_DELTRM_DOCNO/DESC: DI DINE IN, TA TAKE AWAY, DEL DELIVERY), from
+     /data/Invoice/DeliveryMode, which FACTS' own procedure also ignores.                                         (26-11-2026)
   A future order's bill is linked to its advances (QRV51) both ways: the future order number and the QRV51 numbers in SAL_REFNO2, the
      bill in each QRV51's QRP_BEFORE_DOCTYPE/DOCNO. One POS sends them as /data/Invoice/FutureOrder.              (13-11-2026)
   3. A line no batch covers keeps no batch (for finance's batch update, as today) and is named in the answer. Giving batches
@@ -50,6 +52,17 @@ BEGIN
     DECLARE @PlatformOrderNo NVARCHAR(250) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/Invoice/PlatformOrderNo)[1]', 'NVARCHAR(250)'))), N'');
     IF @PlatformOrderNo IS NOT NULL
         UPDATE dbo.SALES_HEADER SET SAL_REFNO = @PlatformOrderNo, SAL_REF1 = @PlatformOrderNo
+        WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
+
+    -- The order type as the bill's delivery terms (SAL_DELTRM_DOCNO/DESC): One POS sends it as /data/Invoice/DeliveryMode (Dine In,
+    -- Takeaway, Delivery), which FACTS' own procedure ignores. The active delivery term with that name, spaces aside (DINE IN, TAKE AWAY,
+    -- DELIVERY); none = left empty.                                                                                (26-11-2026)
+    DECLARE @DeliveryMode NVARCHAR(200) = REPLACE(ISNULL(@BodyXML.value('(/data/Invoice/DeliveryMode)[1]', 'NVARCHAR(200)'), N''), N' ', N'');
+    DECLARE @TermNo NVARCHAR(40), @TermDesc NVARCHAR(200);
+    SELECT TOP 1 @TermNo = DELTRM_DOCNO, @TermDesc = DELTRM_DESC FROM dbo.DELIVERYTERM_MASTER
+    WHERE @DeliveryMode <> N'' AND DELTRM_ACTIVE_STATUS = 0 AND REPLACE(DELTRM_DESC, N' ', N'') = @DeliveryMode ORDER BY DELTRM_DOCNO;
+    IF @TermNo IS NOT NULL
+        UPDATE dbo.SALES_HEADER SET SAL_DELTRM_DOCNO = @TermNo, SAL_DELTRM_DESC = @TermDesc
         WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
 
     -- A future order's bill (taken earlier with advances, each a QRV51 by usp_ONEPOS_PostAdvance): linked both ways. The bill gets the

@@ -112,6 +112,7 @@ none chosen = the bill waits with "No FACTS payment method chosen") and `Invoice
   so the combo names go in the narration (`PartyName`, which FACTS reads as at most 200 characters) after the customer and any
   pre-approved discount reason: "Walk-in - Combo: Burger Meal x2, Kids Box".
 - A platform's order number goes into the POS51's customer LPO field (`SAL_REFNO`).
+- The order type goes as `DeliveryMode` (Dine In, Takeaway, Delivery). FACTS' own procedure ignores it, so `usp_ONEPOS_SaveInvoice` writes it as the bill's delivery terms (`SAL_DELTRM_DOCNO` / `SAL_DELTRM_DESC`): the active `DELIVERYTERM_MASTER` row with that name, spaces aside (DI DINE IN, TA TAKE AWAY, DEL DELIVERY). A dine-in platform order (Talabat Kitchen Dine In) is Dine In. Bills before this were set once by `db/facts/fixes/2026-11-26_pos51_delivery_terms.sql`.
 - Document numbers are at most 20 characters (`INV-<branch code>-000001`).
 - Sending the same number again makes FACTS **revise** the POS51 (old one deleted, recreated); it never doubles.
 

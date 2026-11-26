@@ -6,6 +6,7 @@ import { ErpConnectionDialog } from "@/components/erp-connection";
 import { ArmchairIcon, Building2Icon, ChefHatIcon, CoffeeIcon, DatabaseIcon, WarehouseIcon, PencilIcon, PercentIcon, PlusIcon, ShoppingBagIcon, StoreIcon, MegaphoneIcon, Trash2Icon, ClipboardListIcon, TagIcon, HashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ErrorNote, Field, LoadingRows, ObjectStatus, PageHeader, Pill, Segmented, Switch, TablePanel, TONE } from "@/components/kit";
@@ -20,12 +21,18 @@ type Erp = "none" | "awsone" | "facts";
 type Company = { id: string; code: string; name: string; legalName: string; legalNameAr: string | null; trn: string | null; baseCurrency: string; vatRate: number; pricesIncludeVat: boolean; erpConnector: Erp; isActive: boolean; branches: number; users: number;
   vouchersEnabled: boolean; loyaltyEnabled: boolean; loyaltyPointsPerUnit: number; loyaltyPointValue: number; loyaltyMinRedeem: number };
 type DayControl = "manual" | "automatic" | "cashier";
+type OrderKind = "dine_in" | "takeaway" | "delivery";
+type PayMethods = Record<OrderKind, string[]>;
+const DEFAULT_PAY: PayMethods = { dine_in: ["cash", "card", "other", "account"], takeaway: ["cash", "card", "other", "account"], delivery: ["cash", "card", "other", "account", "platform"] };
+const PAY_COLUMNS = [["cash", "Cash"], ["card", "Card"], ["other", "Other"], ["account", "Account"], ["platform", "Platform"]] as const;
 type Branch = {
   id: string; companyId: string; code: string; name: string; address: string | null; phone: string | null; timeZone: string; tableService: boolean; askGuests: boolean;
   serviceChargePct: number; receiptHeader: string | null; receiptFooter: string | null; dayControl: DayControl; isActive: boolean; returnDays: number;
   kitchenEnabled: boolean; autoOpenTime: string; autoCloseTime: string; varianceTolerance: number; defaultFloat: number; openOrdersAtClose: "carry" | "void_unsent";
   erpLocationCode: string | null; erpLocationName: string | null; factsDocPrefix: string | null; erpWasteLocation: string | null; factsPriceType: string | null; factsPricesIncludeVat: boolean; factsPlatformLocation: string | null; returnsEnabled: boolean; futureOrders: boolean; factsItemTypes: string | null; factsItemMaster: string | null; factsDivision: string | null;
   nameAr: string | null; addressAr: string | null; receiptLanguage: "en" | "bilingual"; shortStock: "allow" | "warn" | "block";
+  /** Order types besides dine-in (on with table service), the payment types per order type, and whether receipts print after payment. */
+  takeawayOn: boolean; deliveryOn: boolean; payMethods: PayMethods; printReceipts: boolean;
   pickupMode: "off" | "auto" | "cashier"; pickupMinutes: number; closeDelayMinutes: number; closeDelayMaxMinutes: number;
   wastageApproverId: string | null; wastageApprovalEmail: string | null; wastageFactsUser: string | null;
   /** Prices page: the FACTS user this branch's prices are posted as (null: can't post prices). */
@@ -286,7 +293,8 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
 }) {
   const isNew = !!value && !value.branch;
   const blank = { code: "", name: "", address: "", phone: "", timeZone: "Asia/Dubai", tableService: true, askGuests: true, serviceChargePct: "0", receiptHeader: "", receiptFooter: "", dayControl: "manual" as DayControl, isActive: true, returnDays: "0",
-    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, factsPlatformLocation: "", returnsEnabled: false, futureOrders: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120" };
+    kitchenEnabled: true, autoOpenTime: "10:00", autoCloseTime: "03:00", varianceTolerance: "5", defaultFloat: "500", openOrdersAtClose: "carry" as Branch["openOrdersAtClose"], erpLocationCode: "", erpLocationName: "", factsDocPrefix: "", erpWasteLocation: "", factsPriceType: "", factsPricesIncludeVat: true, factsPlatformLocation: "", returnsEnabled: false, futureOrders: false, factsItemTypes: "FG", factsItemMaster: "", factsDivision: "", nameAr: "", addressAr: "", receiptLanguage: "bilingual" as Branch["receiptLanguage"], shortStock: "allow" as Branch["shortStock"], pickupMode: "off" as Branch["pickupMode"], pickupMinutes: "10", closeDelayMinutes: "15", closeDelayMaxMinutes: "120",
+    takeawayOn: true, deliveryOn: true, payMethods: DEFAULT_PAY, printReceipts: true };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -298,7 +306,8 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
       kitchenEnabled: b.kitchenEnabled, autoOpenTime: b.autoOpenTime.slice(0, 5), autoCloseTime: b.autoCloseTime.slice(0, 5), varianceTolerance: String(b.varianceTolerance),
       defaultFloat: String(b.defaultFloat), openOrdersAtClose: b.openOrdersAtClose, erpLocationCode: b.erpLocationCode ?? "", erpLocationName: b.erpLocationName ?? "", factsDocPrefix: b.factsDocPrefix ?? "", erpWasteLocation: b.erpWasteLocation ?? "", factsPriceType: b.factsPriceType ?? "", factsPricesIncludeVat: b.factsPricesIncludeVat, factsPlatformLocation: b.factsPlatformLocation ?? "", returnsEnabled: b.returnsEnabled, futureOrders: b.futureOrders, factsItemTypes: (b.factsItemTypes ?? "FG").replace(/,/g, ", "), factsItemMaster: b.factsItemMaster ?? "", factsDivision: b.factsDivision ?? "",
       nameAr: b.nameAr ?? "", addressAr: b.addressAr ?? "", receiptLanguage: b.receiptLanguage, shortStock: b.shortStock, pickupMode: b.pickupMode, pickupMinutes: String(b.pickupMinutes),
-      closeDelayMinutes: String(b.closeDelayMinutes ?? 15), closeDelayMaxMinutes: String(b.closeDelayMaxMinutes ?? 120) } : blank);
+      closeDelayMinutes: String(b.closeDelayMinutes ?? 15), closeDelayMaxMinutes: String(b.closeDelayMaxMinutes ?? 120),
+      takeawayOn: b.takeawayOn ?? true, deliveryOn: b.deliveryOn ?? true, payMethods: { ...DEFAULT_PAY, ...b.payMethods }, printReceipts: b.printReceipts ?? true } : blank);
   }
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
   // Items to take from FACTS: the company's (all its branches share one catalogue); administrators change it here.
@@ -340,6 +349,9 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
             <Field label="Receipts" span>
               <Segmented id="receipt-lang" value={f.receiptLanguage} onChange={(v) => set("receiptLanguage", v)} className="w-full"
                 options={[{ value: "bilingual", label: "English and Arabic" }, { value: "en", label: "English only" }]} />
+            </Field>
+            <Field label="Receipt after payment" span hint={f.printReceipts ? "The receipt prints by itself when a bill is paid." : "Nothing prints when a bill is paid; a receipt prints only when someone taps Print on the bill (Orders). Advance receipts of future orders still print."}>
+              <Switch on={f.printReceipts} onChange={(v) => set("printReceipts", v)} label="Print the receipt after payment" />
             </Field>
             <Field label="When stock runs short (FACTS stock and recipe ingredients)" span
               hint={f.shortStock === "allow" ? "Sell anyway. Stock can go below zero; the register shows what's left and the Ingredients screen flags shortages."
@@ -452,6 +464,9 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
             <Switch size="lg" on={f.kitchenEnabled} onChange={(v) => set("kitchenEnabled", v)} label="Kitchen" />
           </div>
 
+          <OrderTypesBox tableService={f.tableService} takeawayOn={f.takeawayOn} deliveryOn={f.deliveryOn} payMethods={f.payMethods}
+            onChange={(patch) => setF((x) => ({ ...x, ...patch }))} />
+
           <div className="space-y-2">
             <span className="block text-[0.8rem] font-medium text-foreground/80">Day open and close</span>
             <Segmented id="day-control" value={f.dayControl} onChange={(v) => set("dayControl", v)} className="w-full"
@@ -511,6 +526,62 @@ function BranchDialog({ value, onClose, onSaved, isAdmin }: {
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The order types this branch takes and, for each, the payment types its tills offer. Dine-in comes with table service; Platform lets
+ * that order type be a delivery platform's order (a platform whose orders are of that type, e.g. Talabat Kitchen Dine In).
+ */
+function OrderTypesBox({ tableService, takeawayOn, deliveryOn, payMethods, onChange }: {
+  tableService: boolean; takeawayOn: boolean; deliveryOn: boolean; payMethods: PayMethods;
+  onChange: (patch: { takeawayOn?: boolean; deliveryOn?: boolean; payMethods?: PayMethods }) => void;
+}) {
+  const rows: { type: OrderKind; label: string; on: boolean; toggle?: (v: boolean) => void }[] = [
+    { type: "dine_in", label: "Dine-in", on: tableService },
+    { type: "takeaway", label: "Takeaway", on: takeawayOn, toggle: (v) => onChange({ takeawayOn: v }) },
+    { type: "delivery", label: "Delivery", on: deliveryOn, toggle: (v) => onChange({ deliveryOn: v }) },
+  ];
+  const tick = (type: OrderKind, m: string, v: boolean) => {
+    const list = v ? [...payMethods[type], m] : payMethods[type].filter((x) => x !== m);
+    onChange({ payMethods: { ...payMethods, [type]: PAY_COLUMNS.map(([k]) => k as string).filter((k) => list.includes(k)) } });
+  };
+  return (
+    <div className="rounded-2xl border p-4">
+      <div className="font-medium">Order types and payments</div>
+      <p className="mb-3 text-xs text-muted-foreground">The order types the tills here start, and the payment types they offer for each. Platform: the order can be a delivery platform&apos;s whose orders are of that type. Voucher and Points follow the company&apos;s settings.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-muted-foreground">
+              <th className="py-1.5 pr-2 text-left font-medium">Order type</th>
+              <th className="px-2 py-1.5 text-left font-medium">On</th>
+              {PAY_COLUMNS.map(([k, l]) => <th key={k} className="px-1.5 py-1.5 text-center font-medium">{l}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.type} className={cn("border-t", !row.on && "text-muted-foreground")}>
+                <td className="py-2 pr-2 font-medium">{row.label}</td>
+                <td className="px-2 py-2">
+                  {row.toggle ? <Switch on={row.on} onChange={row.toggle} label={`${row.label} orders`} />
+                    : <span className="text-xs">{row.on ? "On (table service)" : "Off (quick service)"}</span>}
+                </td>
+                {PAY_COLUMNS.map(([k, l]) => (
+                  <td key={k} className="px-1.5 py-2 text-center">
+                    <input type="checkbox" className="size-4 accent-primary" disabled={!row.on} checked={row.on && payMethods[row.type].includes(k)}
+                      aria-label={`${l} for ${row.label}`} onChange={(e) => tick(row.type, k, e.target.checked)} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.some((row) => row.on && payMethods[row.type].length === 0) && (
+        <p className="mt-2 text-xs text-danger">Tick at least one payment type for each order type that is on.</p>
+      )}
+    </div>
   );
 }
 

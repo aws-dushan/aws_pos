@@ -69,6 +69,7 @@ public static class Kitchen
     private static async Task<string> LabelAsync(NpgsqlConnection c, NpgsqlTransaction tx, Orders.OrderRow o) =>
         o.OrderType == "dine_in"
             ? $"Table {await c.ExecuteScalarAsync<string?>("select table_label from pos_order where id = @id", new { o.Id }, tx) ?? "?"}"
+              + (o.PlatformId is null ? "" : $" · {await c.ExecuteScalarAsync<string>("select name from delivery_platform where id = @PlatformId", new { o.PlatformId }, tx)} #{o.PlatformRef}")
             : o.PlatformId is not null
                 ? $"{await c.ExecuteScalarAsync<string>("select name from delivery_platform where id = @PlatformId", new { o.PlatformId }, tx)} #{o.PlatformRef}"
                 : $"{(o.OrderType == "delivery" ? "Delivery" : "Takeaway")}{(o.CustomerName is { Length: > 0 } n ? $" · {n}" : "")}";

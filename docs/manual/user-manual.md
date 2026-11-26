@@ -96,7 +96,7 @@ You can have only one open shift, on one register. Where the branch shares one d
 
 ## Take an order
 
-1. Open **Register** and pick **Takeaway** (counter order), **Delivery** (name, phone, address) or **Dine-in** (opens the Floor to seat a table). Orders already started are listed under **Open orders**.
+1. Open **Register** and pick **Takeaway** (counter order), **Delivery** (name, phone, address) or **Dine-in** (opens the Floor to seat a table). Only the order types the branch takes are shown. Orders already started are listed under **Open orders**.
 
 ![The Register: pick the order type, or carry on with an open order](images/register-start.jpg)
 
@@ -135,6 +135,8 @@ flowchart LR
 
 - **Own delivery** needs the customer's **Phone** and **Delivery address** before it can be paid.
 - For Talabat, Deliveroo, Careem and other platforms switched on at this branch, tap the platform's chip and type the **platform order number (needed)**. No phone or address is needed: the platform delivers. The platform's own prices apply.
+- A platform whose orders are dine-in (e.g. Talabat Kitchen Dine In) is chosen on a **Dine-in** order: seat the table, tap the platform's chip and type its order number. **Walk-in** takes the platform off again. The kitchen ticket shows the table and the platform's order number.
+- The payment screen offers only the payment types the branch takes for that order type. When a branch takes an order type only through platforms, choose the platform on the order before paying.
 - A platform deal goes under the platform's **offer** chip: **We pay** (a discount on our bill) or **the platform pays**.
 - The platform chip and offer lock once money has been taken.
 
@@ -176,7 +178,7 @@ A customer is optional except for own delivery. In **Customer (optional): name o
 
 ONE POS never sees or keeps card numbers: the bank's terminal takes the card, and ONE POS records only the card type and amount. If the network drops while you pay, just tap again: ONE POS recognises the repeat and never takes the payment twice.
 
-After payment the receipt prints and a message says **Paid. Give AED x change.** with a **Receipt** button. Without a receipt printer, the receipt opens on screen with **Print**.
+After payment the receipt prints and a message says **Paid. Give AED x change.** with a **Receipt** button. Without a receipt printer, the receipt opens on screen with **Print**. Where the branch's **Receipt after payment** is off, nothing prints: a customer who asks for a receipt gets it from **Orders** → the bill → **Print**.
 
 The tax invoice number (e.g. INV-EBL-01-000123) is given at the moment the bill is fully paid, one unbroken sequence per branch, and the same number goes to FACTS. The receipt shows TAX INVOICE in English and Arabic, the company's TRN, the amount before VAT and the VAT. A paid bill can't be changed or deleted by anyone; a mistake is corrected with **Return**, which makes a credit note referring to it.
 
@@ -568,6 +570,8 @@ Key branch settings:
 | Setting | Choices |
 | --- | --- |
 | Receipts | English and Arabic, or English only |
+| Receipt after payment | On: the receipt prints by itself when a bill is paid. Off: it prints only when someone taps **Print** on the bill (advance receipts of future orders still print) |
+| Order types and payments | **Takeaway** and **Delivery** on or off (**Dine-in** comes with table service), and for each order type the payment types the till offers: **Cash**, **Card**, **Other**, **Account**, **Platform** (a delivery platform's order of that type). An order type that's on needs at least one. Voucher and Points follow the company's settings. An order type can be switched off only when it has no open orders. |
 | When stock runs short | Allow (sell anyway), Warn, Block |
 | Order-ready screen | Off, Automatic, Cashier taps ready |
 | Table service | Guests asked when seating, service charge on dine-in (%) |
@@ -626,7 +630,7 @@ Switch **Active** off to stop someone signing in anywhere; **Remove from company
 
 ## Delivery platforms
 
-**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. **On at these branches** picks the branches that take its orders: only they see it at the register and on Prices. A new platform starts on at the branch in the header; tap a branch to switch it on or off. Each platform shows the branches it is on at, and is greyed out where it is off at the header branch. A new branch has no platforms until they are switched on for it. **FACTS payment method** picks, for each of those branches, what its bills are paid by in FACTS (e.g. ERBQS TALABAT). It starts on the method whose name matches the platform; **Not chosen: its bills can't post** means none was found, so choose one. A platform missing one at a branch shows **FACTS payment method not chosen** in red. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
+**Add platform** (or **Add quickly:** Talabat, Deliveroo, Careem, Noon Food, Keeta, Smiles) with its **Commission (%)** and **Bank fee (%)**, and link it to its FACTS customer for platform prices. **Its orders are** says what its orders are: **Delivery** (the usual), **Dine-in** (e.g. Talabat Kitchen Dine In, eaten in at a table, at its own commission) or **Takeaway**. Its orders are taken as that order type, where the branch ticks **Platform** for it (Companies & branches → Order types and payments). A platform with different commissions for dine-in and delivery is added twice, e.g. Talabat Kitchen Dine In and Talabat Kitchen Delivery. **On at these branches** picks the branches that take its orders: only they see it at the register and on Prices. A new platform starts on at the branch in the header; tap a branch to switch it on or off. Each platform shows the branches it is on at, and is greyed out where it is off at the header branch. A new branch has no platforms until they are switched on for it. **FACTS payment method** picks, for each of those branches, what its bills are paid by in FACTS (e.g. ERBQS TALABAT). It starts on the method whose name matches the platform; **Not chosen: its bills can't post** means none was found, so choose one. A platform missing one at a branch shows **FACTS payment method not chosen** in red. A branch sells on platforms at the FACTS price lists of the location in its **Platform prices from** (Companies & branches → branch, next to Price type), e.g. ERBQS. If it is empty, the branch has no platform prices. **Track platform payouts in ONE POS** adds payouts to the platform report.
 
 ![Delivery platforms: each one with its commission and the branches it is on at](images/platforms.jpg)
 

@@ -60,7 +60,7 @@ export default function PlatformsAdminPage() {
               <BikeIcon className="size-5 text-mod-bank" />
               <span>
                 <span className="block font-medium">{p.name}</span>
-                <span className="block text-xs text-muted-foreground">{p.commissionPct}% commission{p.bankFeePct ? ` + ${p.bankFeePct}% bank fee` : ""}{p.factsCustomer ? ` · FACTS ${p.factsCustomer} prices (${p.factsPriced})` : " · outlet prices"}{!p.isActive ? " · not in use" : ""}</span>
+                <span className="block text-xs text-muted-foreground">{p.orderType === "dine_in" ? "Dine-in · " : p.orderType === "takeaway" ? "Takeaway · " : ""}{p.commissionPct}% commission{p.bankFeePct ? ` + ${p.bankFeePct}% bank fee` : ""}{p.factsCustomer ? ` · FACTS ${p.factsCustomer} prices (${p.factsPriced})` : " · outlet prices"}{!p.isActive ? " · not in use" : ""}</span>
                 <span className="block text-xs text-muted-foreground">
                   {p.branchIds.length ? `On at: ${p.branchIds.map((id) => branchName.get(id)).filter(Boolean).join(", ")}` : "Not on at any branch"}
                   {p.branchIds.some((id) => !p.paymentModes?.[id] && factsBranches.has(id)) && <span className="text-danger"> · FACTS payment method not chosen</span>}

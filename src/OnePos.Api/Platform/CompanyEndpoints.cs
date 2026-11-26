@@ -17,7 +17,8 @@ public static class CompanyEndpoints
         string? NameAr = null, string? AddressAr = null, string? ReceiptLanguage = null, string? ShortStock = null,
         string? PickupMode = null, int? PickupMinutes = null, int? CloseDelayMinutes = null, int? CloseDelayMaxMinutes = null, string? FactsDocPrefix = null, string? ErpWasteLocation = null,
         string? FactsPriceType = null, bool? FactsPricesIncludeVat = null, bool? ReturnsEnabled = null, string? FactsItemTypes = null, string? FactsItemMaster = null,
-        string? FactsDivision = null, string? FactsPlatformLocation = null, bool? FutureOrders = null);
+        string? FactsDivision = null, string? FactsPlatformLocation = null, bool? FutureOrders = null,
+        bool? TakeawayOn = null, bool? DeliveryOn = null, Dictionary<string, string[]>? PayMethods = null, bool? PrintReceipts = null);
 
     public sealed class CompanyRow
     {
@@ -62,6 +63,13 @@ public static class CompanyEndpoints
         public bool KitchenEnabled { get; set; }
         /// <summary>The Future orders page (taken now with an advance, collected later).</summary>
         public bool FutureOrders { get; set; }
+        /// <summary>Order types besides dine-in (which is on with table service), and per order type the payment types the till offers.</summary>
+        public bool TakeawayOn { get; set; } = true;
+        public bool DeliveryOn { get; set; } = true;
+        [System.Text.Json.Serialization.JsonIgnore] public string? PayMethods { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("payMethods")] public Dictionary<string, string[]> PayMethodsByType => Pos.OrderSetup.Parse(PayMethods);
+        /// <summary>The receipt prints by itself after payment; off = only when someone taps Print.</summary>
+        public bool PrintReceipts { get; set; } = true;
         public TimeOnly AutoOpenTime { get; set; }
         public TimeOnly AutoCloseTime { get; set; }
         public decimal VarianceTolerance { get; set; }
@@ -222,6 +230,7 @@ public static class CompanyEndpoints
                                autoClose = Time(body.AutoCloseTime, d.AutoCloseTime), tolerance = NonNegative(body.VarianceTolerance, d.VarianceTolerance, "variance tolerance"),
                                @float = NonNegative(body.DefaultFloat, d.DefaultFloat, "float"), atClose = AtClose(body.OpenOrdersAtClose, d.OpenOrdersAtClose) }, tx);
                 await c.ExecuteAsync("update branch set future_orders = @on where id = @id", new { id, on = body.FutureOrders ?? false }, tx);
+                await SaveOrderSetupAsync(c, tx, id, d, b.TableService ?? true, body);
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "created", $"Branch {b.Code} created",
                     Audit.Created(("Code", b.Code), ("Name", b.Name), ("Table service", b.TableService)));
                 return id;
@@ -400,6 +409,7 @@ public static class CompanyEndpoints
                     if (waiting > 0) throw new DomainException($"Collect or cancel the {waiting} waiting future order{(waiting == 1 ? "" : "s")} before turning Future orders off.");
                 }
                 await c.ExecuteAsync("update branch set future_orders = @on where id = @id", new { id, on = body.FutureOrders ?? old.FutureOrders }, tx);
+                var (oldSetup, newSetup) = await SaveOrderSetupAsync(c, tx, id, old, b.TableService ?? old.TableService, body);
                 await Audit.RecordAsync(c, tx, companyId, id, scope.UserId, "branch", id.ToString(), "changed", $"Branch {old.Code} changed",
                 [
                     new("Name", old.Name, b.Name), new("Address", old.Address, b.Address), new("Phone", old.Phone, b.Phone),
@@ -425,6 +435,7 @@ public static class CompanyEndpoints
                     new("Platform prices from", old.FactsPlatformLocation, body.FactsPlatformLocation is null ? old.FactsPlatformLocation : Opt(body.FactsPlatformLocation)?.ToUpperInvariant()),
                     new("Returns", old.ReturnsEnabled, body.ReturnsEnabled ?? old.ReturnsEnabled),
                     new("Future orders", old.FutureOrders, body.FutureOrders ?? old.FutureOrders),
+                    new("Order types and payments", oldSetup, newSetup), new("Receipts print after payment", old.PrintReceipts, body.PrintReceipts ?? old.PrintReceipts),
                     new("FACTS item types", old.FactsItemTypes, body.FactsItemTypes is null ? old.FactsItemTypes : ItemTypes(body.FactsItemTypes)),
                     new("FACTS item master", old.FactsItemMaster, body.FactsItemMaster is null ? old.FactsItemMaster : Opt(body.FactsItemMaster)?.ToUpperInvariant()),
                     new("FACTS division", old.FactsDivision, body.FactsDivision is null ? old.FactsDivision : Opt(body.FactsDivision)),
@@ -511,6 +522,23 @@ public static class CompanyEndpoints
         if (string.IsNullOrWhiteSpace(b.Name)) throw new DomainException("Enter the company's name.");
         return new CompanyBody((b.Code ?? "").Trim().ToUpperInvariant(), b.Name.Trim(), Opt(b.LegalName) ?? b.Name.Trim(), Opt(b.Trn),
             (Opt(b.BaseCurrency) ?? "AED").ToUpperInvariant(), vat, b.PricesIncludeVat ?? true, connector, b.IsActive, Opt(b.LegalNameAr));
+    }
+
+    /// <summary>
+    /// The branch's order types and payment types per type, and receipt printing (only what was sent changes). An order type switched off
+    /// while it has open orders is refused. Returns the setup before and after, as words for the audit.
+    /// </summary>
+    private static async Task<(string Before, string After)> SaveOrderSetupAsync(Npgsql.NpgsqlConnection c, Npgsql.NpgsqlTransaction tx, Guid id, BranchRow old, bool tableService, BranchBody body)
+    {
+        var takeaway = body.TakeawayOn ?? old.TakeawayOn;
+        var delivery = body.DeliveryOn ?? old.DeliveryOn;
+        var methods = Pos.OrderSetup.Clean(body.PayMethods ?? old.PayMethodsByType, tableService, takeaway, delivery);
+        foreach (var (type, on, was) in new[] { ("takeaway", takeaway, old.TakeawayOn), ("delivery", delivery, old.DeliveryOn) })
+            if (was && !on && await c.ExecuteScalarAsync<int>("select count(*)::int from pos_order where branch_id = @id and status = 'open' and order_type = @type", new { id, type }, tx) is > 0 and var open)
+                throw new DomainException($"Close the {open} open {type} order{(open == 1 ? "" : "s")} before switching {type} off.");
+        await c.ExecuteAsync("update branch set takeaway_on = @takeaway, delivery_on = @delivery, pay_methods = cast(@json as jsonb), print_receipts = @print where id = @id",
+            new { id, takeaway, delivery, json = Pos.OrderSetup.ToJson(methods), print = body.PrintReceipts ?? old.PrintReceipts }, tx);
+        return (Pos.OrderSetup.Text(old.PayMethodsByType, old.TableService, old.TakeawayOn, old.DeliveryOn), Pos.OrderSetup.Text(methods, tableService, takeaway, delivery));
     }
 
     private static BranchBody Clean(BranchBody b)

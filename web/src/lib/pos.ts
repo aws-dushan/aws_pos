@@ -5,6 +5,17 @@ import { withBase } from "@/lib/base-path";
 export type OrderType = "dine_in" | "takeaway" | "delivery";
 export type OrderStatus = "open" | "paid" | "void" | "refunded" | "merged";
 export type PayMethod = "cash" | "card" | "other" | "voucher" | "account" | "points" | "platform";
+
+/** Whether a branch takes an order type (dine-in comes with table service; older sessions without the switches take everything). */
+export function typeOn(b: { tableService: boolean; takeawayOn?: boolean; deliveryOn?: boolean } | null | undefined, t: OrderType) {
+  if (!b) return t !== "dine_in";
+  return t === "dine_in" ? b.tableService : t === "takeaway" ? b.takeawayOn !== false : b.deliveryOn !== false;
+}
+
+/** The payment types (cash, card, other, account, platform) a branch's till offers for an order type; voucher and points follow the company. */
+export function payMethodsFor(b: { payMethods?: Partial<Record<OrderType, string[]>> } | null | undefined, t: OrderType): string[] {
+  return b?.payMethods?.[t] ?? ["cash", "card", "other", "account", ...(t === "delivery" ? ["platform"] : [])];
+}
 export type Tone = "fin" | "sales" | "purch" | "inv" | "bp" | "bank" | "appr" | "admin";
 
 export type MenuCategory = { id: string; name: string; nameAr: string | null; tone: Tone; sort: number; isActive: boolean };

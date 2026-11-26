@@ -13,7 +13,11 @@ export type Branch = { id: string; code: string; name: string; tableService: boo
   /** Stock requests (STR50) on Stock: the branch has a request approver (Companies & branches). */
   requestsEnabled?: boolean;
   /** Future orders: taken now with an advance, collected later (Companies & branches). */
-  futureOrders?: boolean };
+  futureOrders?: boolean;
+  /** Order types besides dine-in (on with table service), and per order type the payment types the till offers (Companies & branches). */
+  takeawayOn?: boolean; deliveryOn?: boolean; payMethods?: Partial<Record<"dine_in" | "takeaway" | "delivery", string[]>>;
+  /** The receipt prints by itself after payment; off = only when someone taps Print. */
+  printReceipts?: boolean };
 export type Company = {
   id: string; code: string; name: string; currency: string; vatRate: number; pricesIncludeVat: boolean; erpConnector: "none" | "awsone" | "facts";
   role: string | null; permissions: string[]; branches: Branch[];

@@ -156,6 +156,7 @@ public static class AuthEndpoints
                     """, new { me.Id, isAdmin = user.IsAdmin, tillCompany = me.TillCompanyId }, tx)).ToList();
                 var branches = (await c.QueryAsync<MeBranch>("""
                     select b.id, b.company_id, b.code, b.name, b.table_service, b.kitchen_enabled, b.returns_enabled, b.day_control, b.is_active, b.future_orders,
+                           b.takeaway_on, b.delivery_on, b.pay_methods::text as pay_methods, b.print_receipts,
                            b.marketing_approver_id is not null and b.marketing_account is not null and b.erp_location_code is not null
                              and (select co.erp_connector from company co where co.id = b.company_id) = 'facts' as marketing_enabled,
                            (b.request_approver_id is not null or b.request_preapproved) and b.request_facts_user is not null and b.erp_location_code is not null
@@ -178,7 +179,8 @@ public static class AuthEndpoints
                     {
                         co.Id, co.Code, co.Name, co.Currency, co.VatRate, co.PricesIncludeVat, co.ErpConnector, co.VouchersEnabled, co.LoyaltyEnabled, co.Role,
                         permissions = user.IsAdmin ? Permissions.All.Select(p => p.Key).ToArray() : co.Permissions,
-                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive, b.MarketingEnabled, b.RequestsEnabled, b.FutureOrders }),
+                        branches = branches.Where(b => b.CompanyId == co.Id).Select(b => new { b.Id, b.Code, b.Name, b.TableService, b.KitchenEnabled, b.ReturnsEnabled, b.DayControl, b.IsActive, b.MarketingEnabled, b.RequestsEnabled, b.FutureOrders,
+                            b.TakeawayOn, b.DeliveryOn, payMethods = Pos.OrderSetup.Parse(b.PayMethods), b.PrintReceipts }),
                     }),
                 };
             });
@@ -209,6 +211,10 @@ public static class AuthEndpoints
         public bool TableService { get; set; }
         public bool KitchenEnabled { get; set; }
         public bool ReturnsEnabled { get; set; }
+        public bool TakeawayOn { get; set; }
+        public bool DeliveryOn { get; set; }
+        public string? PayMethods { get; set; }
+        public bool PrintReceipts { get; set; }
         public string DayControl { get; set; } = "";
         public bool IsActive { get; set; }
         /// <summary>Marketing give-aways on Stock: the branch has a marketing approver and expense account (Companies &amp; branches).</summary>

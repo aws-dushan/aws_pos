@@ -10,7 +10,7 @@ namespace OnePos.Api.Pos;
 /// </summary>
 public static class Platforms
 {
-    public sealed record PlatformBody(string Name, decimal CommissionPct, bool? IsActive, int? Sort, decimal? BankFeePct = null, Guid[]? BranchIds = null, Dictionary<Guid, string?>? PaymentModes = null);
+    public sealed record PlatformBody(string Name, decimal CommissionPct, bool? IsActive, int? Sort, decimal? BankFeePct = null, Guid[]? BranchIds = null, Dictionary<Guid, string?>? PaymentModes = null, string? OrderType = null);
     public sealed record SettingsBody(bool PayoutsEnabled);
     public sealed record PayoutBody(Guid PlatformId, DateOnly ReceivedOn, DateOnly? PeriodFrom, DateOnly? PeriodTo, decimal Amount, decimal? Commission, string? Reference, string? Note, decimal? BankFee = null);
 
@@ -53,6 +53,8 @@ public static class Platforms
         public Guid[] BranchIds { get; set; } = [];
         /// <summary>On at the branch asking (the header branch, or the till's).</summary>
         public bool Here { get; set; }
+        /// <summary>The order type its orders are (dine_in, takeaway, delivery): Talabat Kitchen Dine In is dine-in, at its own commission.</summary>
+        public string OrderType { get; set; } = "delivery";
         /// <summary>Per branch it is on at: the FACTS payment method (code) its bills post with there.</summary>
         public Dictionary<Guid, string> PaymentModes { get; set; } = [];
         /// <summary>The platform's FACTS customer (e.g. AR-D0005); its FACTS prices are the platform's prices.</summary>
@@ -86,7 +88,9 @@ public static class Platforms
         if (name.Length is 0 or > 40) throw new DomainException("A platform needs a name (up to 40 characters).");
         if (b.CommissionPct is < 0 or > 100) throw new DomainException("Commission is 0 to 100 %.");
         if (b.BankFeePct is < 0 or > 100) throw new DomainException("Bank fee is 0 to 100 %.");
-        return b with { Name = name };
+        var type = b.OrderType?.Trim().ToLowerInvariant().Replace("-", "_");
+        if (type is not (null or "dine_in" or "takeaway" or "delivery")) throw new DomainException("A platform's orders are dine-in, takeaway or delivery.");
+        return b with { Name = name, OrderType = type };
     }
 
     /// <summary>
@@ -211,10 +215,10 @@ public static class Platforms
                 var sort = b.Sort ?? await c.ExecuteScalarAsync<int>("select coalesce(max(sort), 0) + 1 from delivery_platform", transaction: tx);
                 // A new platform is on at the branch it was added at, unless branches were chosen.
                 var (branchIds, names) = await BranchesAsync(c, tx, b.BranchIds ?? (scope.BranchId is { } here ? [here] : []));
-                var id = await c.ExecuteScalarAsync<Guid>("insert into delivery_platform (company_id, name, commission_pct, bank_fee_pct, sort, branch_ids) values (@co, @Name, @CommissionPct, @fee, @sort, @branchIds) returning id",
-                    new { co = scope.CompanyId, b.Name, b.CommissionPct, fee = b.BankFeePct ?? 0, sort, branchIds }, tx);
+                var id = await c.ExecuteScalarAsync<Guid>("insert into delivery_platform (company_id, name, commission_pct, bank_fee_pct, sort, branch_ids, order_type) values (@co, @Name, @CommissionPct, @fee, @sort, @branchIds, @type) returning id",
+                    new { co = scope.CompanyId, b.Name, b.CommissionPct, fee = b.BankFeePct ?? 0, sort, branchIds, type = b.OrderType ?? "delivery" }, tx);
                 var modeText = b.PaymentModes is null ? "none" : await SaveModesAsync(c, tx, scope.CompanyId, id, branchIds, b.PaymentModes);
-                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "created", $"Delivery platform {b.Name} added ({b.CommissionPct:0.##} %), on at: {names}; FACTS payment: {modeText}");
+                await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "created", $"Delivery platform {b.Name} added ({b.CommissionPct:0.##} %, {OrderSetup.TypeLabel(b.OrderType ?? "delivery")} orders), on at: {names}; FACTS payment: {modeText}");
                 return await c.QuerySingleAsync<Row>("select * from delivery_platform where id = @id", new { id }, tx);
             });
             await live.ToCompany(scope.CompanyId, "platforms.changed");
@@ -231,18 +235,21 @@ public static class Platforms
                 var old = await c.QuerySingleOrDefaultAsync<Row>("select * from delivery_platform where id = @id for update", new { id }, tx) ?? throw new NotFoundException("Platform not found.");
                 if (await c.ExecuteScalarAsync<bool>("select exists (select 1 from delivery_platform where lower(name) = lower(@Name) and id <> @id)", new { b.Name, id }, tx))
                     throw new ConflictException($"{b.Name} is already on the list.");
+                if (b.OrderType is { } t && t != old.OrderType
+                    && await c.ExecuteScalarAsync<int>("select count(*)::int from pos_order where platform_id = @id and status = 'open'", new { id }, tx) is > 0 and var open)
+                    throw new DomainException($"Finish the {open} open {old.Name} order{(open == 1 ? "" : "s")} before changing what its orders are.");
                 var (_, oldNames) = await BranchesAsync(c, tx, old.BranchIds);
                 var oldModes = await ModesTextAsync(c, tx, id);
                 var (branchIds, names) = b.BranchIds is null ? (old.BranchIds, oldNames) : await BranchesAsync(c, tx, b.BranchIds);
-                await c.ExecuteAsync("update delivery_platform set name = @Name, commission_pct = @CommissionPct, bank_fee_pct = coalesce(@BankFeePct, bank_fee_pct), is_active = coalesce(@IsActive, is_active), sort = coalesce(@Sort, sort), branch_ids = @branchIds where id = @id",
-                    new { id, b.Name, b.CommissionPct, b.BankFeePct, b.IsActive, b.Sort, branchIds }, tx);
+                await c.ExecuteAsync("update delivery_platform set name = @Name, commission_pct = @CommissionPct, bank_fee_pct = coalesce(@BankFeePct, bank_fee_pct), is_active = coalesce(@IsActive, is_active), sort = coalesce(@Sort, sort), branch_ids = @branchIds, order_type = coalesce(@OrderType, order_type) where id = @id",
+                    new { id, b.Name, b.CommissionPct, b.BankFeePct, b.IsActive, b.Sort, branchIds, b.OrderType }, tx);
                 // The choice as sent; not sent = kept, less the branches switched off.
                 if (b.PaymentModes is not null) await SaveModesAsync(c, tx, scope.CompanyId, id, branchIds, b.PaymentModes);
                 else await c.ExecuteAsync("delete from platform_payment_mode where platform_id = @id and not (branch_id = any(@branchIds))", new { id, branchIds }, tx);
                 var newModes = await ModesTextAsync(c, tx, id);
                 await Audit.RecordAsync(c, tx, scope.CompanyId, null, scope.UserId, "platform", id.ToString(), "changed", $"Delivery platform {old.Name} changed",
                     [new("Name", old.Name, b.Name), new("Commission %", old.CommissionPct, b.CommissionPct), new("Bank fee %", old.BankFeePct, b.BankFeePct ?? old.BankFeePct), new("Active", old.IsActive, b.IsActive ?? old.IsActive),
-                     new("Branches", oldNames, names), new("FACTS payment method", oldModes, newModes)]);
+                     new("Orders are", OrderSetup.TypeLabel(old.OrderType), OrderSetup.TypeLabel(b.OrderType ?? old.OrderType)), new("Branches", oldNames, names), new("FACTS payment method", oldModes, newModes)]);
                 return await c.QuerySingleAsync<Row>("select * from delivery_platform where id = @id", new { id }, tx);
             });
             await live.ToCompany(scope.CompanyId, "platforms.changed");

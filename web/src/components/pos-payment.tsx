@@ -8,7 +8,7 @@ import { api, newKey, useApi } from "@/lib/api";
 import { openDrawerForCash, printReceipt, type ReceiptLine } from "@/lib/device";
 import { cn } from "@/lib/utils";
 import { fmtIn, roundTo } from "@/lib/num";
-import { fmtQty, METHOD_LABEL, orderLabel, TYPE_LABEL, type OrderDetail, type PayMethod, orderNo, cardLabel, collectLabel } from "@/lib/pos";
+import { fmtQty, METHOD_LABEL, orderLabel, TYPE_LABEL, type OrderDetail, type PayMethod, orderNo, cardLabel, collectLabel, payMethodsFor } from "@/lib/pos";
 import { ErrorNote, Segmented } from "@/components/kit";
 import { Numpad } from "@/components/numpad";
 import { celebrate } from "@/components/motion";
@@ -54,7 +54,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   onChanged: (d: OrderDetail) => void; onPaid: (d: OrderDetail, printed: boolean, change: number) => void;
 }) {
   const due = detail.order.due;
-  const { company } = useSession();
+  const { company, branch } = useSession();
   // A split payment (cash + cards, several cards…): the parts added so far, all taken together with the last one when "Pay" is pressed.
   const [parts, setParts] = useState<Part[]>([]);
   const [splitting, setSplitting] = useState(false);
@@ -63,9 +63,14 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   // Vouchers and points only where the company uses them; points only with a customer on the order.
   // A future order waiting for its day: what's taken now is an advance (any amount up to the total, any method, split too).
   const advance = detail.order.futureStatus === "waiting";
+  // Cash, card, other, account and platform: only those the branch takes for this order type (Companies & branches).
+  const allowed = payMethodsFor(branch, detail.order.orderType);
   const methods = METHODS.filter((m) => (m.value !== "voucher" || company?.vouchersEnabled) && (m.value !== "points" || (company?.loyaltyEnabled && detail.order.customerId))
-    && (m.value !== "platform" || detail.order.platformId));
-  const [method, setMethod] = useState<PayMethod>(detail.order.platformId ? "platform" : "cash");
+    && (m.value !== "platform" || detail.order.platformId) && (m.value === "voucher" || m.value === "points" || allowed.includes(m.value)));
+  // A platform's order starts on Platform (the platform pays), any other on Cash, or the first the branch takes.
+  const firstMethod = (): PayMethod => detail.order.platformId && methods.some((m) => m.value === "platform") ? "platform"
+    : methods.some((m) => m.value === "cash") ? "cash" : methods[0]?.value ?? "cash";
+  const [method, setMethod] = useState<PayMethod>(firstMethod);
   const [amount, setAmount] = useState("");
   // The amount shown was filled in (the amount due, a note button…): the first key typed replaces it.
   const [pristine, setPristine] = useState(true);
@@ -78,7 +83,7 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
   const [openFor, setOpenFor] = useState<string | null>(null);
   const opened = open ? detail.order.id : null;
   let start = method;
-  if (opened !== openFor) { setOpenFor(opened); if (opened) { start = detail.order.platformId ? "platform" : "cash"; setMethod(start); } }
+  if (opened !== openFor) { setOpenFor(opened); if (opened) { start = firstMethod(); setMethod(start); } }
   if (key !== seen) { setSeen(key); setAmount(start === "cash" || advance ? "" : due ? due.toFixed(2) : ""); setReference(""); setPristine(true); setParts([]); setSplitting(false); }
 
   // Cash: nothing typed is the exact amount (of what's left after the split's parts); otherwise what the customer handed over.
@@ -134,8 +139,10 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
         onPaid(d, printed, change);
       } else if (d.order.status === "paid") {
         celebrate(payRef.current);
-        // The receipt prints on this till's printer (the drawer already opened above when cash was taken: REQ HW-04).
-        const printed = await printOrderReceipt(d.order.id, false).catch((e: Error) => { toast.error(`Receipt not printed: ${e.message}`); return false; });
+        // The receipt prints on this till's printer (the drawer already opened above when cash was taken: REQ HW-04), unless the
+        // branch prints receipts only on request (Orders → the bill → Print): then nothing prints and no preview opens.
+        const printed = branch?.printReceipts === false ? true
+          : await printOrderReceipt(d.order.id, false).catch((e: Error) => { toast.error(`Receipt not printed: ${e.message}`); return false; });
         onPaid(d, printed, change);
       } else {
         toast.success(`${currency} ${money(payments.reduce((s, p) => s + p.amount, 0))} taken. ${currency} ${money(d.order.due)} left.`);
@@ -177,6 +184,11 @@ export function PaymentDialog({ detail, currency, open, onOpenChange, onChanged,
                   </div>
                 ))}
               </div>
+            )}
+            {methods.length === 0 && (
+              <p className="rounded-xl bg-danger/10 px-4 py-2.5 text-sm text-danger">
+                This branch takes {TYPE_LABEL[detail.order.orderType].toLowerCase()} orders only through a delivery platform: choose the platform on the order first.
+              </p>
             )}
             <Segmented id="pay-method" value={method} onChange={(m) => { setMethod(m); setAmount(m === "cash" || advance ? "" : left.toFixed(2)); setPristine(true); }} className="w-full" size="md"
               options={methods.map((m) => ({ value: m.value, label: m.label, icon: m.icon }))} />

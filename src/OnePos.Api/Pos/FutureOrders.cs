@@ -110,6 +110,7 @@ public static class FutureOrders
             var detail = await db.Company(scope.CompanyId, async (c, tx) =>
             {
                 await RequireOnAsync(c, tx, scope.Branch);
+                OrderSetup.RequireType(await OrderSetup.LoadAsync(c, tx, scope.Branch), type);
                 var id = await Orders.OpenAsync(c, tx, http, scope, new Orders.OpenBody(type, null, null, name, phone, Opt(body.DeliveryAddress), null));
                 var futureRef = await Returns.NextAsync(c, tx, scope.CompanyId, scope.Branch, "FO");
                 await c.ExecuteAsync("update pos_order set collect_at = @collectAt, future_status = 'waiting', future_ref = @futureRef, note = @note where id = @id",

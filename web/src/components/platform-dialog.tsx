@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { api, useApi } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 import { useSession } from "@/components/session";
-import { Field, ObjectStatus, Switch, TONE, selectClass } from "@/components/kit";
+import { Field, ObjectStatus, Segmented, Switch, TONE, selectClass } from "@/components/kit";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input";
 export type Platform = { id: string; name: string; commissionPct: number; bankFeePct: number; isActive: boolean; sort: number;
   /** The branches it is on at; here = on at the header branch. */
   branchIds: string[]; here: boolean;
+  /** The order type its orders are (Talabat Kitchen Dine In: dine-in). */
+  orderType: "dine_in" | "takeaway" | "delivery";
   /** Branch → the FACTS payment method (code) its bills post with there. */
   paymentModes: Record<string, string>;
   factsCustomer: string | null; factsCustomerName: string | null; factsPriceType: string | null; factsPriceAt: string | null; factsPriced: number };
@@ -34,19 +36,19 @@ export function PlatformDialog({ value, onClose, onSaved }: { value: Platform | 
   const payModes = useApi<PayMode[]>(value ? "/platforms/payment-modes" : null);
   const modes = payModes.data ?? [];
   // A branch's choice; one not touched yet shows (and saves) the method that looks like the platform's.
-  const [f, setF] = useState({ name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: [] as string[], paymentModes: {} as Record<string, string> });
+  const [f, setF] = useState({ name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: [] as string[], paymentModes: {} as Record<string, string>, orderType: "delivery" as Platform["orderType"] });
   const modeOf = (branchId: string) => f.paymentModes[branchId] ?? suggest(modes, branchId, f.name);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
   if (value !== seen) {
     setSeen(value);
-    setF(existing ? { name: existing.name, commissionPct: String(existing.commissionPct), bankFeePct: String(existing.bankFeePct ?? 0), isActive: existing.isActive, branchIds: existing.branchIds ?? [], paymentModes: existing.paymentModes ?? {} }
-      : { name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: branch ? [branch.id] : [], paymentModes: {} });
+    setF(existing ? { name: existing.name, commissionPct: String(existing.commissionPct), bankFeePct: String(existing.bankFeePct ?? 0), isActive: existing.isActive, branchIds: existing.branchIds ?? [], paymentModes: existing.paymentModes ?? {}, orderType: existing.orderType ?? "delivery" }
+      : { name: "", commissionPct: "", bankFeePct: "", isActive: true, branchIds: branch ? [branch.id] : [], paymentModes: {}, orderType: "delivery" });
   }
   async function save() {
     setBusy(true);
     try {
-      const body = { name: f.name, commissionPct: Number(f.commissionPct || 0), bankFeePct: Number(f.bankFeePct || 0), isActive: f.isActive, branchIds: f.branchIds,
+      const body = { name: f.name, commissionPct: Number(f.commissionPct || 0), bankFeePct: Number(f.bankFeePct || 0), isActive: f.isActive, branchIds: f.branchIds, orderType: f.orderType,
         // Only once the methods are read, so a slow list never wipes the choice.
         ...(payModes.data ? { paymentModes: Object.fromEntries(f.branchIds.map((id) => [id, modeOf(id) || null])) } : {}) };
       if (existing) await api(`/platforms/${existing.id}`, "PUT", body); else await api("/platforms", "POST", body);
@@ -71,6 +73,10 @@ export function PlatformDialog({ value, onClose, onSaved }: { value: Platform | 
           <Field label="Commission (%)"><Input value={f.commissionPct} inputMode="decimal" onChange={(e) => setF({ ...f, commissionPct: e.target.value })} placeholder="e.g. 25" /></Field>
           <Field label="Bank fee (%)" hint="Card / online payment fee it keeps."><Input value={f.bankFeePct} inputMode="decimal" onChange={(e) => setF({ ...f, bankFeePct: e.target.value })} placeholder="e.g. 2.5" /></Field>
         </div>
+        <Field label="Its orders are" hint={f.orderType === "dine_in" ? "Eaten in: the order gets its table, at this platform's commission." : f.orderType === "takeaway" ? "Collected at the counter by the customer." : "Delivered by the platform."}>
+          <Segmented id="platform-type" value={f.orderType} onChange={(v) => setF({ ...f, orderType: v })} className="w-full"
+            options={[{ value: "dine_in", label: "Dine-in" }, { value: "takeaway", label: "Takeaway" }, { value: "delivery", label: "Delivery" }]} />
+        </Field>
         {branches.length > 0 && (
           <Field label="On at these branches" hint="Only these branches see it at the register and on Prices.">
             <div className="flex flex-wrap gap-1.5">

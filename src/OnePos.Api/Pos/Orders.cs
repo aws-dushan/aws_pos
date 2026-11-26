@@ -179,7 +179,7 @@ public static class Orders
         var type = CleanType(body.Type);
         var br = await c.QuerySingleAsync<(bool TableService, decimal ServiceChargePct, string TimeZone)>(
             "select table_service, service_charge_pct, time_zone from branch where id = @branchId", new { branchId }, tx);
-        if (type == "dine_in" && !br.TableService) throw new DomainException("This branch has no table service: start a takeaway or delivery order.");
+        OrderSetup.RequireType(await OrderSetup.LoadAsync(c, tx, branchId), type);
         var co = await c.QuerySingleAsync<(decimal VatRate, bool PricesIncludeVat)>("select vat_rate, prices_include_vat from company where id = @id", new { id = scope.CompanyId }, tx);
         var date = (await Days.CurrentAsync(c, tx, branchId, scope.UserId)).Date;
         var id = await c.ExecuteScalarAsync<Guid>("""
@@ -322,13 +322,13 @@ public static class Orders
         api.MapPut("/orders/{id:guid}", (Guid id, ChangeBody body, HttpContext http, Db db, Live live) => Mutate(http, db, live, id, "pos.sell", async (c, tx, o, scope) =>
         {
             var type = body.Type is null ? o.OrderType : CleanType(body.Type);
-            if (type == "dine_in" && o.OrderType != "dine_in" &&
-                !await c.ExecuteScalarAsync<bool>("select table_service from branch where id = @b", new { b = o.BranchId }, tx))
-                throw new DomainException("This branch has no table service.");
+            var setup = await OrderSetup.LoadAsync(c, tx, o.BranchId);
+            if (type != o.OrderType) OrderSetup.RequireType(setup, type);
             var pct = body.DiscountPct ?? o.DiscountPct;
             if (pct is < 0 or > 100) throw new DomainException("A discount is between 0 and 100 %.");
             if (pct != o.DiscountPct && pct > 0) scope.Require("pos.discount");
-            // A delivery platform's order (Guid.Empty takes it off): only a delivery, and not once money was taken.
+            // A delivery platform's order (Guid.Empty takes it off): of the platform's own order type (Talabat Kitchen Dine In: dine-in),
+            // where the branch takes platform orders of that type, and not once money was taken.
             Guid? platformId = o.PlatformId;
             decimal? commission = o.PlatformCommission;
             decimal? bankFee = await c.ExecuteScalarAsync<decimal?>("select platform_bank_fee from pos_order where id = @id", new { id }, tx);
@@ -338,14 +338,22 @@ public static class Orders
                 if (pid == Guid.Empty) { platformId = null; commission = null; bankFee = null; }
                 else
                 {
-                    var plat = await c.QuerySingleOrDefaultAsync<(Guid Id, decimal Pct, bool Active, decimal Fee, bool Here)>(
-                        "select id, commission_pct, is_active, bank_fee_pct, @b = any(branch_ids) from delivery_platform where id = @pid", new { pid, b = o.BranchId }, tx);
+                    var plat = await c.QuerySingleOrDefaultAsync<(Guid Id, decimal Pct, bool Active, decimal Fee, bool Here, string OrderType, string Name)>(
+                        "select id, commission_pct, is_active, bank_fee_pct, @b = any(branch_ids), order_type, name from delivery_platform where id = @pid", new { pid, b = o.BranchId }, tx);
                     if (plat.Id == Guid.Empty || !plat.Active) throw new DomainException("That delivery platform isn't in use.");
                     if (!plat.Here) throw new DomainException("That delivery platform isn't switched on at this branch (Administration → Delivery platforms).");
+                    if (plat.OrderType != type) throw new DomainException($"{plat.Name} orders are {OrderSetup.TypeLabel(plat.OrderType)} orders.");
+                    OrderSetup.RequireMethod(setup, type, "platform");
                     platformId = plat.Id; commission = plat.Pct; bankFee = plat.Fee;
                 }
             }
-            if (type != "delivery") { platformId = null; commission = null; bankFee = null; }
+            // Another order type: a platform of another type comes off (nothing was paid to it yet).
+            if (platformId is { } kept && type != o.OrderType
+                && await c.ExecuteScalarAsync<string>("select order_type from delivery_platform where id = @kept", new { kept }, tx) != type)
+            {
+                if (o.Paid > 0) throw new DomainException("Money was taken on this platform's order: its type can't change now.");
+                platformId = null; commission = null; bankFee = null;
+            }
             // The role's discount limit: not on a delivery platform's order (its discounts are the platform's); own delivery keeps it.
             if (pct != o.DiscountPct && pct > 0 && platformId is null && scope.Limit("maxDiscountPct") is { } max && pct > max)
                 await Approvals.RequireAsync(c, tx, http, scope, "discount", pct, $"Your role allows discounts up to {max:0.##} %. A manager can approve {pct:0.##} %.", orderId: id);
@@ -526,12 +534,15 @@ public static class Orders
             // paid in full. It is invoiced when it's collected (Future orders → Collect).
             var advance = o.FutureStatus == "waiting";
             decimal taken = 0;
+            // Only the payment types the branch takes for this order type (Companies & branches → Order types and payments).
+            var setup = await OrderSetup.LoadAsync(c, tx, o.BranchId);
             // Non-cash first; cash last, so any change comes out of cash.
             foreach (var p in list.OrderBy(p => p.Method == "cash" ? 1 : 0))
             {
                 var method = (p.Method ?? "").Trim().ToLowerInvariant();
                 if (!Methods.Contains(method)) throw new DomainException("Payment method must be cash, card, other, voucher, account, points or platform.");
                 if (method == "platform" && o.PlatformId is null) throw new DomainException("Only a delivery platform's order is paid by the platform.");
+                OrderSetup.RequireMethod(setup, o.OrderType, method);
                 if (p.Amount <= 0) throw new DomainException("A payment must be more than zero.");
                 if (due <= 0) throw new DomainException("The order is already paid in full.");
                 var reference = method == "platform" ? $"{o.PlatformName} {o.PlatformRef}" : Opt(p.Reference);

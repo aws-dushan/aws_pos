@@ -12,7 +12,7 @@ import { cn, timeAgo } from "@/lib/utils";
 import { shortcutTitle } from "@/lib/shortcuts";
 import { DiscountDialog, PlatformOfferDialog } from "@/components/discount-dialog";
 import { fmtIn } from "@/lib/num";
-import { byWeight, collectLabel, fmtQty, imageUrl, orderNo, initials, itemGroups, leastPrice, noPrice, orderLabel, priceOf, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
+import { byWeight, collectLabel, fmtQty, imageUrl, orderNo, initials, itemGroups, leastPrice, noPrice, orderLabel, payMethodsFor, priceOf, typeOn, withPlatformPrices, type FloorData, type Menu, type MenuItem, type ModifierGroup, type Order, type OrderDetail, type OrderLine, type OrderType, type ShortStock } from "@/lib/pos";
 import { useSession } from "@/components/session";
 import { useLiveEvent } from "@/components/live";
 import { EmptyState, ObjectStatus, PageHeader, Segmented, TONE } from "@/components/kit";
@@ -68,11 +68,12 @@ function StartScreen() {
     }
   }
 
-  const starts: { type: OrderType; label: string; hint: string; icon: React.ComponentType<{ className?: string }>; module: ModuleKey }[] = [
-    ...(branch?.tableService ? [{ type: "dine_in" as const, label: "Dine-in", hint: "Seat a table on the floor", icon: ArmchairIcon, module: "sales" as const }] : []),
+  // Only the order types this branch takes (Companies & branches → Order types and payments).
+  const starts = ([
+    { type: "dine_in", label: "Dine-in", hint: "Seat a table on the floor", icon: ArmchairIcon, module: "sales" },
     { type: "takeaway", label: "Takeaway", hint: "Counter order", icon: ShoppingBagIcon, module: "fin" },
     { type: "delivery", label: "Delivery", hint: "Name, phone, address", icon: BikeIcon, module: "bank" },
-  ];
+  ] as { type: OrderType; label: string; hint: string; icon: React.ComponentType<{ className?: string }>; module: ModuleKey }[]).filter((s) => typeOn(branch, s.type));
 
   return (
     <div className="mx-auto max-w-[1180px] pb-6">
@@ -84,7 +85,7 @@ function StartScreen() {
       <NoSaleDialog open={noSale} onClose={() => setNoSale(false)} />
       <MyShiftCard autoOpen hideWhenOpen className="mb-4" />
       <PickupStrip className="mb-4" />
-      <Stagger className={cn("grid gap-4", starts.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
+      <Stagger className={cn("grid gap-4", starts.length === 3 ? "sm:grid-cols-3" : starts.length === 2 ? "sm:grid-cols-2" : "sm:grid-cols-1")}>
         {starts.map((s) => (
           <StaggerItem key={s.type}>
             <button type="button" data-module={s.module} disabled={!!starting} data-shortcut={s.type === "takeaway" ? "new" : undefined}
@@ -145,12 +146,12 @@ function OrderScreen({ orderId }: { orderId: string }) {
   const [offerOpen, setOfferOpen] = useState(false);
   const cur = company?.currency ?? "AED";
   const menuApi = useApi<Menu>("/pos/menu");
-  const platforms = useApi<{ id: string; name: string; isActive: boolean; here: boolean }[]>("/platforms");
+  const platforms = useApi<{ id: string; name: string; isActive: boolean; here: boolean; orderType: OrderType }[]>("/platforms");
   const loaded = useApi<OrderDetail>(`/orders/${orderId}`);
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const d = detail ?? loaded.data ?? null;
   // A FACTS-linked delivery platform's bill: the menu shows (and sells at) that platform's FACTS prices.
-  const platformId = d?.order.orderType === "delivery" ? d.order.platformId ?? null : null;
+  const platformId = d?.order.platformId ?? null;
   const menuData = useMemo(() => withPlatformPrices(menuApi.data, platformId), [menuApi.data, platformId]);
   const menu = { ...menuApi, data: menuData };
   const [cat, setCat] = useState("all");
@@ -261,7 +262,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
   const active = d.lines.filter((l) => !l.isVoid);
   const unsent = active.reduce((n, l) => n + l.qty - l.sentQty, 0);
   // Open while something needed is missing (a platform's order number; phone and address for our own delivery) or nothing is on the order yet.
-  const needsDetails = o.orderType === "delivery" && (o.platformId ? !o.platformRef : !(o.customerPhone && o.deliveryAddress));
+  const needsDetails = o.platformId ? !o.platformRef : o.orderType === "delivery" && !(o.customerPhone && o.deliveryAddress);
   const showDetails = needsDetails || (detailsOpen ?? d.lines.length === 0);
   const detailsSummary = [
     o.orderType === "dine_in" ? (o.tableIds.length ? `Table ${o.tableNames}` : o.tableLabel ? `Table ${o.tableLabel}` : null) : null,
@@ -302,11 +303,15 @@ function OrderScreen({ orderId }: { orderId: string }) {
     if (r) { toast.success(`Order ${orderNo(o)} voided.`); router.push("/register"); }
   }
 
-  const types: { value: OrderType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    ...(branch?.tableService ? [{ value: "dine_in" as const, label: "Dine-in", icon: ArmchairIcon }] : []),
+  // The order types this branch takes (and the order's own, should it have been switched off since).
+  const types = ([
+    { value: "dine_in", label: "Dine-in", icon: ArmchairIcon },
     { value: "takeaway", label: "Takeaway", icon: ShoppingBagIcon },
     { value: "delivery", label: "Delivery", icon: BikeIcon },
-  ];
+  ] as { value: OrderType; label: string; icon: React.ComponentType<{ className?: string }> }[]).filter((t) => t.value === o.orderType || typeOn(branch, t.value));
+  // The platforms whose orders are this order's type, switched on here, where the branch takes platform orders of this type.
+  const typePlatforms = payMethodsFor(branch, o.orderType).includes("platform")
+    ? (platforms.data ?? []).filter((p) => p.isActive && p.here && (p.orderType ?? "delivery") === o.orderType) : [];
 
   return (
     <div className="grid gap-3 py-3 md:h-[calc(100dvh-3.5rem)] md:grid-cols-[minmax(0,1fr)_320px] lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-4 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -405,7 +410,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
               <Segmented id="order-type" size="sm" value={o.orderType} className="w-full" options={types} onChange={(v) => { setDetailsOpen(null); void run(`/orders/${o.id}`, "PUT", { type: v }); if (v === "dine_in" && branch?.tableService && !o.tableIds.length) setDialog("tables"); }} />
               {showDetails ? (
                 <div className="space-y-2">
-                  <OrderDetailsFields order={o} currency={cur} platforms={(platforms.data ?? []).filter((p) => p.isActive && p.here)} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
+                  <OrderDetailsFields order={o} currency={cur} platforms={typePlatforms} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
                   {!needsDetails && d.lines.length > 0 && (
                     <button type="button" onClick={() => setDetailsOpen(false)} className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                       <ChevronUpIcon className="size-3.5" /> Hide details
@@ -591,6 +596,26 @@ function OrderDetailsFields({ order: o, currency, platforms, onAttach, onSave, o
   const [typed, setTyped] = useState("");
   const field = "h-11 w-full min-w-0 rounded-xl border border-input bg-card px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 dark:bg-input/30";
   const blur = (k: string, v: string, old: string | null) => { if ((v || null) !== old) onSave({ [k]: v }); };
+  const platformOrder = !!o.platformId;
+  // A platform's order (Talabat, Talabat Kitchen Dine In…): the platforms of this order type; the first chip is none (own delivery, walk-in).
+  const chips = (platforms.length > 0 || platformOrder) && (
+    // One row that scrolls sideways: many platforms never push the bill and Pay off the till screen.
+    <div className="scrollbar-thin -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:col-span-2">
+      {[{ id: "", name: o.orderType === "delivery" ? "Own delivery" : "Walk-in" }, ...platforms].map((p) => {
+        const on = (o.platformId ?? "") === p.id;
+        return (
+          <button key={p.id || "own"} type="button" aria-pressed={on} disabled={o.paid > 0}
+            onClick={() => !on && onSave({ platformId: p.id || "00000000-0000-0000-0000-000000000000" })}
+            className={cn("h-9 shrink-0 rounded-lg border px-3 text-sm whitespace-nowrap transition-[background-color,transform] active:scale-[0.97] disabled:opacity-60",
+              on ? "border-primary bg-primary/10 font-medium text-primary" : "bg-card hover:bg-muted")}>{p.name}</button>
+        );
+      })}
+    </div>
+  );
+  const refField = platformOrder && (
+    <input key={`r${o.version}`} defaultValue={o.platformRef ?? ""} placeholder={`${o.platformName} order number (needed)`} className={cn(field, "font-medium uppercase sm:col-span-2")}
+      onBlur={(e) => blur("platformRef", e.target.value.trim().toUpperCase(), o.platformRef)} autoFocus={!o.platformRef} />
+  );
   if (o.orderType === "dine_in")
     return (
       <div className="space-y-2">
@@ -611,31 +636,16 @@ function OrderDetailsFields({ order: o, currency, platforms, onAttach, onSave, o
           <button type="button" aria-label="More guests" className="flex size-11 items-center justify-center text-muted-foreground" onClick={() => onSave({ guests: (o.guests ?? 0) + 1 })}><PlusIcon className="size-4" /></button>
         </div>
       </div>
+      {chips}
+      {refField}
       {!o.customerId && <input placeholder="Customer (optional): name or phone" className={field} onChange={(e) => setTyped(e.target.value)} />}
       <CustomerBox order={o} typed={typed} currency={currency} onAttach={onAttach} />
       </div>
     );
-  const platformOrder = o.orderType === "delivery" && !!o.platformId;
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      {o.orderType === "delivery" && platforms.length > 0 && (
-        // One row that scrolls sideways: many platforms never push the bill and Pay off the till screen.
-        <div className="scrollbar-thin -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:col-span-2">
-          {[{ id: "", name: "Own delivery" }, ...platforms].map((p) => {
-            const on = (o.platformId ?? "") === p.id;
-            return (
-              <button key={p.id || "own"} type="button" aria-pressed={on} disabled={o.paid > 0}
-                onClick={() => !on && onSave({ platformId: p.id || "00000000-0000-0000-0000-000000000000" })}
-                className={cn("h-9 shrink-0 rounded-lg border px-3 text-sm whitespace-nowrap transition-[background-color,transform] active:scale-[0.97] disabled:opacity-60",
-                  on ? "border-primary bg-primary/10 font-medium text-primary" : "bg-card hover:bg-muted")}>{p.name}</button>
-            );
-          })}
-        </div>
-      )}
-      {platformOrder && (
-        <input key={`r${o.version}`} defaultValue={o.platformRef ?? ""} placeholder={`${o.platformName} order number (needed)`} className={cn(field, "font-medium uppercase sm:col-span-2")}
-          onBlur={(e) => blur("platformRef", e.target.value.trim().toUpperCase(), o.platformRef)} autoFocus={!o.platformRef} />
-      )}
+      {chips}
+      {refField}
       <input key={`n${o.version}`} defaultValue={o.customerName ?? ""} placeholder={o.orderType === "delivery" && !platformOrder ? "Customer name" : "Customer name (optional)"} className={field}
         onChange={(e) => setTyped(e.target.value)} onBlur={(e) => blur("customerName", e.target.value, o.customerName)} />
       <input key={`p${o.version}`} defaultValue={o.customerPhone ?? ""} placeholder={o.orderType === "delivery" && !platformOrder ? "Phone (needed)" : "Phone (optional)"} inputMode="tel" className={field}
