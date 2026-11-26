@@ -136,7 +136,7 @@ flowchart LR
 - **Own delivery** needs the customer's **Phone** and **Delivery address** before it can be paid.
 - For Talabat, Deliveroo, Careem and other platforms switched on at this branch, tap the platform's chip and type the **platform order number (needed)**. No phone or address is needed: the platform delivers. The platform's own prices apply.
 - A platform whose orders are dine-in (e.g. Talabat Kitchen Dine In) is chosen on a **Dine-in** order: seat the table, tap the platform's chip and type its order number. **Walk-in** takes the platform off again. The kitchen ticket shows the table and the platform's order number.
-- The payment screen offers only the payment types the branch takes for that order type. When a branch takes an order type only through platforms, choose the platform on the order before paying.
+- The payment screen offers only the payment types the branch takes for that order type. When a branch takes an order type only through platforms (only **Platform** ticked), there is no **Walk-in** or **Own delivery** chip, and with just one platform for that order type a new order starts already as that platform's: type its order number.
 - A platform deal goes under the platform's **offer** chip: **We pay** (a discount on our bill) or **the platform pays**.
 - The platform chip and offer lock once money has been taken.
 

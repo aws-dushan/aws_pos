@@ -179,7 +179,8 @@ public static class Orders
         var type = CleanType(body.Type);
         var br = await c.QuerySingleAsync<(bool TableService, decimal ServiceChargePct, string TimeZone)>(
             "select table_service, service_charge_pct, time_zone from branch where id = @branchId", new { branchId }, tx);
-        OrderSetup.RequireType(await OrderSetup.LoadAsync(c, tx, branchId), type);
+        var setup = OrderSetup.LoadAsync(c, tx, branchId);
+        OrderSetup.RequireType(await setup, type);
         var co = await c.QuerySingleAsync<(decimal VatRate, bool PricesIncludeVat)>("select vat_rate, prices_include_vat from company where id = @id", new { id = scope.CompanyId }, tx);
         var date = (await Days.CurrentAsync(c, tx, branchId, scope.UserId)).Date;
         var id = await c.ExecuteScalarAsync<Guid>("""
@@ -192,6 +193,10 @@ public static class Orders
                 name = Opt(body.CustomerName), phone = Opt(body.CustomerPhone), address = Opt(body.DeliveryAddress),
                 vatRate = co.VatRate, incl = co.PricesIncludeVat, svc = br.ServiceChargePct, userId = scope.UserId,
             }, tx);
+        // Paid only through one platform here (a cloud kitchen): the order starts as that platform's.
+        if (await OrderSetup.OnlyPlatformAsync(c, tx, await setup, branchId, type) is { } only)
+            await c.ExecuteAsync("update pos_order set platform_id = @pid, platform_commission = @pct, platform_bank_fee = @fee where id = @orderId",
+                new { pid = only.Id, pct = only.Pct, fee = only.Fee, orderId = id }, tx);
         if (type == "dine_in" && body.TableId is { } tableId) await OrderTables.SeatAsync(c, tx, scope.CompanyId, branchId, id, [tableId]);
         await OrderTables.LockAsync(c, tx, http, scope, id);
         return id;
@@ -357,6 +362,9 @@ public static class Orders
             // The role's discount limit: not on a delivery platform's order (its discounts are the platform's); own delivery keeps it.
             if (pct != o.DiscountPct && pct > 0 && platformId is null && scope.Limit("maxDiscountPct") is { } max && pct > max)
                 await Approvals.RequireAsync(c, tx, http, scope, "discount", pct, $"Your role allows discounts up to {max:0.##} %. A manager can approve {pct:0.##} %.", orderId: id);
+            // Paid only through one platform for this type here (a cloud kitchen): an order without one gets it.
+            if (platformId is null && body.PlatformId is null && await OrderSetup.OnlyPlatformAsync(c, tx, setup, o.BranchId, type) is { } only && o.Paid == 0)
+            { platformId = only.Id; commission = only.Pct; bankFee = only.Fee; }
             var platformRef = platformId is null ? null : body.PlatformRef is null ? o.PlatformRef : Opt(body.PlatformRef)?.ToUpperInvariant();
             // Another platform (or none): the open lines take its prices (the platform's FACTS prices, or the outlet's).
             if (platformId != o.PlatformId) await PlatformPrices.RepriceAsync(c, tx, id, o.BranchId, platformId);

@@ -20,6 +20,21 @@ public static class OrderSetup
     {
         public bool TypeOn(string type) => type switch { "dine_in" => TableService, "takeaway" => TakeawayOn, "delivery" => DeliveryOn, _ => false };
         public bool Allows(string type, string method) => PayMethods.TryGetValue(type, out var m) && m.Contains(method);
+        /// <summary>The order type is paid only by a delivery platform here (a cloud kitchen): no walk-in or own delivery.</summary>
+        public bool PlatformOnly(string type) => PayMethods.TryGetValue(type, out var m) && m.Length > 0 && m.All(x => x == "platform");
+    }
+
+    /// <summary>
+    /// Where an order type is paid only by a platform and exactly one platform of that type is on at the branch, that platform
+    /// (id, commission, bank fee) — the order starts tagged with it. Otherwise null: the cashier picks.
+    /// </summary>
+    public static async Task<(Guid Id, decimal Pct, decimal Fee)?> OnlyPlatformAsync(NpgsqlConnection c, NpgsqlTransaction tx, Setup s, Guid branchId, string type)
+    {
+        if (!s.PlatformOnly(type)) return null;
+        var list = (await c.QueryAsync<(Guid Id, decimal Pct, decimal Fee)>(
+            "select id, commission_pct, bank_fee_pct from delivery_platform where is_active and @b = any(branch_ids) and order_type = @type limit 2",
+            new { b = branchId, type }, tx)).ToList();
+        return list.Count == 1 ? list[0] : null;
     }
 
     public static string TypeLabel(string type) => type switch { "dine_in" => "dine-in", "takeaway" => "takeaway", _ => "delivery" };

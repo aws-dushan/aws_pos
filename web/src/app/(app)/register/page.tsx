@@ -410,7 +410,7 @@ function OrderScreen({ orderId }: { orderId: string }) {
               <Segmented id="order-type" size="sm" value={o.orderType} className="w-full" options={types} onChange={(v) => { setDetailsOpen(null); void run(`/orders/${o.id}`, "PUT", { type: v }); if (v === "dine_in" && branch?.tableService && !o.tableIds.length) setDialog("tables"); }} />
               {showDetails ? (
                 <div className="space-y-2">
-                  <OrderDetailsFields order={o} currency={cur} platforms={typePlatforms} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
+                  <OrderDetailsFields order={o} currency={cur} platforms={typePlatforms} platformOnly={payMethodsFor(branch, o.orderType).every((m) => m === "platform")} onAttach={(customerId) => void run(`/orders/${o.id}/customer`, "POST", { customerId })} onSave={(patch) => void run(`/orders/${o.id}`, "PUT", patch)} onTables={() => setDialog("tables")} />
                   {!needsDetails && d.lines.length > 0 && (
                     <button type="button" onClick={() => setDetailsOpen(false)} className="flex w-full items-center justify-center gap-1 text-xs text-muted-foreground hover:text-foreground">
                       <ChevronUpIcon className="size-3.5" /> Hide details
@@ -589,8 +589,10 @@ function Row({ label, value, className, muted }: { label: string; value: string;
 }
 
 /** Customer / table fields under the order type; saved when the field loses focus. */
-function OrderDetailsFields({ order: o, currency, platforms, onAttach, onSave, onTables }: {
-  order: Order; currency: string; platforms: { id: string; name: string }[]; onAttach: (customerId: string | null) => void; onSave: (patch: Record<string, unknown>) => void; onTables: () => void;
+function OrderDetailsFields({ order: o, currency, platforms, platformOnly, onAttach, onSave, onTables }: {
+  order: Order; currency: string; platforms: { id: string; name: string }[];
+  /** The branch takes this order type only through platforms (a cloud kitchen): no Walk-in / Own delivery chip. */
+  platformOnly: boolean; onAttach: (customerId: string | null) => void; onSave: (patch: Record<string, unknown>) => void; onTables: () => void;
 }) {
   // What's being typed in the name / phone (or dine-in customer) field: matching customers show under it to attach.
   const [typed, setTyped] = useState("");
@@ -601,7 +603,7 @@ function OrderDetailsFields({ order: o, currency, platforms, onAttach, onSave, o
   const chips = (platforms.length > 0 || platformOrder) && (
     // One row that scrolls sideways: many platforms never push the bill and Pay off the till screen.
     <div className="scrollbar-thin -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 sm:col-span-2">
-      {[{ id: "", name: o.orderType === "delivery" ? "Own delivery" : "Walk-in" }, ...platforms].map((p) => {
+      {[...(platformOnly ? [] : [{ id: "", name: o.orderType === "delivery" ? "Own delivery" : "Walk-in" }]), ...platforms].map((p) => {
         const on = (o.platformId ?? "") === p.id;
         return (
           <button key={p.id || "own"} type="button" aria-pressed={on} disabled={o.paid > 0}
