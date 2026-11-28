@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type User = { id: string; username: string; displayName: string; isActive: boolean; isAdmin: boolean; roleId: string; roleName: string; hasPin: boolean; hasPassword: boolean; branchIds: string[];
+  /** The person's FACTS salesman (the same in every company), put on the stock requests they make. */
+  salesman: string | null; salesmanName: string | null;
   /** The user's own limits over the role's: a number, or null for no limit; a key not there follows the role. */
   limits: Record<string, number | null> };
 type Role = { id: string; name: string; limits: Record<string, number> };
@@ -113,7 +115,8 @@ export default function UsersPage() {
 function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | null; roles: Role[]; onClose: () => void; onSaved: () => void }) {
   const { company, me } = useSession();
   const isNew = value === "new";
-  const blank = { username: "", displayName: "", password: "", clearPassword: false, roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true, isAdmin: false };
+  const blank = { username: "", displayName: "", password: "", clearPassword: false, roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true, isAdmin: false,
+    salesman: null as Salesman | null };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +126,8 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
     setSeen(value);
     setPinPad(false);
     setLimits(limitState(value && value !== "new" ? value : null));
-    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", clearPassword: false, roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive, isAdmin: value.isAdmin });
+    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", clearPassword: false, roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive, isAdmin: value.isAdmin,
+      salesman: value.salesman ? { code: value.salesman, name: value.salesmanName ?? "" } : null });
     else setF({ ...blank, roleId: roles.find((r) => r.name === "Cashier")?.id ?? roles[0]?.id ?? "", branchIds: company?.branches.length === 1 ? [company.branches[0].id] : [] });
   }
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -136,7 +140,10 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
     setBusy(true);
     try {
       const own = Object.fromEntries(LIMITS.filter((l) => limits[l.key].mode !== "role").map((l) => [l.key, limits[l.key].mode === "none" ? null : Number(limits[l.key].value || 0)]));
-      const body = { ...f, password: f.password || null, pin: f.pin || null, limits: own };
+      // The salesman is sent only when it changed ("" clears it).
+      const was = existing?.salesman ?? null;
+      const salesman = (f.salesman?.code ?? null) === was ? null : f.salesman?.code ?? "";
+      const body = { ...f, password: f.password || null, pin: f.pin || null, limits: own, salesman };
       if (isNew) await api(`/companies/${company.id}/users`, "POST", body);
       else if (existing) await api(`/companies/${company.id}/users/${existing.id}`, "PUT", body);
       toast.success(isNew ? `${f.displayName} added.` : "User saved.");
@@ -258,6 +265,10 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             </div>
           </Field>
 
+          <Field label="FACTS salesman" hint="From FACTS' salesman list. The stock requests they make go to FACTS with it. The same in every company.">
+            {company && <SalesmanPicker companyId={company.id} value={f.salesman} onChange={(v) => set("salesman", v)} />}
+          </Field>
+
           {/* Only an administrator makes (or unmakes) an administrator; never themselves. */}
           {me.user.isAdmin && existing?.id !== me.user.id && (
             <div data-module="admin" className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5">
@@ -307,6 +318,51 @@ function PinEntry({ value, onChange }: { value: string; onChange: (v: string) =>
             {k === "back" ? "⌫" : k === "clear" ? "Clear" : k}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+type Salesman = { code: string; name: string };
+
+/** A person's FACTS salesman: picked from FACTS' salesman list by code or name, or none. */
+function SalesmanPicker({ companyId, value, onChange }: { companyId: string; value: Salesman | null; onChange: (v: Salesman | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [term, setTerm] = useState("");
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const found = useApi<Salesman[]>(open ? `/companies/${companyId}/facts/salesmen?q=${encodeURIComponent(term)}` : null);
+  const type = (v: string) => {
+    setQ(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setTerm(v.trim()), 300);
+  };
+  if (!open)
+    return (
+      <div className="flex items-center gap-1.5">
+        <div className={cn("flex h-9 min-w-0 flex-1 items-center rounded-lg border px-3 text-sm", !value && "text-muted-foreground")}>
+          {value ? <span className="truncate"><span className="font-mono text-xs text-muted-foreground">{value.code}</span> {value.name}</span> : "None"}
+        </div>
+        <Button type="button" variant="outline" onClick={() => setOpen(true)}>{value ? "Change" : "Choose"}</Button>
+        {value && <Button type="button" variant="ghost" onClick={() => onChange(null)}>Clear</Button>}
+      </div>
+    );
+  return (
+    <div className="grid gap-1.5 rounded-lg border p-2">
+      <div className="flex gap-1.5">
+        <SearchField autoFocus value={q} onChange={(e) => type(e.target.value)} placeholder="Search by name or code" className="flex-1" />
+        <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      <ErrorNote message={found.error} />
+      <div className="max-h-56 overflow-y-auto">
+        {!found.data ? <p className="px-2 py-1.5 text-sm text-muted-foreground">Reading FACTS…</p>
+          : found.data.length === 0 ? <p className="px-2 py-1.5 text-sm text-muted-foreground">No salesman matches.</p>
+          : found.data.map((s) => (
+            <button key={s.code} type="button" onClick={() => { onChange(s); setOpen(false); setQ(""); setTerm(""); }}
+              className={cn("flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted", value?.code === s.code && "bg-muted")}>
+              <span className="w-20 shrink-0 font-mono text-xs text-muted-foreground">{s.code}</span><span className="truncate">{s.name}</span>
+            </button>
+          ))}
       </div>
     </div>
   );

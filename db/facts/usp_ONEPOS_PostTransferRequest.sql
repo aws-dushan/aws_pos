@@ -9,7 +9,8 @@ AS
   way the outlets' own STR50s are made today (e.g. 9268, ERBQS asking 5ALKD), posted, never a draft:
   1. Saves one STR50 (Stock Transfer Request-Bakery) from the store to the outlet (e.g. 5ALK1 -> ERBQS): rate 0, "after document"
      quantity 0 (each STV50 the store sends against it adds to it), salesman, division and department of the outlet's last STR50
-     (a new outlet with none: the division and department most STR50s carry, no salesman).
+     (a new outlet with none: the division and department most STR50s carry, no salesman); the salesman sent (that of the person who
+     made the request, picked on their user in One POS) wins over the copied one when FACTS has it.
      Each line carries a batch of the item as FACTS' own STR50 lines do (the store's oldest batch with stock, else the item's newest
      batch); the store's STV50 picks its own batches when it sends. Quantities in the item's base unit (STOCK_UNIT).
      Number = FACTS' next STR50 number, under a lock. The save is logged as FACTS' screen logs it (ADD_EDIT_DELETE_LOG "A").
@@ -22,6 +23,7 @@ AS
   XML:  <data><Transfer>
           <DocDate>2026-10-26</DocDate> <FromLocation>5ALK1</FromLocation> <ToLocation>ERBQS</ToLocation>
           <Reference>One POS request EB-QS REQ-0042 · for 27 Oct</Reference>      (also the narration the store sees)
+          <Salesman>400219</Salesman>                                                (optional: the requester's FACTS salesman)
           <Line><ItemType>SMBK</ItemType><ItemCode>501477</ItemCode><ItemName>…</ItemName><Qty>3</Qty><Unit>PCS</Unit></Line> …
         </Transfer></data>
   Answer: DocumentNo (the STR50 number), status (SUCCESS | FAILED), description; then OnePosBatches (lines), OnePosNote.
@@ -36,6 +38,7 @@ BEGIN
             @From NVARCHAR(20)       = @BodyXML.value('(/data/Transfer/FromLocation)[1]', 'NVARCHAR(20)'),
             @To NVARCHAR(20)         = @BodyXML.value('(/data/Transfer/ToLocation)[1]', 'NVARCHAR(20)'),
             @Reference NVARCHAR(200) = @BodyXML.value('(/data/Transfer/Reference)[1]', 'NVARCHAR(200)'),
+            @Salesman NVARCHAR(20)   = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/Transfer/Salesman)[1]', 'NVARCHAR(20)'))), ''),
             @DocNo NVARCHAR(20), @Sman NVARCHAR(20), @Divn NVARCHAR(20), @Dept NVARCHAR(20);
 
     DECLARE @Lines TABLE (SrNo INT IDENTITY(1, 1), ItemType NVARCHAR(6), ItemCode NVARCHAR(20), ItemName NVARCHAR(300), Qty NUMERIC(18, 3), Unit NVARCHAR(20),
@@ -124,6 +127,8 @@ BEGIN
             SELECT TOP 1 @Divn = TSF_DIVN_DOCNO, @Dept = TSF_DEPT_DOCNO FROM dbo.TRANSFER_HEADER
             WHERE TSF_DOCTYPE = @DocType AND ISNULL(TSF_DIVN_DOCNO, '') <> '' AND TSF_DOCDATE >= DATEADD(DAY, -90, GETDATE())
             GROUP BY TSF_DIVN_DOCNO, TSF_DEPT_DOCNO ORDER BY COUNT(*) DESC;
+        -- The salesman of the person who made the request (picked on their user in One POS), when FACTS knows it.
+        IF EXISTS (SELECT 1 FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman) SET @Sman = @Salesman;
 
         INSERT INTO dbo.TRANSFER_HEADER (TSF_FYCODE, TSF_DOCTYPE, TSF_DOCNO, TSF_DOCDATE, TSF_LOCATION_FM_DOCNO, TSF_LOCATION_TO_DOCNO, TSF_SMAN_DOCNO, TSF_NARRATION,
                                          TSF_NET_AMOUNT, TSF_TOTAL_QTY, TSF_DIVN_DOCNO, TSF_DEPT_DOCNO, TSF_CREATED_BY, TSF_CREATED_TS, TSF_ACTIVE_STATUS)

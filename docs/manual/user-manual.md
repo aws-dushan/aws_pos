@@ -599,6 +599,7 @@ On a FACTS company card, open **FACTS connection**, paste the **Connection strin
 2. Pick the **Role** and the **Branches** they work at.
 3. **Set PIN** for till staff (4–6 digits, unique in the company; easy PINs such as 1111 or 1234 are refused). Give a **Back-office password** only to back-office users.
 4. Optionally override the role's limits under **Limits for this user**.
+5. For people who make stock requests, pick their **FACTS salesman**: tap **Choose**, search by name or code, tap the salesman. Their requests go to FACTS with that salesman. It belongs to the person, so it is the same in every company; **Clear** takes it off.
 
 ![Users: each person's role, branches and how they sign in](images/users.jpg)
 

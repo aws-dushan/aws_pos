@@ -192,9 +192,15 @@ public static class StockRequests
             var all = group.SelectMany(r => kept[r.Id]).ToList();
             var strLine = 0;
             foreach (var l in all) await c.ExecuteAsync("update stock_request_line set str_line = @n where id = @Id", new { n = ++strLine, l.Id }, tx);
+            // The salesman on the STR50: that of the first of these requests' makers who has one (Users → FACTS salesman).
+            var salesman = await c.ExecuteScalarAsync<string?>("""
+                select u.facts_salesman from unnest(@who) with ordinality as w(id, n) join app_user u on u.id = w.id
+                where u.facts_salesman is not null order by w.n limit 1
+                """, new { who = group.Select(r => r.RequestedBy).ToArray() }, tx);
             var xml = new XElement("data", new XElement("Transfer",
                 new XElement("DocDate", day.ToString("yyyy-MM-dd", Inv)), new XElement("FromLocation", first.StoreCode), new XElement("ToLocation", first.Loc),
                 new XElement("Reference", reference),
+                salesman is null ? null : new XElement("Salesman", salesman),
                 all.Select(l => new XElement("Line", new XElement("ItemType", l.ItemType), new XElement("ItemCode", l.ItemCode), new XElement("ItemName", l.ItemName),
                     new XElement("Qty", Qty(l).ToString("0.###", Inv)), new XElement("Unit", l.Unit ?? "PCS")))));
             var postId = Guid.NewGuid();

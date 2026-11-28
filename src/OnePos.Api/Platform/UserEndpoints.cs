@@ -14,8 +14,19 @@ public static class UserEndpoints
     /// <summary>Limits: the user's own over the role's (null value: no limit for them; left out: as the role). Not sent: unchanged.</summary>
     /// <summary>IsAdmin: an administrator of ONE POS (every company); only an administrator changes it. Not sent: unchanged.</summary>
     /// <summary>ClearPassword: the back-office password goes (the person then signs in only at the till, with their PIN).</summary>
+    /// <summary>Salesman: the person's FACTS salesman code (one for every company); "" clears it, not sent: unchanged.</summary>
     public sealed record UserBody(string? Username, string DisplayName, string? Password, Guid RoleId, Guid[]? BranchIds, string? Pin, bool? ClearPin, bool? IsActive,
-        JsonElement? Limits = null, bool? IsAdmin = null, bool? ClearPassword = null);
+        JsonElement? Limits = null, bool? IsAdmin = null, bool? ClearPassword = null, string? Salesman = null);
+
+    /// <summary>A salesman in the company's FACTS (SALESMAN_MASTER), or refused: only FACTS' own salesmen can go on its documents.</summary>
+    private static async Task<(string? Code, string? Name)> SalesmanAsync(Erp.FactsSync facts, Guid companyId, string? code)
+    {
+        var want = (code ?? "").Trim();
+        if (want.Length == 0) return (null, null);
+        await using var f = await facts.OpenAsync(companyId);
+        var name = await f.ExecuteScalarAsync<string?>("select top 1 ltrim(rtrim(SMAN_DESC)) from SALESMAN_MASTER where ltrim(rtrim(SMAN_DOCNO)) = @want", new { want });
+        return name is null ? throw new DomainException($"FACTS has no salesman {want}.") : (want, name);
+    }
     public sealed record RoleBody(string Name, string[]? Permissions, JsonElement? Limits);
 
     public sealed class UserRow
@@ -31,6 +42,8 @@ public static class UserEndpoints
         public bool HasPassword { get; set; }
         public Guid[] BranchIds { get; set; } = [];
         public string Limits { get; set; } = "{}";
+        public string? FactsSalesman { get; set; }
+        public string? FactsSalesmanName { get; set; }
     }
 
     public sealed class RoleRow
@@ -58,7 +71,7 @@ public static class UserEndpoints
                        uc.pin_lookup is not null as has_pin, u.password_hash is not null as has_password,
                        coalesce(array(select ub.branch_id from user_branch ub join branch b on b.id = ub.branch_id
                                       where ub.user_id = u.id and b.company_id = @companyId), '{}') as branch_ids,
-                       uc.limits::text as limits
+                       uc.limits::text as limits, u.facts_salesman, u.facts_salesman_name
                 from user_company uc join app_user u on u.id = uc.user_id join role r on r.id = uc.role_id
                 where uc.company_id = @companyId
                 order by u.display_name
@@ -66,16 +79,32 @@ public static class UserEndpoints
                 {
                     u.Id, u.Username, u.DisplayName, u.IsActive, u.IsAdmin, u.RoleId, u.RoleName, u.HasPin, u.HasPassword, u.BranchIds,
                     limits = JsonDocument.Parse(u.Limits).RootElement,
+                    salesman = u.FactsSalesman, salesmanName = u.FactsSalesmanName,
                 }).ToList());
         });
 
-        api.MapPost("/companies/{companyId:guid}/users", async (Guid companyId, UserBody body, HttpContext http, Db db, Pins pins) =>
+        // FACTS' salesmen to pick a person's from (Users): by code or name.
+        api.MapGet("/companies/{companyId:guid}/facts/salesmen", async (Guid companyId, string? q, HttpContext http, Db db, Erp.FactsSync facts) =>
+        {
+            (await http.ScopeAsync(db, companyId)).Require("users.manage");
+            var term = (q ?? "").Trim();
+            await using var f = await facts.OpenAsync(companyId);
+            var rows = await f.QueryAsync<(string Code, string Name)>("""
+                select top 40 ltrim(rtrim(SMAN_DOCNO)), ltrim(rtrim(SMAN_DESC)) from SALESMAN_MASTER with (nolock)
+                where @term = '' or SMAN_DOCNO like @prefix or SMAN_DESC like @like
+                order by case when ltrim(rtrim(SMAN_DOCNO)) = @term then 0 when SMAN_DOCNO like @prefix then 1 else 2 end, SMAN_DESC
+                """, new { term, prefix = term + "%", like = "%" + term.Replace("[", "[[]").Replace("%", "[%]").Replace("_", "[_]") + "%" }, commandTimeout: 30);
+            return Results.Ok(rows.Select(r => new { code = r.Code, name = r.Name }));
+        });
+
+        api.MapPost("/companies/{companyId:guid}/users", async (Guid companyId, UserBody body, HttpContext http, Db db, Pins pins, Erp.FactsSync facts) =>
         {
             var scope = await http.ScopeAsync(db, companyId);
             scope.Require("users.manage");
             var username = (body.Username ?? "").Trim().ToLowerInvariant();
             if (username.Length == 0) throw new DomainException("Enter a username.");
             if (string.IsNullOrWhiteSpace(body.DisplayName)) throw new DomainException("Enter the user's name.");
+            var sman = await SalesmanAsync(facts, companyId, body.Salesman);
             var id = await db.Platform(async (c, tx) =>
             {
                 await CheckRoleAndBranchesAsync(c, tx, companyId, body);
@@ -95,6 +124,8 @@ public static class UserEndpoints
                     id = await c.ExecuteScalarAsync<Guid>("insert into app_user (username, display_name, password_hash, must_change_password) values (@username, @name, @hash, @hash is not null) returning id",
                         new { username, name = body.DisplayName.Trim(), hash = body.Password is { Length: > 0 } p ? Passwords.Hash(p) : null }, tx);
                 }
+                if (sman.Code is not null)
+                    await c.ExecuteAsync("update app_user set facts_salesman = @Code, facts_salesman_name = @Name where id = @id", new { id, sman.Code, sman.Name }, tx);
                 string? lookup = null;
                 if (body.Pin is { Length: > 0 }) { Pins.Check(body.Pin); lookup = pins.Lookup(companyId, body.Pin); }
                 await c.ExecuteAsync("insert into user_company (user_id, company_id, role_id, pin_lookup, limits) values (@id, @companyId, @RoleId, @lookup, cast(@limits as jsonb))",
@@ -102,22 +133,24 @@ public static class UserEndpoints
                 await SetBranchesAsync(c, tx, id, companyId, body.BranchIds ?? []);
                 if (body.IsAdmin == true) await SetAdminAsync(c, tx, scope, id, existing?.IsAdmin ?? false, true);
                 await Audit.RecordAsync(c, tx, companyId, null, scope.UserId, "user", id.ToString(), "added", $"User {username} added",
-                    Audit.Created(("Name", body.DisplayName.Trim()), ("Role", body.RoleId), ("Branches", (body.BranchIds ?? []).Length), ("PIN set", lookup is not null)));
+                    Audit.Created(("Name", body.DisplayName.Trim()), ("Role", body.RoleId), ("Branches", (body.BranchIds ?? []).Length), ("PIN set", lookup is not null),
+                        ("FACTS salesman", sman.Code is null ? null : $"{sman.Code} {sman.Name}")));
                 return id;
             });
             return Results.Ok(new { id });
         });
 
-        api.MapPut("/companies/{companyId:guid}/users/{id:guid}", async (Guid companyId, Guid id, UserBody body, HttpContext http, Db db, Pins pins) =>
+        api.MapPut("/companies/{companyId:guid}/users/{id:guid}", async (Guid companyId, Guid id, UserBody body, HttpContext http, Db db, Pins pins, Erp.FactsSync facts) =>
         {
             var scope = await http.ScopeAsync(db, companyId);
             scope.Require("users.manage");
             if (string.IsNullOrWhiteSpace(body.DisplayName)) throw new DomainException("Enter the user's name.");
+            var sman = body.Salesman is null ? default : await SalesmanAsync(facts, companyId, body.Salesman);
             await db.Platform(async (c, tx) =>
             {
                 var old = await c.QuerySingleOrDefaultAsync<UserRow>("""
                     select u.id, u.username, u.display_name, u.is_active, u.is_admin, uc.role_id, uc.pin_lookup is not null as has_pin,
-                           u.password_hash is not null as has_password
+                           u.password_hash is not null as has_password, u.facts_salesman, u.facts_salesman_name
                     from user_company uc join app_user u on u.id = uc.user_id where uc.user_id = @id and uc.company_id = @companyId for update of uc
                     """, new { id, companyId }, tx) ?? throw new NotFoundException("User not found in this company.");
                 if (old.IsAdmin && !scope.IsAdmin) throw new ForbiddenException("Only administrators can change an administrator.");
@@ -136,10 +169,13 @@ public static class UserEndpoints
                       failed_logins = case when @active then 0 else failed_logins end,
                       -- A password an administrator gives someone else is changed by its owner at the next sign-in.
                       must_change_password = case when @clearPassword then false when @hash is not null and @id <> @me then true else must_change_password end,
-                      locked_until = case when @active then null else locked_until end
+                      locked_until = case when @active then null else locked_until end,
+                      facts_salesman = case when @smanSet then @smanCode else facts_salesman end,
+                      facts_salesman_name = case when @smanSet then @smanName else facts_salesman_name end
                     where id = @id
                     """, new { id, name = body.DisplayName.Trim(), active = body.IsActive ?? old.IsActive, me = scope.UserId, clearPassword,
-                               hash = body.Password is { Length: > 0 } p ? Passwords.Hash(p) : null }, tx);
+                               hash = body.Password is { Length: > 0 } p ? Passwords.Hash(p) : null,
+                               smanSet = body.Salesman is not null, smanCode = sman.Code, smanName = sman.Name }, tx);
                 string? lookup = null;
                 if (body.Pin is { Length: > 0 }) { Pins.Check(body.Pin); lookup = pins.Lookup(companyId, body.Pin); }
                 await c.ExecuteAsync("""
@@ -156,6 +192,8 @@ public static class UserEndpoints
                     new("Role", old.RoleId, body.RoleId),
                     new("PIN", old.HasPin ? "set" : "none", body.ClearPin == true ? "none" : lookup is not null ? "changed" : old.HasPin ? "set" : "none"),
                     new("Password", clearPassword ? "set" : null, clearPassword ? "removed" : body.Password is { Length: > 0 } ? "changed" : null),
+                    new("FACTS salesman", old.FactsSalesman is null ? null : $"{old.FactsSalesman} {old.FactsSalesmanName}",
+                        body.Salesman is null ? (old.FactsSalesman is null ? null : $"{old.FactsSalesman} {old.FactsSalesmanName}") : sman.Code is null ? null : $"{sman.Code} {sman.Name}"),
                     new("Own limits", null, body.Limits is null ? null : Permissions.CleanUserLimits(body.Limits)),
                 ]);
                 return 0;
