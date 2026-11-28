@@ -172,7 +172,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
   return (
     <Dialog open={!!value} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
-        <form onSubmit={save} className="grid gap-4">
+        <form onSubmit={save} className="grid grid-cols-[minmax(0,1fr)] gap-4">
           <DialogHeader>
             <DialogTitle>{isNew ? "New user" : existing?.displayName}</DialogTitle>
             <DialogDescription>{company?.name}: role, branches and how they sign in.</DialogDescription>
@@ -265,7 +265,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             </div>
           </Field>
 
-          <Field label="FACTS salesman" hint="From FACTS' salesman list. The stock requests they make go to FACTS with it. The same in every company.">
+          <Field label="FACTS salesman" hint="From FACTS' salesman list. What they post to FACTS (bills, returns, wastage, requests…) goes with it. The same in every company.">
             {company && <SalesmanPicker companyId={company.id} value={f.salesman} onChange={(v) => set("salesman", v)} />}
           </Field>
 

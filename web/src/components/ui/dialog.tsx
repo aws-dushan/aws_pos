@@ -61,7 +61,8 @@ function DialogContent({
         {...props}
       >
         {/* A long window: only this body scrolls; its title (DialogHeader) and buttons (DialogFooter) stay in view. */}
-        <div data-slot="dialog-body" className="grid min-h-0 flex-1 gap-4 overflow-y-auto overscroll-contain p-4">{children}</div>
+        {/* Its one column is never wider than the window (minmax 0), so with a classic scrollbar nothing spills past the right edge. */}
+        <div data-slot="dialog-body" className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-4 overflow-x-hidden overflow-y-auto overscroll-contain p-4">{children}</div>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
