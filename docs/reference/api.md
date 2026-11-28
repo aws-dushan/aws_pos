@@ -82,13 +82,13 @@
 | GET | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:481 |
 | PUT | `/api/companies/{companyId:guid}/request-stores` | branch.manage | src/OnePos.Api/Pos/StockRequests.cs:491 |
 | PUT | `/api/companies/{companyId:guid}/rewards` |  | src/OnePos.Api/Pos/Rewards.cs:268 |
-| GET | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:176 |
-| POST | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:186 |
-| PUT | `/api/companies/{companyId:guid}/roles/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:204 |
-| GET | `/api/companies/{companyId:guid}/users` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:52 |
-| POST | `/api/companies/{companyId:guid}/users` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:71 |
-| DELETE | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:160 |
-| PUT | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:110 |
+| GET | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:182 |
+| POST | `/api/companies/{companyId:guid}/roles` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:192 |
+| PUT | `/api/companies/{companyId:guid}/roles/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:210 |
+| GET | `/api/companies/{companyId:guid}/users` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:53 |
+| POST | `/api/companies/{companyId:guid}/users` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:72 |
+| DELETE | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:166 |
+| PUT | `/api/companies/{companyId:guid}/users/{id:guid}` | users.manage | src/OnePos.Api/Platform/UserEndpoints.cs:111 |
 | PUT | `/api/companies/{id:guid}` |  | src/OnePos.Api/Platform/CompanyEndpoints.cs:168 |
 
 ## customers
@@ -276,32 +276,32 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/orders` | pos.sell | src/OnePos.Api/Pos/Orders.cs:273 |
-| POST | `/api/orders` | pos.sell, day.shift | src/OnePos.Api/Pos/Orders.cs:229 |
-| DELETE | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:251 |
-| GET | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:295 |
-| PUT | `/api/orders/{id:guid}` | pos.discount | src/OnePos.Api/Pos/Orders.cs:322 |
+| GET | `/api/orders` | pos.sell | src/OnePos.Api/Pos/Orders.cs:278 |
+| POST | `/api/orders` | pos.sell, day.shift | src/OnePos.Api/Pos/Orders.cs:234 |
+| DELETE | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:256 |
+| GET | `/api/orders/{id:guid}` | pos.sell | src/OnePos.Api/Pos/Orders.cs:300 |
+| PUT | `/api/orders/{id:guid}` | pos.discount | src/OnePos.Api/Pos/Orders.cs:327 |
 | POST | `/api/orders/{id:guid}/bill` |  | src/OnePos.Api/Pos/OrderTables.cs:128 |
 | POST | `/api/orders/{id:guid}/customer` |  | src/OnePos.Api/Pos/Customers.cs:199 |
 | POST | `/api/orders/{id:guid}/discount` |  | src/OnePos.Api/Pos/Discounts.cs:205 |
-| POST | `/api/orders/{id:guid}/lines` |  | src/OnePos.Api/Pos/Orders.cs:390 |
-| DELETE | `/api/orders/{id:guid}/lines/{lineId:guid}` | pos.void | src/OnePos.Api/Pos/Orders.cs:491 |
-| PUT | `/api/orders/{id:guid}/lines/{lineId:guid}` |  | src/OnePos.Api/Pos/Orders.cs:469 |
+| POST | `/api/orders/{id:guid}/lines` |  | src/OnePos.Api/Pos/Orders.cs:398 |
+| DELETE | `/api/orders/{id:guid}/lines/{lineId:guid}` | pos.void | src/OnePos.Api/Pos/Orders.cs:499 |
+| PUT | `/api/orders/{id:guid}/lines/{lineId:guid}` |  | src/OnePos.Api/Pos/Orders.cs:477 |
 | POST | `/api/orders/{id:guid}/lines/{lineId:guid}/discount` |  | src/OnePos.Api/Pos/Discounts.cs:234 |
 | DELETE | `/api/orders/{id:guid}/lock` |  | src/OnePos.Api/Pos/OrderTables.cs:87 |
 | POST | `/api/orders/{id:guid}/lock` | pos.sell | src/OnePos.Api/Pos/OrderTables.cs:71 |
 | POST | `/api/orders/{id:guid}/merge` |  | src/OnePos.Api/Pos/OrderTables.cs:106 |
-| POST | `/api/orders/{id:guid}/pay` |  | src/OnePos.Api/Pos/Orders.cs:513 |
+| POST | `/api/orders/{id:guid}/pay` |  | src/OnePos.Api/Pos/Orders.cs:521 |
 | PUT | `/api/orders/{id:guid}/pickup` | pos.sell, kitchen.view | src/OnePos.Api/Pos/Pickup.cs:85 |
 | POST | `/api/orders/{id:guid}/platform-offer` |  | src/OnePos.Api/Pos/Discounts.cs:264 |
-| GET | `/api/orders/{id:guid}/receipt` | reports.view, facts.post, day.manage, pos.sell | src/OnePos.Api/Pos/Orders.cs:308 |
+| GET | `/api/orders/{id:guid}/receipt` | reports.view, facts.post, day.manage, pos.sell | src/OnePos.Api/Pos/Orders.cs:313 |
 | POST | `/api/orders/{id:guid}/refund` | day.manage, pos.refund | src/OnePos.Api/Pos/Returns.cs:185 |
 | POST | `/api/orders/{id:guid}/return` |  | src/OnePos.Api/Pos/Returns.cs:95 |
 | POST | `/api/orders/{id:guid}/return-bill` | day.manage | src/OnePos.Api/Pos/Returns.cs:141 |
-| POST | `/api/orders/{id:guid}/send` |  | src/OnePos.Api/Pos/Orders.cs:507 |
+| POST | `/api/orders/{id:guid}/send` |  | src/OnePos.Api/Pos/Orders.cs:515 |
 | POST | `/api/orders/{id:guid}/split` | pos.sell | src/OnePos.Api/Pos/OrderTables.cs:134 |
 | PUT | `/api/orders/{id:guid}/tables` |  | src/OnePos.Api/Pos/OrderTables.cs:96 |
-| POST | `/api/orders/{id:guid}/void` | pos.void | src/OnePos.Api/Pos/Orders.cs:599 |
+| POST | `/api/orders/{id:guid}/void` | pos.void | src/OnePos.Api/Pos/Orders.cs:607 |
 | GET | `/api/orders/paper` | day.manage | src/OnePos.Api/Pos/Paper.cs:100 |
 | POST | `/api/orders/paper` | day.manage | src/OnePos.Api/Pos/Paper.cs:23 |
 
@@ -309,7 +309,7 @@
 
 | Method | Path | Checks | Source |
 | --- | --- | --- | --- |
-| GET | `/api/permissions` |  | src/OnePos.Api/Platform/UserEndpoints.cs:46 |
+| GET | `/api/permissions` |  | src/OnePos.Api/Platform/UserEndpoints.cs:47 |
 
 ## pickup
 

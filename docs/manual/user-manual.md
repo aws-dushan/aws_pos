@@ -90,7 +90,7 @@ flowchart LR
 2. Tap each denomination (1000 down to the 0.25 coin) and type how many you have. **Total** adds them up.
 3. Tap **Open shift · amount**.
 
-The first shift of the day on a till is checked against that till's **last closing count**, shown at the top with the date and who closed. The same amount shows **✓ Same as the last closing count**. A different amount needs a **reason** (for example, Taken to the office overnight) before the shift opens, and both counts, the difference and the reason print on the shift and day reports under **Opening check**. A till with no earlier close, or a later shift on the same day, is checked against the usual float instead: a difference is only noted.
+The first shift of the day on a till is checked against that till's **last closing count**, shown at the top with the date and who closed. The same amount shows **✓ Same as the last closing count**. A different amount needs a **reason** (for example, Taken to the office overnight) before the shift opens, and both counts, the difference and the reason print on the shift and day reports under **Opening check**. A till with no earlier close, or a later shift on the same day, is checked against the usual float instead: a difference is only noted. A branch whose usual float is 0 (for example a cloud kitchen that keeps no cash) opens the shift with nothing counted: tap **Open shift · 0.00**.
 
 You can have only one open shift, on one register. Where the branch shares one drawer, you simply sell.
 
@@ -603,6 +603,8 @@ On a FACTS company card, open **FACTS connection**, paste the **Connection strin
 ![Users: each person's role, branches and how they sign in](images/users.jpg)
 
 ![A user: role, branches, till PIN and limits](images/user-dialog.jpg)
+
+To take back-office access away from someone who should only use the till, open them and tap **Remove password** next to the password, then **Save**: they then sign in only at the till, with their PIN. The password is the person's own, so it goes in every company they belong to. You can't remove your own password. **Remove PIN** works the same way for the till.
 
 Switch **Active** off to stop someone signing in anywhere; **Remove from company** keeps their history. Only an administrator can make someone an **Administrator** (every right, every company, no limits).
 

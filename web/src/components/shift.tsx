@@ -141,8 +141,9 @@ export function OpenShiftDialog({ open, defaultFloat, lastClose, currency, onClo
   const total = countTotal(counts);
   const against = lastClose ? lastClose.amount : defaultFloat;
   const diff = Math.round((total - against) * 100) / 100;
-  const needReason = !!lastClose && total > 0 && diff !== 0;
-  const ready = total > 0 && (!needReason || reason.trim().length > 0);
+  // A branch that keeps no float (default 0, e.g. a cloud kitchen) opens with 0; elsewhere the float is counted.
+  const needReason = !!lastClose && diff !== 0;
+  const ready = (total > 0 || defaultFloat === 0 || (!!lastClose && lastClose.amount === 0)) && (!needReason || reason.trim().length > 0);
   async function submit() {
     if (!ready) return;
     setBusy(true);
@@ -165,7 +166,7 @@ export function OpenShiftDialog({ open, defaultFloat, lastClose, currency, onClo
           </DialogDescription>
         </DialogHeader>
         <CashCount counts={counts} onChange={setCounts} currency={currency} onLast={() => { if (!busy) void submit(); }} />
-        {total > 0 && (diff === 0
+        {(total > 0 || needReason || ready) && (diff === 0
           ? <p className="rounded-lg bg-success/10 px-3 py-2 text-sm text-success">✓ Same as {lastClose ? "the last closing count" : "the usual float"}</p>
           : lastClose
             ? <div className="grid gap-2">

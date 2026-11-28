@@ -13,8 +13,9 @@ public static class UserEndpoints
 {
     /// <summary>Limits: the user's own over the role's (null value: no limit for them; left out: as the role). Not sent: unchanged.</summary>
     /// <summary>IsAdmin: an administrator of ONE POS (every company); only an administrator changes it. Not sent: unchanged.</summary>
+    /// <summary>ClearPassword: the back-office password goes (the person then signs in only at the till, with their PIN).</summary>
     public sealed record UserBody(string? Username, string DisplayName, string? Password, Guid RoleId, Guid[]? BranchIds, string? Pin, bool? ClearPin, bool? IsActive,
-        JsonElement? Limits = null, bool? IsAdmin = null);
+        JsonElement? Limits = null, bool? IsAdmin = null, bool? ClearPassword = null);
     public sealed record RoleBody(string Name, string[]? Permissions, JsonElement? Limits);
 
     public sealed class UserRow
@@ -115,7 +116,8 @@ public static class UserEndpoints
             await db.Platform(async (c, tx) =>
             {
                 var old = await c.QuerySingleOrDefaultAsync<UserRow>("""
-                    select u.id, u.username, u.display_name, u.is_active, u.is_admin, uc.role_id, uc.pin_lookup is not null as has_pin
+                    select u.id, u.username, u.display_name, u.is_active, u.is_admin, uc.role_id, uc.pin_lookup is not null as has_pin,
+                           u.password_hash is not null as has_password
                     from user_company uc join app_user u on u.id = uc.user_id where uc.user_id = @id and uc.company_id = @companyId for update of uc
                     """, new { id, companyId }, tx) ?? throw new NotFoundException("User not found in this company.");
                 if (old.IsAdmin && !scope.IsAdmin) throw new ForbiddenException("Only administrators can change an administrator.");
@@ -124,15 +126,19 @@ public static class UserEndpoints
                     throw new DomainException("This is the last administrator: make someone else an administrator first.");
                 if (body.IsAdmin is { } admin && admin != old.IsAdmin) await SetAdminAsync(c, tx, scope, id, old.IsAdmin, admin);
                 await CheckRoleAndBranchesAsync(c, tx, companyId, body);
+                var clearPassword = body.ClearPassword == true && old.HasPassword;
+                if (clearPassword && body.Password is { Length: > 0 }) throw new DomainException("Either remove the password or give a new one, not both.");
+                if (clearPassword && id == scope.UserId) throw new DomainException("You can't remove your own password: you'd be locked out of the back office.");
                 if (body.Password is { Length: > 0 }) Passwords.Check(body.Password, old.Username);
                 await c.ExecuteAsync("""
                     update app_user set display_name = @name, is_active = @active,
-                      password_hash = coalesce(@hash, password_hash), failed_logins = case when @active then 0 else failed_logins end,
+                      password_hash = case when @clearPassword then null else coalesce(@hash, password_hash) end,
+                      failed_logins = case when @active then 0 else failed_logins end,
                       -- A password an administrator gives someone else is changed by its owner at the next sign-in.
-                      must_change_password = case when @hash is not null and @id <> @me then true else must_change_password end,
+                      must_change_password = case when @clearPassword then false when @hash is not null and @id <> @me then true else must_change_password end,
                       locked_until = case when @active then null else locked_until end
                     where id = @id
-                    """, new { id, name = body.DisplayName.Trim(), active = body.IsActive ?? old.IsActive, me = scope.UserId,
+                    """, new { id, name = body.DisplayName.Trim(), active = body.IsActive ?? old.IsActive, me = scope.UserId, clearPassword,
                                hash = body.Password is { Length: > 0 } p ? Passwords.Hash(p) : null }, tx);
                 string? lookup = null;
                 if (body.Pin is { Length: > 0 }) { Pins.Check(body.Pin); lookup = pins.Lookup(companyId, body.Pin); }
@@ -149,7 +155,7 @@ public static class UserEndpoints
                     new("Name", old.DisplayName, body.DisplayName.Trim()), new("Active", old.IsActive, body.IsActive ?? old.IsActive),
                     new("Role", old.RoleId, body.RoleId),
                     new("PIN", old.HasPin ? "set" : "none", body.ClearPin == true ? "none" : lookup is not null ? "changed" : old.HasPin ? "set" : "none"),
-                    new("Password", null, body.Password is { Length: > 0 } ? "changed" : null),
+                    new("Password", clearPassword ? "set" : null, clearPassword ? "removed" : body.Password is { Length: > 0 } ? "changed" : null),
                     new("Own limits", null, body.Limits is null ? null : Permissions.CleanUserLimits(body.Limits)),
                 ]);
                 return 0;

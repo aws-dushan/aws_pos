@@ -113,7 +113,7 @@ export default function UsersPage() {
 function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | null; roles: Role[]; onClose: () => void; onSaved: () => void }) {
   const { company, me } = useSession();
   const isNew = value === "new";
-  const blank = { username: "", displayName: "", password: "", roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true, isAdmin: false };
+  const blank = { username: "", displayName: "", password: "", clearPassword: false, roleId: "", branchIds: [] as string[], pin: "", clearPin: false, isActive: true, isAdmin: false };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +123,7 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
     setSeen(value);
     setPinPad(false);
     setLimits(limitState(value && value !== "new" ? value : null));
-    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive, isAdmin: value.isAdmin });
+    if (value && value !== "new") setF({ username: value.username, displayName: value.displayName, password: "", clearPassword: false, roleId: value.roleId, branchIds: value.branchIds, pin: "", clearPin: false, isActive: value.isActive, isAdmin: value.isAdmin });
     else setF({ ...blank, roleId: roles.find((r) => r.name === "Cashier")?.id ?? roles[0]?.id ?? "", branchIds: company?.branches.length === 1 ? [company.branches[0].id] : [] });
   }
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
@@ -247,8 +247,15 @@ function UserDialog({ value, roles, onClose, onSaved }: { value: User | "new" | 
             </div>
           </div>}
 
-          <Field label={existing?.hasPassword ? "New back-office password" : "Back-office password"} hint="Only for people who use the back office. At least 8 characters, letters and digits.">
-            <Input type="password" autoComplete="new-password" value={f.password} onChange={(e) => set("password", e.target.value)} placeholder={existing?.hasPassword ? "Leave empty to keep it" : "Optional"} />
+          <Field label={existing?.hasPassword ? "New back-office password" : "Back-office password"}
+            hint={f.clearPassword ? "The password goes when you save: they can then sign in only at the till, with their PIN." : "Only for people who use the back office. At least 8 characters, letters and digits."}>
+            <div className="flex gap-1.5">
+              <Input type="password" autoComplete="new-password" value={f.password} disabled={f.clearPassword} onChange={(e) => set("password", e.target.value)}
+                placeholder={f.clearPassword ? "Will be removed" : existing?.hasPassword ? "Leave empty to keep it" : "Optional"} />
+              {existing?.hasPassword && existing.id !== me.user.id && !f.password && (
+                <Button type="button" variant={f.clearPassword ? "secondary" : "ghost"} onClick={() => set("clearPassword", !f.clearPassword)}>{f.clearPassword ? "Will remove" : "Remove password"}</Button>
+              )}
+            </div>
           </Field>
 
           {/* Only an administrator makes (or unmakes) an administrator; never themselves. */}
