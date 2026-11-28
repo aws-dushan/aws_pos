@@ -8,7 +8,8 @@ AS
   The outlet asked a store for stock in One POS and the branch's request approver approved it; this places the request in FACTS the
   way the outlets' own STR50s are made today (e.g. 9268, ERBQS asking 5ALKD), posted, never a draft:
   1. Saves one STR50 (Stock Transfer Request-Bakery) from the store to the outlet (e.g. 5ALK1 -> ERBQS): rate 0, "after document"
-     quantity 0 (each STV50 the store sends against it adds to it), salesman, division and department of the outlet's last STR50.
+     quantity 0 (each STV50 the store sends against it adds to it), salesman, division and department of the outlet's last STR50
+     (a new outlet with none: the division and department most STR50s carry, no salesman).
      Each line carries a batch of the item as FACTS' own STR50 lines do (the store's oldest batch with stock, else the item's newest
      batch); the store's STV50 picks its own batches when it sends. Quantities in the item's base unit (STOCK_UNIT).
      Number = FACTS' next STR50 number, under a lock. The save is logged as FACTS' screen logs it (ADD_EDIT_DELETE_LOG "A").
@@ -115,9 +116,14 @@ BEGIN
                 SET @DocNo = dbo.fn_GetNewDocNo(@DocType, @DocNo);
         END
 
-        -- Salesman, division and department of the outlet's own last request, so it looks like theirs.
+        -- Salesman, division and department of the outlet's own last request that has a division, so it looks like theirs.
         SELECT TOP 1 @Sman = TSF_SMAN_DOCNO, @Divn = TSF_DIVN_DOCNO, @Dept = TSF_DEPT_DOCNO FROM dbo.TRANSFER_HEADER
-        WHERE TSF_DOCTYPE = @DocType AND TSF_LOCATION_TO_DOCNO = @To ORDER BY TSF_DOCDATE DESC;
+        WHERE TSF_DOCTYPE = @DocType AND TSF_LOCATION_TO_DOCNO = @To AND ISNULL(TSF_DIVN_DOCNO, '') <> '' ORDER BY TSF_DOCDATE DESC;
+        -- A new outlet (no request of its own yet): the division and department most requests of the last 90 days carry; no salesman.
+        IF ISNULL(@Divn, '') = ''
+            SELECT TOP 1 @Divn = TSF_DIVN_DOCNO, @Dept = TSF_DEPT_DOCNO FROM dbo.TRANSFER_HEADER
+            WHERE TSF_DOCTYPE = @DocType AND ISNULL(TSF_DIVN_DOCNO, '') <> '' AND TSF_DOCDATE >= DATEADD(DAY, -90, GETDATE())
+            GROUP BY TSF_DIVN_DOCNO, TSF_DEPT_DOCNO ORDER BY COUNT(*) DESC;
 
         INSERT INTO dbo.TRANSFER_HEADER (TSF_FYCODE, TSF_DOCTYPE, TSF_DOCNO, TSF_DOCDATE, TSF_LOCATION_FM_DOCNO, TSF_LOCATION_TO_DOCNO, TSF_SMAN_DOCNO, TSF_NARRATION,
                                          TSF_NET_AMOUNT, TSF_TOTAL_QTY, TSF_DIVN_DOCNO, TSF_DEPT_DOCNO, TSF_CREATED_BY, TSF_CREATED_TS, TSF_ACTIVE_STATUS)
