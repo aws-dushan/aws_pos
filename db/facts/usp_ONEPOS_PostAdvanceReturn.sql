@@ -34,6 +34,9 @@ AS
 */
 BEGIN
     SET NOCOUNT ON;
+    -- One POS: the salesman of the person who did it (picked on their user), sent as /data/*/Salesman; one FACTS doesn't have is left out. (28-11-2026)
+    DECLARE @Salesman NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/*/Salesman)[1]', 'NVARCHAR(20)'))), N'');
+    IF NOT EXISTS (SELECT 1 FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman) SET @Salesman = NULL;
     SET XACT_ABORT ON;
 
     DECLARE @FyCode NVARCHAR(6) = N'CFY', @DocType NVARCHAR(6) = N'PV51', @Key NVARCHAR(50) = N'usp_PAY_REC_APPR_Posting',
@@ -170,6 +173,9 @@ BEGIN
         SELECT @FyCode, @DocType, @DocNo, (SELECT COUNT(*) FROM @Lines) + 1, @Total, @Total, @DocDate, @DocDate, NULL,
             N'AED', 1, @AdvanceAc, @Mode, @DocDate, @FyCode, 0,
             -1, @Divn, @Dept, @AdvanceAc, @Analysis, 2;
+
+        -- The salesman of the person who did it (none: left empty).
+        IF @Salesman IS NOT NULL UPDATE dbo.RP_HEADER SET RP_SMAN_DOCNO = @Salesman WHERE RP_FYCODE = @FyCode AND RP_DOCTYPE = @DocType AND RP_DOCNO = @DocNo;
 
         INSERT INTO dbo.ADD_EDIT_DELETE_LOG (AED_UNIQUE_ID, AED_TS, AED_MACHINE_ID, AED_USER_CODE, AED_DOCNO, AED_DOCTYPE, AED_FYCODE, AED_STATUS)
         VALUES (NEWID(), GETDATE(), N'One POS', @ClientID, @DocNo, @DocType, @FyCode, 'A');

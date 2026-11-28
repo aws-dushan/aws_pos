@@ -27,6 +27,9 @@ AS
 */
 BEGIN
     SET NOCOUNT ON;
+    -- One POS: the salesman of the person who did it (picked on their user), sent as /data/*/Salesman; one FACTS doesn't have is left out. (28-11-2026)
+    DECLARE @Salesman NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/*/Salesman)[1]', 'NVARCHAR(20)'))), N'');
+    IF NOT EXISTS (SELECT 1 FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman) SET @Salesman = NULL;
     SET XACT_ABORT ON;
 
     DECLARE @DocType NVARCHAR(6) = N'PSR51', @FromType NVARCHAR(6) = N'POS51', @FyCode NVARCHAR(6),
@@ -90,6 +93,8 @@ BEGIN
         UPDATE #d SET SALDET_DOCTYPE = @DocType, SALDET_DOCNO = @DocNo, SALDET_DOCDATE = @DocDate, SALDET_PREVIOUS_FYCODE = SALDET_FYCODE,
                       SALDET_PREVIOUS_DOCTYPE = @FromType, SALDET_PREVIOUS_DOCNO = @InvoiceNo, SALDET_PREVIOUS_DOCSRNO = SALDET_DOCSRNO, SALDET_AFTER_DOC_QTY = 0;
         UPDATE #r SET RD_DOCTYPE = @DocType, RD_DOCNO = @DocNo, RD_DOCDATE = @DocDate, RD_CREATED_TS = GETDATE();
+        -- The salesman of the person who did the return, not the bill's (none: left empty).
+        UPDATE #h SET SAL_SMAN_DOCNO = @Salesman, SAL_SMAN_DESC = (SELECT LTRIM(RTRIM(SMAN_DESC)) FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman);
 
         DECLARE @sql NVARCHAR(MAX), @cols NVARCHAR(MAX);
         SELECT @cols = STRING_AGG(CAST(QUOTENAME(name) AS NVARCHAR(MAX)), N', ') WITHIN GROUP (ORDER BY column_id)

@@ -29,6 +29,9 @@ AS
 */
 BEGIN
     SET NOCOUNT ON;
+    -- One POS: the salesman of the person who did it (picked on their user), sent as /data/*/Salesman; one FACTS doesn't have is left out. (28-11-2026)
+    DECLARE @Salesman NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/*/Salesman)[1]', 'NVARCHAR(20)'))), N'');
+    IF NOT EXISTS (SELECT 1 FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman) SET @Salesman = NULL;
     SET XACT_ABORT ON;
 
     DECLARE @FyCode NVARCHAR(6) = N'CFY',
@@ -169,6 +172,8 @@ BEGIN
             -- Salesman and division as on this customer's last price list (finance's own).
             SELECT TOP 1 @Sman = SAL_SMAN_DOCNO, @Divn = SAL_DIVN_DOCNO, @Dept = SAL_DEPT_DOCNO FROM dbo.SALES_HEADER
             WHERE SAL_DOCTYPE = @DocType AND SAL_AC_DOCNO = @Ac AND SAL_SUBLEDGER_DOCNO = @Sub ORDER BY SAL_CREATED_TS DESC;
+            -- The salesman of the person who posted the prices, when they have one.
+            IF @Salesman IS NOT NULL SET @Sman = @Salesman;
             DECLARE @Gross NUMERIC(18, 3) = (SELECT SUM(Price) FROM @Lines), @Vat NUMERIC(18, 3) = (SELECT SUM(ROUND(Price * 0.05, 3)) FROM @Lines);
             INSERT INTO dbo.SALES_HEADER (SAL_FYCODE, SAL_DOCNO, SAL_DOCTYPE, SAL_DOCDATE, SAL_REFDATE, SAL_REF2DATE, SAL_AC_DOCNO, SAL_SUBLEDGER_DOCNO, SAL_SMAN_DOCNO,
                                           SAL_CURR_DOCNO, SAL_CURR_RATE, SAL_NARRATION, SAL_GROSS_AMOUNT, SAL_NET_AMOUNT, SAL_LOCATION_DOCNO, SAL_DIVN_DOCNO, SAL_DEPT_DOCNO,

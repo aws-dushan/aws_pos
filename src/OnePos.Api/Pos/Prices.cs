@@ -202,13 +202,16 @@ public static class Prices
         public string? Error { get; set; }
         public DateTime? PostedAt { get; set; }
         public string FactsUser { get; set; } = "";
+        /// <summary>The FACTS salesman of who posted the prices (Users), put on the CPL50.</summary>
+        public string? Salesman { get; set; }
     }
 
     /// <summary>Saves and posts the change's documents (or just one, retried) in FACTS, one by one, and keeps each answer.</summary>
     private static async Task<(int Posted, int Failed)> PostDocsAsync(Db db, Erp.ErpConnections erp, Guid companyId, Guid changeId, Guid? onlyDoc)
     {
         var docs = await db.Company(companyId, (c, tx) => c.QueryAsync<DocRow>("""
-            select d.id, d.change_id, d.kind, d.price_type, d.customer, d.location, d.reference, d.lines::text as lines, d.status, pc.facts_user
+            select d.id, d.change_id, d.kind, d.price_type, d.customer, d.location, d.reference, d.lines::text as lines, d.status, pc.facts_user,
+                   (select u.facts_salesman from app_user u where u.id = pc.created_by) as salesman
             from price_change_doc d join price_change pc on pc.id = d.change_id
             where d.change_id = @changeId and d.status <> 'posted' and (@onlyDoc::uuid is null or d.id = @onlyDoc) order by d.kind, d.id
             """, new { changeId, onlyDoc }, tx));
@@ -239,6 +242,7 @@ public static class Prices
                             new XElement("Kind", d.Kind == "outlet" ? "OUTLET" : "PLATFORM"), new XElement("DocDate", today), new XElement("Reference", d.Reference),
                             d.Kind == "outlet" ? new XElement("PriceType", d.PriceType) : null,
                             d.Kind == "platform" ? new object[] { new XElement("Customer", d.Customer), new XElement("Location", d.Location), new XElement("ValidTo", ValidTo.ToString("yyyy-MM-dd", Inv)) } : null,
+                            d.Salesman is null ? null : new XElement("Salesman", d.Salesman),
                             lines.Select(l => new XElement("Line", new XElement("ItemType", l.Type ?? ""), new XElement("ItemCode", l.Code), new XElement("Price", l.FactsPrice.ToString("0.###", Inv))))));
                         await using var cmd = new SqlCommand(Proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 180 };
                         cmd.Parameters.AddWithValue("@ClientID", d.FactsUser);

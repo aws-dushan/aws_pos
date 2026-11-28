@@ -24,6 +24,9 @@ AS
 */
 BEGIN
     SET NOCOUNT ON;
+    -- One POS: the salesman of the person who did it (picked on their user), sent as /data/*/Salesman; one FACTS doesn't have is left out. (28-11-2026)
+    DECLARE @Salesman NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/*/Salesman)[1]', 'NVARCHAR(20)'))), N'');
+    IF NOT EXISTS (SELECT 1 FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman) SET @Salesman = NULL;
     SET XACT_ABORT ON;
 
     DECLARE @DocType NVARCHAR(6) = N'STV50', @FyCode NVARCHAR(6) = N'CFY',
@@ -81,6 +84,9 @@ BEGIN
         INSERT INTO dbo.TRANSFER_DETAILS (TSFDET_FYCODE, TSFDET_DOCTYPE, TSFDET_DOCNO, TSFDET_DOCSRNO, TSFDET_STOCK_DOCTYPE, TSFDET_STOCK_DOCNO, TSFDET_STOCK_DESC,
                                           TSFDET_LOCATION_FM_DOCNO, TSFDET_LOCATION_TO_DOCNO, TSFDET_QTY, TSFDET_UNIT_DOCNO, TSFDET_DOCDATE)
         SELECT @FyCode, @DocType, @DocNo, SrNo, ItemType, ItemCode, ItemName, @From, @To, Qty, Unit, @DocDate FROM @Lines;
+
+        -- The salesman of the person who did it (none: left empty).
+        IF @Salesman IS NOT NULL UPDATE dbo.TRANSFER_HEADER SET TSF_SMAN_DOCNO = @Salesman WHERE TSF_FYCODE = @FyCode AND TSF_DOCTYPE = @DocType AND TSF_DOCNO = @DocNo;
 
         EXEC dbo.usp_UpdateLastNoMaster_From_Transaction_Table @DocType, NULL;
         COMMIT TRANSACTION;

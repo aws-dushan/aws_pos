@@ -65,6 +65,14 @@ BEGIN
         UPDATE dbo.SALES_HEADER SET SAL_DELTRM_DOCNO = @TermNo, SAL_DELTRM_DESC = @TermDesc
         WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
 
+    -- The salesman of the cashier who took the payment (picked on their user in One POS), sent as /data/Invoice/Salesman, which FACTS'
+    -- own procedure ignores. Only a salesman FACTS has; none sent = left as FACTS saved it.                         (28-11-2026)
+    DECLARE @Salesman NVARCHAR(20) = NULLIF(LTRIM(RTRIM(@BodyXML.value('(/data/Invoice/Salesman)[1]', 'NVARCHAR(20)'))), N''), @SalesmanName NVARCHAR(200);
+    SELECT @SalesmanName = LTRIM(RTRIM(SMAN_DESC)) FROM dbo.SALESMAN_MASTER WHERE SMAN_DOCNO = @Salesman;
+    IF @SalesmanName IS NOT NULL
+        UPDATE dbo.SALES_HEADER SET SAL_SMAN_DOCNO = @Salesman, SAL_SMAN_DESC = @SalesmanName
+        WHERE SAL_FYCODE = @FyCode AND SAL_DOCTYPE = 'POS51' AND SAL_DOCNO = @InvoiceNo;
+
     -- A future order's bill (taken earlier with advances, each a QRV51 by usp_ONEPOS_PostAdvance): linked both ways. The bill gets the
     -- future order number and its advances' QRV51 numbers in SAL_REFNO2; each QRV51 gets the bill in QRP_BEFORE_FYCODE/DOCTYPE/DOCNO.
     -- One POS sends it as /data/Invoice/FutureOrder (FutureOrderNo, AdvanceNo …), which FACTS' own procedure ignores.  (13-11-2026)

@@ -59,6 +59,14 @@ in `item_unit`, the stock unit with `per_unit` 1):
 
 ## What is posted (`Erp/FactsPosting.cs`)
 
+**Salesman.** Each person can have a FACTS salesman (Users → **FACTS salesman**, `app_user.facts_salesman`, one for every company). When a
+document goes to FACTS, the sender adds `<Salesman>` (the salesman of the person it belongs to) to its XML, and ONE POS' procedure puts it on
+the header (`*_SMAN_DOCNO`) when FACTS has that salesman; nobody picked = the field stays as before (empty). Whose: a bill, the cashier who
+took its payment; a PSR51, who made the credit note (not the bill's salesman); an advance (QRV51) or one given back (PV51), who took or gave the
+money; a deposit (QRV50), who recorded it; wastage, a give-away or a return to store, who recorded it (a day's draft STV50: its first entry);
+a stock request, who asked; a repacking (RPO50), its bill's cashier or its wastage's recorder; a CPL50 price list, who posted the prices
+(none: the customer's last list's salesman, as before). OSMPI has no salesman. SR50 (the FACTS developer's procedure) gets none.
+
 | ONE POS event | Queue kind | FACTS document | Procedure | Posted as |
 | --- | --- | --- | --- | --- |
 | Bill paid (and paper slip keyed in) | `invoice` | **POS51**, numbered with the invoice number (`INV-<branch>-000001`, or the company's shared plain number) | `usp_FQAPI_PWA_POS_SaveInvoice` (FACTS' own), or `usp_ONEPOS_SaveInvoice` (same, then FIFO batches per line) | ONEPOS |

@@ -477,6 +477,32 @@ public static partial class FactsPosting
                        status = problems.Count == 0 ? "pending" : "failed", error = problems.Count == 0 ? null : string.Join(" ", problems) }, tx);
     }
 
+    /// <summary>
+    /// The FACTS salesman of the person a posting belongs to (picked on their user), or null: a bill, the cashier who took its
+    /// payment; a return, who made the credit note; an advance or one given back, who took or gave the money; a deposit, who
+    /// recorded it; wastage, a give-away or a return to store, who recorded it (the first, in a day's draft); a stock request,
+    /// who asked; a repacking, its bill's cashier or its wastage's recorder.
+    /// </summary>
+    private static Task<string?> SalesmanOfAsync(NpgsqlConnection c, NpgsqlTransaction tx, Guid postId) => c.ExecuteScalarAsync<string?>("""
+        select u.facts_salesman from erp_post p
+        cross join lateral (select case
+            when p.kind in ('invoice', 'repacking') and p.order_id is not null then
+                (select y.taken_by from payment y where y.order_id = p.order_id and y.kind = 'payment' order by y.at desc limit 1)
+            when p.kind = 'repacking' then
+                (select w.recorded_by from erp_post e join wastage w on w.erp_post_id = e.id where e.after_id = p.id order by w.recorded_at limit 1)
+            when p.kind = 'advance' then (select y.taken_by from payment y where y.id = p.payment_id)
+            when p.kind = 'advance_return' then
+                (select y.taken_by from payment y where y.order_id = p.order_id and y.kind = 'refund' and y.is_advance order by y.at desc limit 1)
+            when p.kind = 'refund' then (select n.created_by from credit_note n where n.id = p.credit_note_id)
+            when p.kind = 'deposit' then (select d.recorded_by from bank_deposit d where d.id = p.deposit_id)
+            when p.kind in ('wastage', 'marketing') then (select w.recorded_by from wastage w where w.erp_post_id = p.id order by w.recorded_at limit 1)
+            when p.kind = 'return' then (select r.recorded_by from stock_return r where r.erp_post_id = p.id limit 1)
+            when p.kind = 'request' then (select r.requested_by from stock_request r where r.erp_post_id = p.id order by r.requested_at limit 1)
+          end as who) x
+        join app_user u on u.id = x.who
+        where p.id = @postId
+        """, new { postId }, tx);
+
     private static string RepackingLabel(string mode) => mode switch { "draft" => "Draft RPO50 per day", "posted" => "Posted RPO50 per bill", _ => "Off" };
 
     /// <summary>A bill was paid: into the queue where its branch posts from that business day on.</summary>
@@ -899,7 +925,20 @@ public static partial class FactsPosting
                     await using var cmd = new SqlCommand(proc, f) { CommandType = CommandType.StoredProcedure, CommandTimeout = 120 };
                     // FACTS saves the document as created by this user, so it must be a FACTS user (a PSR51 too: POSBAKERY).
                     cmd.Parameters.AddWithValue("@ClientID", p.FactsUser ?? (p.Kind is "wastage" or "repacking" or "advance" or "advance_return" or "deposit" || (p.Kind == "refund" && p.Refunds == "psr51") ? WastageUser : "ONEPOS"));
-                    cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = p.Xml;
+                    // The salesman of the person it belongs to (Users → FACTS salesman), for ONE POS' own procedures to put on the
+                    // document; none picked: nothing added, the document goes as before. Not for the FACTS developer's SR50 procedure.
+                    var body = p.Xml;
+                    if (!(p.Kind == "refund" && p.Refunds != "psr51")
+                        && await db.Company(companyId, (c, tx) => SalesmanOfAsync(c, tx, p.Id)) is { } salesman)
+                    {
+                        var root = XElement.Parse(p.Xml);
+                        if (root.Elements().FirstOrDefault() is { } main && main.Element("Salesman") is null)
+                        {
+                            main.Add(new XElement("Salesman", salesman));
+                            body = root.ToString(SaveOptions.DisableFormatting);
+                        }
+                    }
+                    cmd.Parameters.Add("@BodyXML", SqlDbType.Xml).Value = body;
                     await using var r = await cmd.ExecuteReaderAsync(stop);
                     // FACTS answers DocumentNo / status / description, possibly more than once (its posting step answers too).
                     var failed = false;
